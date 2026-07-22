@@ -1,0 +1,51 @@
+{
+  "type": "module",
+  "name": "platform",
+  "version": "1.0.0",
+  "description": "Platform - browser-based AI assistant built on the pi-coding-agent SDK",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:electron": "electron .",
+    "predist": "node scripts/build-openconnector.js && sh scripts/build-python-litellm.sh && node scripts/verify-bundle.js",
+    "dist": "npm --prefix web run build && electron-builder",
+    "clean:bundle": "rm -rf resources/openconnector resources/python resources/litellm/venv",
+    "test:e2e": "playwright test --project=fast",
+    "test:e2e:smoke": "playwright test",
+    "web:install": "npm --prefix web install",
+    "web:build": "npm --prefix web run build",
+    "web:dev": "npm --prefix web run dev",
+    "postinstall": "node scripts/postinstall-web.js"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "latest",
+    "@earendil-works/pi-coding-agent": "latest",
+    "@llamaindex/openai": "latest",
+    "@llamaindex/readers": "latest",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.11.1",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.0",
+    "llamaindex": "latest",
+    "multer": "^2.2.0",
+    "node-schedule": "^2.1.1",
+    "pageindex": "^1.0.1",
+    "pi-provider-litellm": "^1.2.9",
+    "undici": "latest",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "execa": "^10.0.0",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
+  },
+  "platformBundles": {
+    "openconnectorSha": "0dfc73e5f826f2efdcacf274347d7a8284b7d9dd",
+    "litellmVersion": "1.53.9",
+    "pythonBuildStandaloneTag": "20250115",
+    "pythonVersion": "3.13.1"
+  }
+}

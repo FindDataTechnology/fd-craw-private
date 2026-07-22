@@ -1,0 +1,29 @@
+node_modules/
+.DS_Store
+mcp.json
+knowledge-store/
+data/
+.env
+
+# React frontend workspace
+web/node_modules/
+web/dist/
+
+# Electron build artifacts
+dist/
+build/
+resources/node/
+resources/openconnector/
+resources/python/
+resources/litellm/
+# Keep original tarballs out of the repo
+resources/node/*.tar.gz
+resources/python/*.tar.xz
+
+# Local runtime stores
+chat-history-store/
+documents-store/
+sessions-store/
+cron-store/
+knowledge-store.archive/
+test-results/

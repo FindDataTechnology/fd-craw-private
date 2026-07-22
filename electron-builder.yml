@@ -1,0 +1,127 @@
+# ── electron-builder configuration ──────────────────────────────────────────
+#
+# Produces a distributable Platform desktop app. Key choices:
+#   - asar: false  → the bundled standalone Node (not Electron's) runs server.js
+#     and must read server.js + node_modules as real files (standalone Node
+#     cannot read inside an asar archive). Native addons (better-sqlite3,
+#     tree-sitter) run on the bundled Node's standard ABI - no rebuild.
+#   - extraResources: resources/node → <app>/Resources/node  (the bundled Node)
+#   - mac arm64 (this machine); win x64 target declared (build on a Windows/CI
+#     host for a Windows .exe).
+#
+# Build with:  npm run dist
+
+appId: com.earendil.platform
+productName: Platform
+directories:
+  output: dist
+asar: false
+# Native addons (better-sqlite3, tree-sitter, fsevents) run under the BUNDLED
+# Node (resources/node), not Electron's Node - so do NOT rebuild them for
+# Electron's ABI. The prebuilt .node files (Node v25 arm64) are used as-is.
+npmRebuild: false
+
+files:
+  - "server.js"
+  - "paths.js"
+  - "*.js"
+  - "electron/**"
+  - "public/**"
+  - "web/dist/**"
+  - "skills/**"
+  - "mcp.example.json"
+  - "package.json"
+  - "node_modules/**"
+  # trim node_modules fat (keep native .node binaries + prebuilds)
+  - "!node_modules/**/{*.md,*.markdown,LICENSE,LICENCE,*.ts,*.map,*.coffee,*.flow}"
+  - "!node_modules/**/.bin/**"
+  - "!node_modules/**/test/**"
+  - "!node_modules/**/tests/**"
+  - "!node_modules/**/docs/**"
+  - "!node_modules/**/.github/**"
+  # exclude dev-only / non-runtime project content
+  - "!.claude/**"
+  - "!.pi/**"
+  - "!openspec/**"
+  - "!e2e/**"
+  - "!playwright.config.js"
+  - "!test-results/**"
+  - "!dist/**"
+  - "!resources/**"
+  - "!data/**"
+  - "!sessions-store/**"
+  - "!chat-history-store/**"
+  - "!documents-store/**"
+  - "!collections-store/**"
+  - "!cron-store/**"
+  - "!knowledge-store*/**"
+  - "!.env"
+  - "!.env.*"
+  - "!*.log"
+  - "!.DS_Store"
+
+extraResources:
+  - from: resources/node/
+    to: node/
+    filter:
+      - "**/*"
+      - "!*.tar.gz"
+  - from: resources/openconnector/
+    to: openconnector/
+    filter:
+      - "**/*"
+      - "!**/*.md"
+      - "!**/*.markdown"
+      - "!**/LICENSE"
+      - "!**/LICENCE"
+      - "!**/*.map"
+      - "!**/test/**"
+      - "!**/tests/**"
+      - "!**/docs/**"
+      - "!**/.github/**"
+      - "!**/examples/**"
+      - "!**/docker/**"
+      - "!**/assets/**"
+      - "!**/web/**"
+  - from: resources/python/
+    to: python/
+    filter:
+      - "bin/**/*"
+      - "lib/**/*"
+      - "include/**/*"
+      - "share/**/*"
+      - "!**/__pycache__/**"
+      - "!**/*.pyc"
+      - "!**/test/**"
+      - "!**/tests/**"
+      - "!**/ensurepip"
+      - "!**/idlelib"
+      - "!**/turtledemo"
+      - "!**/tkinter/test"
+      - "!**/*.tar.xz"
+  - from: resources/litellm/
+    to: litellm/
+    filter:
+      - "default-config.yaml"
+      - "venv/**/*"
+      - "!venv/**/__pycache__/**"
+      - "!venv/**/*.pyc"
+      - "!venv/**/*.dist-info/tests/**"
+      - "!venv/**/test/**"
+      - "!venv/**/tests/**"
+      - "!venv/**/*.pyi.h"
+      - "!venv/**/*.tar.gz"
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64]
+  # Signing (task 4.8): set CSC_LINK / CSC_KEY_PASSWORD env to sign with a
+  # Developer ID. Notarization needs an afterSign hook + APPLE_ID/APP_PASSWORD.
+  # Unsigned builds run on the dev machine but won't pass Gatekeeper elsewhere.
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]

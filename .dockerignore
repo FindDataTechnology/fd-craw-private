@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+dist
+.env
+.env.*
+mcp.json
+documents-store
+chat-history-store
+platform-data
+*.log
+.DS_Store
+.claude
+.pi
+electron
+playwright-report
+test-results
