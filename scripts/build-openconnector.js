@@ -35,9 +35,15 @@ if (!PINNED_SHA) {
 const proxy = process.env.http_proxy || process.env.HTTP_PROXY || "";
 const gitProxyArgs = proxy ? ["-c", `http.proxy=${proxy}`, "-c", `https.proxy=${proxy}`] : [];
 
-// Directories not needed at runtime (trim bundle size).
-const SKIP_DIRS = new Set([".git", "docs", "examples", "docker", ".github", "assets", "web"]);
+// Directories not needed at runtime (trim bundle size). Applied at EVERY depth.
+// NOTE: "web" is NOT here - the web/ workspace SOURCE is skipped only at the
+// top level (TOP_LEVEL_SKIP_DIRS) so that the built `dist/web` console (a dir
+// also named "web", nested under dist/) IS copied.
+const SKIP_DIRS = new Set([".git", "docs", "examples", "docker", ".github", "assets"]);
 const SKIP_FILES = new Set([".codex"]);
+// Skipped only at the top level (depth 0) - e.g. the `web/` workspace source,
+// whose built output lives at `dist/web` and must be copied.
+const TOP_LEVEL_SKIP_DIRS = new Set(["web"]);
 
 async function main() {
   if (fs.existsSync(path.join(TARGET_DIR, "src", "server", "index.ts"))) {
@@ -62,6 +68,15 @@ async function main() {
   const tsxPath = require.resolve("tsx", { paths: [path.join(PROJECT_ROOT, "node_modules")] });
   await execa(process.execPath, [tsxPath, "scripts/ensure-generated.ts"], { cwd: tempDir });
 
+  // Build the web console (the management UI the /oc-web tab embeds). The OC
+  // server serves it from dist/web; copy-catalog-assets seeds the catalog into
+  // dist/web/catalog/apps.json. Both need devDeps (vite), which the install
+  // above included. dist/ is copied to the target below (not in SKIP_DIRS); the
+  // web/ source workspace is skipped (not needed at runtime).
+  console.log("Building web console (npm run build:web)...");
+  await execa("npm", ["run", "build:web"], { cwd: tempDir });
+  await execa(process.execPath, [tsxPath, "scripts/copy-catalog-assets.ts"], { cwd: tempDir });
+
   // Copy the source tree (+ prod node_modules) into target, skipping heavy dirs.
   await fs.promises.rm(TARGET_DIR, { recursive: true, force: true });
   await fs.promises.mkdir(TARGET_DIR, { recursive: true });
@@ -72,6 +87,15 @@ async function main() {
   console.log("Pruning to production dependencies...");
   await execa("npm", ["install", "--omit=dev", "--no-audit", "--no-fund", "--ignore-scripts"], { cwd: TARGET_DIR });
 
+  // Generate the provider catalog + registry DIRECTLY in the target (plain node
+  // - the generators only import local .ts, so Node's type-stripping handles it;
+  // tsx breaks their import.meta.url resolution). The OC's ensure-generated.ts
+  // uses a mtime-based catalogFresh branch that skips generators in the bundle,
+  // and the OC server crashes without catalog/apps/ + src/providers/registry.generated.ts.
+  // generate-catalog.ts generates BOTH the catalog and the registry.
+  console.log("Generating provider catalog + registry in target...");
+  await execa(process.execPath, ["scripts/generate-catalog.ts"], { cwd: TARGET_DIR });
+
   // Clean temp + the copied .git if any.
   await fs.promises.rm(tempDir, { recursive: true, force: true });
   await fs.promises.rm(path.join(TARGET_DIR, ".git"), { recursive: true, force: true }).catch(() => {});
@@ -79,14 +103,15 @@ async function main() {
   console.log(`✅ Done: OpenConnector source built to ${TARGET_DIR}`);
 }
 
-async function copyDir(src, dest) {
+async function copyDir(src, dest, depth = 0) {
   await fs.promises.mkdir(dest, { recursive: true });
+  const skipDirs = depth === 0 ? new Set([...SKIP_DIRS, ...TOP_LEVEL_SKIP_DIRS]) : SKIP_DIRS;
   for (const entry of await fs.promises.readdir(src, { withFileTypes: true })) {
-    if (SKIP_DIRS.has(entry.name) || SKIP_FILES.has(entry.name)) continue;
+    if (skipDirs.has(entry.name) || SKIP_FILES.has(entry.name)) continue;
     const s = path.join(src, entry.name);
     const d = path.join(dest, entry.name);
     if (entry.isDirectory()) {
-      await copyDir(s, d);
+      await copyDir(s, d, depth + 1);
     } else if (entry.isSymbolicLink()) {
       // Preserve symlinks rather than following them (avoids copying huge trees
       // or choking on broken links).
