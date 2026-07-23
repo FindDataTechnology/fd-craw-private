@@ -27,3 +27,9 @@ sessions-store/
 cron-store/
 knowledge-store.archive/
 test-results/
+
+# Headless local-services launcher dev state (generated creds + seeded config,
+# written under PLATFORM_DATA_DIR / CWD by bootstrap/first-run.js). See local-services.js.
+dev-settings.json
+litellm.yaml
+openconnector.db

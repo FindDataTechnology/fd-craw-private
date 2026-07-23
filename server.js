@@ -247,7 +247,14 @@ async function initAgent() {
   // of MCP/agent startup, so an unreachable runtime is non-fatal.
   const ocMcpConfig = openConnector.buildMcpServerConfig();
   if (ocMcpConfig) {
-    const ocMcp = await connectServers({ mcpServers: { "open-connector": ocMcpConfig } });
+    // OC starts in parallel with server.js (bundled local mode), so its /mcp
+    // endpoint may not be ready on the first attempt. Retry for ~30s before
+    // giving up; connectServers skips a failed connect without blocking the rest
+    // of agent startup, so an unreachable runtime is still non-fatal.
+    const ocMcp = await connectServers(
+      { mcpServers: { "open-connector": ocMcpConfig } },
+      { retries: 20, intervalMs: 1500 }
+    );
     mcpTools = mcpTools.concat(ocMcp.tools);
     mcpClientList = mcpClientList.concat(ocMcp.clients);
   }
@@ -903,6 +910,15 @@ app.get("/api/config", (_req, res) => {
     litellmManagementUrl: LITELLM_BASE_URL ? `${LITELLM_BASE_URL}/ui` : null,
     documentsEnabled: db.isDbReady(),
   });
+});
+
+// Local bundled LiteLLM master key, so the user can sign into the management UI
+// (the bundled proxy's master_key is auto-generated server-side). Exposed ONLY
+// when LiteLLM is local (localhost) - for a remote proxy the user has their own
+// credentials and this returns null (no key reaches the browser in that case).
+app.get("/api/litellm/credentials", (_req, res) => {
+  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(LITELLM_BASE_URL || "");
+  res.json({ masterKey: isLocal ? (LITELLM_API_KEY || null) : null });
 });
 
 // ── Supervisor / system status (for the Dashboard view) ──────────────────────

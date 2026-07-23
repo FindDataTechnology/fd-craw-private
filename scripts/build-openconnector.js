@@ -5,7 +5,7 @@
 // and the runtime is `src/server/index.ts` run via tsx. So this script clones
 // the source, generates the catalog, and copies the whole source tree (+ prod
 // node_modules) into resources/openconnector/. At runtime the supervisor spawns
-// `node <tsx> src/server/index.ts` (see electron/supervisor/descriptors.js).
+// `node <tsx> src/server/index.ts` (see supervisor/descriptors.js).
 //
 // Fixes for failures seen in the previous bundle-services attempt:
 //  1. Thread http_proxy into `git clone -c http.proxy=...` explicitly.

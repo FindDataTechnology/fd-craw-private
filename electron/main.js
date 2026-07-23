@@ -7,7 +7,7 @@
 //
 // Run in dev with:  npm start:electron   (npm run dist builds a distributable)
 
-import { app, BrowserWindow, Menu } from "electron";
+import { app, BrowserWindow, Menu, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import "dotenv/config"; // read .env for LITELLM_BASE_URL / OPENCONNECTOR_BASE_URL (dev)
@@ -139,6 +139,13 @@ function openWindow(url) {
   });
   mainWindow.loadURL(url);
   mainWindow.on("closed", () => { mainWindow = null; });
+  // Open external http(s) links (e.g. the LiteLLM management dashboard at
+  // http://localhost:<port>/ui) in the user's default browser instead of a new
+  // Electron window, so target="_blank" links work in the packaged app.
+  mainWindow.webContents.setWindowOpenHandler(({ url: target }) => {
+    if (/^https?:\/\//i.test(target)) shell.openExternal(target);
+    return { action: "deny" };
+  });
 }
 
 function openErrorWindow(message) {

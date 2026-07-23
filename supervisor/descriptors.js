@@ -16,6 +16,16 @@
 import fs from "node:fs";
 import path from "node:path";
 
+// Cross-platform binary paths. python-build-standalone and Python venvs lay out
+// their executables differently on Windows vs Unix:
+//   python: mac/linux -> python/bin/python3 ; win -> python/python.exe
+//   venv:   unix -> venv/bin/litellm        ; win -> venv/Scripts/litellm.exe
+const IS_WIN = process.platform === "win32";
+const PYTHON_BIN_PARTS = IS_WIN ? ["python.exe"] : ["bin", "python3"];
+const LITELLM_BIN_PARTS = IS_WIN ? ["venv", "Scripts", "litellm.exe"] : ["venv", "bin", "litellm"];
+const pythonBinPath = (root) => path.join(root, "python", ...PYTHON_BIN_PARTS);
+const litellmBinPath = (llmRoot) => path.join(llmRoot, ...LITELLM_BIN_PARTS);
+
 // Check if bundled resources exist (relative to projectRoot in dev, process.resourcesPath when packaged)
 function getResourceRoot(projectRoot) {
   // Packaged: resources/ under app.getPath("resources") which is process.resourcesPath
@@ -37,11 +47,11 @@ export function hasBundledLiteLLM(projectRoot) {
   const root = getResourceRoot(projectRoot);
   // dev-mode override from env
   if (process.env.PLATFORM_LITELLM_BUNDLED_ROOT) {
-    return fs.existsSync(path.join(process.env.PLATFORM_LITELLM_BUNDLED_ROOT, "venv", "bin", "litellm")) &&
-           fs.existsSync(path.join(root, "python", "bin", "python3"));
+    return fs.existsSync(litellmBinPath(process.env.PLATFORM_LITELLM_BUNDLED_ROOT)) &&
+           fs.existsSync(pythonBinPath(root));
   }
-  return fs.existsSync(path.join(root, "litellm", "venv", "bin", "litellm")) &&
-         fs.existsSync(path.join(root, "python", "bin", "python3"));
+  return fs.existsSync(litellmBinPath(path.join(root, "litellm"))) &&
+         fs.existsSync(pythonBinPath(root));
 }
 
 export function getDescriptors({
@@ -87,7 +97,7 @@ export function getDescriptors({
         cwd: ocCwd,
         env: {
           PORT: String(ocPort),
-          DATABASE_URL: `sqlite://${path.join(dataDir || projectRoot, "openconnector.db")}`,
+          DATABASE_URL: `sqlite://${path.join(dataDir || projectRoot, "openconnector.db").replace(/\\/g, "/")}`,
           RUNTIME_TOKEN: agentEnv.OPENCONNECTOR_RUNTIME_TOKEN || "",
           ADMIN_TOKEN: agentEnv.OPENCONNECTOR_ADMIN_TOKEN || "",
           NODE_ENV: "production",
@@ -116,8 +126,7 @@ export function getDescriptors({
   let litellmDescriptor;
   if (bundledLiteLLM) {
     const llmRoot = process.env.PLATFORM_LITELLM_BUNDLED_ROOT || path.join(resourceRoot, "litellm");
-    const pythonBin = path.join(resourceRoot, "python", "bin", "python3");
-    const litellmBin = path.join(llmRoot, "venv", "bin", "litellm");
+    const litellmBin = litellmBinPath(llmRoot);
     litellmDescriptor = {
       id: "litellm",
       name: "LiteLLM gateway",

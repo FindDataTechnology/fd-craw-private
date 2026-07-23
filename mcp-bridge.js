@@ -150,34 +150,49 @@ async function safeClose(client) {
 // the whole load. Extracted from connectMcpServers so callers can merge servers
 // from multiple sources (the mcp.json file + an env-built OpenConnector server)
 // into one connect pass.
-export async function connectServers({ mcpServers } = {}) {
+//
+// `retry` ({ retries, intervalMs }) retries each server's connect+listTools -
+// used for servers that start in parallel with server.js (e.g. the bundled
+// OpenConnector) and may not be ready on the first attempt.
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+export async function connectServers({ mcpServers } = {}, { retries = 0, intervalMs = 2000 } = {}) {
   const tools = [];
   const clients = [];
 
   const servers = mcpServers || {};
   for (const [name, serverConfig] of Object.entries(servers)) {
-    try {
-      const client = await connectServer(name, serverConfig);
-      let toolList = [];
+    let connected = false;
+    for (let attempt = 0; attempt <= retries && !connected; attempt++) {
       try {
-        const resp = await withTimeout(
-          client.listTools(),
-          CONNECT_TIMEOUT_MS,
-          new AbortController(),
-          `listTools "${name}"`
-        );
-        toolList = resp.tools || [];
+        const client = await connectServer(name, serverConfig);
+        let toolList = [];
+        try {
+          const resp = await withTimeout(
+            client.listTools(),
+            CONNECT_TIMEOUT_MS,
+            new AbortController(),
+            `listTools "${name}"`
+          );
+          toolList = resp.tools || [];
+        } catch (err) {
+          await safeClose(client);
+          throw new Error(`listTools "${name}" failed: ${err.message}`);
+        }
+        clients.push({ name, client });
+        for (const tool of toolList) {
+          tools.push(buildToolDefinition(name, tool, client));
+        }
+        console.log(`[mcp] Connected "${name}": ${toolList.length} tool(s)${attempt > 0 ? ` (after ${attempt} retr${attempt === 1 ? "y" : "ies"})` : ""}`);
+        connected = true;
       } catch (err) {
-        await safeClose(client);
-        throw new Error(`listTools "${name}" failed: ${err.message}`);
+        if (attempt < retries) {
+          console.log(`[mcp] "${name}" connect failed (attempt ${attempt + 1}/${retries + 1}): ${err.message}; retrying in ${intervalMs}ms`);
+          await sleep(intervalMs);
+        } else {
+          console.warn(`[mcp] ${err.message}; skipping after ${retries + 1} attempt(s)`);
+        }
       }
-      clients.push({ name, client });
-      for (const tool of toolList) {
-        tools.push(buildToolDefinition(name, tool, client));
-      }
-      console.log(`[mcp] Connected "${name}": ${toolList.length} tool(s)`);
-    } catch (err) {
-      console.warn(`[mcp] ${err.message}; skipping`);
     }
   }
 

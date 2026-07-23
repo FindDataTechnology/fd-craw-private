@@ -6,8 +6,9 @@
 #     cannot read inside an asar archive). Native addons (better-sqlite3,
 #     tree-sitter) run on the bundled Node's standard ABI - no rebuild.
 #   - extraResources: resources/node → <app>/Resources/node  (the bundled Node)
-#   - mac arm64 (this machine); win x64 target declared (build on a Windows/CI
-#     host for a Windows .exe).
+#   - mac arm64 + win x64 targets. The bundled-resource build (scripts/build-*.js)
+#     is cross-platform Node; build the .exe on a Windows host so Windows
+#     python-build-standalone + venv (venv/Scripts/litellm.exe) are produced.
 #
 # Build with:  npm run dist
 
@@ -26,6 +27,8 @@ files:
   - "paths.js"
   - "*.js"
   - "electron/**"
+  - "supervisor/**"
+  - "bootstrap/**"
   - "public/**"
   - "web/dist/**"
   - "skills/**"

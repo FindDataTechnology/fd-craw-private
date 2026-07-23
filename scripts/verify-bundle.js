@@ -9,6 +9,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const RESOURCES_ROOT = path.join(PROJECT_ROOT, "resources");
 
+// Cross-platform binary paths (mirror supervisor/descriptors.js).
+const IS_WIN = process.platform === "win32";
+const PYTHON_BIN_PARTS = IS_WIN ? ["python.exe"] : ["bin", "python3"];
+const LITELLM_BIN_PARTS = IS_WIN ? ["venv", "Scripts", "litellm.exe"] : ["venv", "bin", "litellm"];
+// Python/LiteLLM are required on the two build targets (mac arm64, win x64).
+const PY_TARGET = (process.platform === "darwin" && process.arch === "arm64") ||
+                  (process.platform === "win32" && process.arch === "x64");
+
 const checks = [
   {
     name: "OpenConnector",
@@ -17,13 +25,13 @@ const checks = [
   },
   {
     name: "Python runtime",
-    path: path.join(RESOURCES_ROOT, "python", "bin", "python3"),
-    required: process.env.PLATFORM_SKIP_PYTHON_BUILD ? false : process.arch === "arm64" && process.platform === "darwin",
+    path: path.join(RESOURCES_ROOT, "python", ...PYTHON_BIN_PARTS),
+    required: process.env.PLATFORM_SKIP_PYTHON_BUILD ? false : PY_TARGET,
   },
   {
     name: "LiteLLM venv",
-    path: path.join(RESOURCES_ROOT, "litellm", "venv", "bin", "litellm"),
-    required: process.env.PLATFORM_SKIP_PYTHON_BUILD ? false : process.arch === "arm64" && process.platform === "darwin",
+    path: path.join(RESOURCES_ROOT, "litellm", ...LITELLM_BIN_PARTS),
+    required: process.env.PLATFORM_SKIP_PYTHON_BUILD ? false : PY_TARGET,
   },
   {
     name: "LiteLLM default config",

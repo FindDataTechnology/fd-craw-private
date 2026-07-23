@@ -44,6 +44,10 @@ export default defineConfig({
       ...process.env,
       PORT: String(E2E_PORT),
       HOST: "127.0.0.1",
+      // The e2e suite runs `node server.js` directly (no launcher, no bundled
+      // OC). Disable OpenConnector so server.js doesn't spend ~30s retrying its
+      // MCP connection. OC views are tested via stubConfig, not a real runtime.
+      OPENCONNECTOR_BASE_URL: "",
       CHAT_HISTORY_STORE_DIR: storeDirs.chat,
       DOCUMENTS_STORE_DIR: storeDirs.docs,
       SESSIONS_STORE_DIR: storeDirs.sessions,

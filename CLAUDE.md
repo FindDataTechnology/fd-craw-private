@@ -12,13 +12,16 @@ This is a **greenfield, ESM** Node project (`"type": "module"`). The backend rem
 
 ```bash
 npm install        # installs backend + runs postinstall that installs & builds web/
-npm start          # node server.js — serves http://localhost:3000 (PORT/HOST env overridable)
-                   #   / and all routes -> React SPA from web/dist/ (client-side router)
+npm start          # headless launcher (scripts/start.js) - spawns the bundled LiteLLM +
+                   #   OpenConnector locally (when resources/ are built and no external URL is
+                   #   set in .env) plus server.js; serves http://localhost:3000 (PORT/HOST env overridable).
 npm run web:dev    # Vite dev server on :5173 with HMR (backend must ALSO run on :3000)
 npm run web:build  # rebuild web/dist without touching backend deps
 ```
 
 Set `PLATFORM_SKIP_WEB_BUILD=1` to skip the postinstall frontend build (CI, or when iterating with `web:dev`).
+
+**Local services (`npm start`):** the launcher reuses the desktop supervisor's shared primitives (`supervisor/`) to bring up the bundled LiteLLM (Python venv) and OpenConnector (Node/tsx) as localhost child processes on the ports parsed from their .env URLs (LiteLLM 4000, OpenConnector 3001 by default), injecting `LITELLM_BASE_URL` / `OPENCONNECTOR_BASE_URL` into `server.js`'s env. Build the resources first with `npm run predist` (or `node scripts/build-openconnector.js && sh scripts/build-python-litellm.sh`); the OC build generates `resources/openconnector/src/providers/registry.generated.ts` (the action catalog) which must be present at runtime. Set `LITELLM_BASE_URL` / `OPENCONNECTOR_BASE_URL` to localhost URLs in `.env` (e.g. `http://localhost:4000`, `http://localhost:3001`) to run the project's internal services on those ports; set a non-localhost URL to use a remote server instead. Generated credentials + seeded `litellm.yaml` persist to `dev-settings.json` / `litellm.yaml` under `PLATFORM_DATA_DIR` (CWD-relative when unset), gitignored. When resources are absent or external URLs are set, the launcher degrades to running `server.js` alone.
 
 To run the web server with a different port: `PORT=8080 npm start`. To run the desktop app: `npm run start:electron` (the supervisor assigns server.js a dynamic free port and loads `http://localhost:<port>` in the window). `npm run dist` produces `dist/Platform-<version>-arm64.dmg`.
 
@@ -29,8 +32,8 @@ The `openspec` CLI (v1.4.1, `@fission-ai/openspec`, installed globally) drives s
 Everything sensitive or environment-specific lives in **`.env`** (gitignored) and **`mcp.json`** (gitignored). `mcp.example.json` is the template. The server degrades gracefully when optional config is missing — it always starts.
 
 - `VOLCES_API_KEY` / `VOLCES_BASE_URL` — the hardcoded default provider (火山引擎/Volces Coding). A fallback API key is baked into `server.js`; override via env.
-- `LITELLM_BASE_URL` / `LITELLM_API_KEY` — registers the `pi-provider-litellm` extension as an extra provider. If either is unset, litellm is skipped (server starts Volces-only).
-- `OPENCONNECTOR_BASE_URL` (+ `OPENCONNECTOR_RUNTIME_TOKEN`, `OPENCONNECTOR_ADMIN_TOKEN`) — enables the OpenConnector panel, MCP registration, and the embedded native web UI at `/oc-web`. Unset = fully disabled.
+- `LITELLM_BASE_URL` / `LITELLM_API_KEY` — registers the `pi-provider-litellm` extension as an extra provider. If either is unset, litellm is skipped (server starts Volces-only). Under `npm start`, setting this to a localhost URL (e.g. `http://localhost:4000`) makes the launcher spawn the **bundled local LiteLLM** on that port (see Local services above); set a non-localhost URL to use a remote proxy.
+- `OPENCONNECTOR_BASE_URL` (+ `OPENCONNECTOR_RUNTIME_TOKEN`, `OPENCONNECTOR_ADMIN_TOKEN`) — enables the OpenConnector panel, MCP registration, and the embedded native web UI at `/oc-web`. Unset = fully disabled. Under `npm start`, setting this to a localhost URL (e.g. `http://localhost:3001`) makes the launcher spawn the **bundled local OpenConnector** on that port; set a non-localhost URL to use a remote runtime.
 - `DOCUMENTS_MODEL` — model id used for document indexing/retrieval (default `deepseek-v4-pro`); must be a model registered on the Volces provider.
 - `PORT` / `HOST` — bind address (default `3000` / `localhost`).
 - `PLATFORM_DATA_DIR` - root for all on-disk stores (SQLite, sessions, cron). Unset in dev (stores stay relative to CWD); the Electron supervisor sets this to `app.getPath('userData')` when packaged so state lands in a per-user, update-safe directory (the macOS bundle is read-only). See `paths.js`.
@@ -46,9 +49,9 @@ The Electron main process (`electron/main.js`) runs NO app logic - it is a proce
 | `server-js` | Node (bundled) | Platform backend | `resources/node/` already ships bundled Node |
 | `pi-agent` | Node (bundled) | In-process via SDK (disabled for extraction) | disabled until phase 2 |
 | **OpenConnector** | Node (bundled) | 1000+ SaaS actions connector | Built from pinned git SHA into `resources/openconnector/`, spawned on a free port |
-| **LiteLLM** | Python (bundled) | LLM proxy/gateway | `python-build-standalone` + venv with pinned litellm in `resources/{python,litellm}/` |
+| **LiteLLM** | Python (bundled) | LLM proxy/gateway | `python-build-standalone` + venv with pinned litellm in `resources/{python,litellm}/` (mac arm64 + win x64) |
 
-`asar: false` because the standalone Node cannot read inside an asar archive. `npmRebuild: false` because native addons run under the bundled Node's ABI. Spec: `openspec/specs/desktop-supervisor/`. Build: `npm run start:electron` (dev), `npm run dist` -> `dist/Platform-<ver>-arm64.dmg` (macOS arm64 only in this change).
+`asar: false` because the standalone Node cannot read inside an asar archive. `npmRebuild: false` because native addons run under the bundled Node's ABI. Spec: `openspec/specs/desktop-supervisor/`. Build: `npm run start:electron` (dev), `npm run dist` -> `dist/Platform-<ver>-arm64.dmg` (mac arm64) or a Windows x64 `.exe`. The bundled-resource build (`scripts/build-openconnector.js`, `scripts/build-python-litellm.js`) is cross-platform Node and runs on both macOS and Windows; build the `.exe` on a Windows host so the Windows python-build-standalone + venv (`venv/Scripts/litellm.exe`) are produced. `supervisor/descriptors.js` resolves the platform-correct python/venv binary paths.
 
 ### server.js — the orchestrator
 Single Express app + `ws` WebSocketServer. At startup it: (1) connects MCP servers, (2) registers providers + skills on a pi `DefaultResourceLoader`, (3) creates one module-scoped agent `session`, (4) subscribes to agent events and re-broadcasts them to all WS clients via `broadcast()`. One agent session serves all connected clients (it is **not** per-connection). REST routes under `/api/documents/*`, `/api/chat-history/*`, and `/api/openconnector/*` are mounted alongside static file serving of `public/`. When OpenConnector is enabled, a token-injecting reverse proxy at `/oc-web` (plus root-level `/assets/*`, `/v1/*`, and a `/api/*` catch-all registered after the app's own `/api/*` routes) embeds the runtime's native management UI in a same-origin iframe.
