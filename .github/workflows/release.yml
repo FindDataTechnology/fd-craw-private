@@ -1,0 +1,123 @@
+# ── Release: build .dmg (mac arm64) + .exe (win x64) on tag / dispatch ─────────
+#
+# Triggers:
+#   - push tag v*        -> build both, attach installers to a GitHub Release
+#   - workflow_dispatch  -> build both, upload as workflow artifacts (no release)
+#
+# Two-runner matrix (not cross-compile): the bundled LiteLLM venv is built by
+# `pip install` against the host interpreter, so a Windows venv cannot be
+# produced on macOS (and vice-versa). `build-node.js` auto-matches the bundled
+# standalone Node to the Node running the build (process.version), so the
+# native-addon ABI parity holds on whichever Node `setup-node` provides.
+#
+# Signing is gated on secrets: when CSC_LINK / WIN_CSC_LINK (+ notarization
+# secrets) are present the installers are signed/notarized; when absent the
+# build still succeeds unsigned (CI smoke). See openspec change
+# `ci-build-installers`.
+
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write # softprops/action-gh-release creates/edits the Release
+
+jobs:
+  build:
+    name: build (${{ matrix.artifact }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest # Apple Silicon (arm64) -> matches the mac target
+            artifact: dmg
+          - os: windows-latest # x64 -> matches the win target
+            artifact: exe
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # LTS; build-node.js bundles this same version (process.version) so the
+      # native-addon ABI matches the install-time ABI. Track the project's dev
+      # Node here - bump together if you move off this version.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # Cache the bundled resources (OpenConnector + Node + Python + LiteLLM
+      # venv). predist is idempotent and skips when present, so a cache hit turns
+      # the heaviest step (litellm pip install) into a no-op. Keyed by OS +
+      # platformBundles (in package.json) so a pin bump rebuilds.
+      - name: Cache resources/
+        uses: actions/cache@v4
+        with:
+          path: resources
+          key: resources-${{ matrix.os }}-${{ hashFiles('package.json') }}
+          restore-keys: |
+            resources-${{ matrix.os }}-
+
+      # postinstall installs web/ deps + builds web/dist AND builds the bundled
+      # resources (when not cached). predist then ensures the bundled Node is
+      # built and verifies all resources. No skip flags - idempotency handles it.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build bundled resources + verify
+        run: npm run predist
+
+      - name: Build web + package installers
+        env:
+          # macOS signing + notarization (gated - empty/absent = unsigned;
+          # electron-builder's built-in `mac.notarize` skips when APPLE_* env
+          # is absent, so unsigned CI smoke builds still succeed)
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows signing (gated - empty/absent = unsigned)
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npm run dist
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-${{ matrix.artifact }}
+          path: |
+            dist/*.dmg
+            dist/*.exe
+            dist/latest*.yml
+          if-no-files-found: error
+
+  release:
+    name: publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download mac installer
+        uses: actions/download-artifact@v4
+        with:
+          name: platform-dmg
+          path: dist
+      - name: Download windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: platform-exe
+          path: dist
+      - name: Create / update release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.dmg
+            dist/*.exe

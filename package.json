@@ -4,10 +4,13 @@
   "version": "1.0.0",
   "description": "Platform - browser-based AI assistant built on the pi-coding-agent SDK",
   "main": "electron/main.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node scripts/start.js",
     "start:electron": "electron .",
-    "predist": "node scripts/build-openconnector.js && node scripts/build-python-litellm.js && node scripts/verify-bundle.js",
+    "predist": "node scripts/build-openconnector.js && node scripts/build-node.js && node scripts/build-python-litellm.js && node scripts/verify-bundle.js",
     "dist": "npm --prefix web run build && electron-builder",
     "clean:bundle": "rm -rf resources/openconnector resources/python resources/litellm/venv",
     "test:e2e": "playwright test --project=fast",

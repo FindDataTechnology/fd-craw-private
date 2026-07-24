@@ -120,9 +120,21 @@ mac:
   target:
     - target: dmg
       arch: [arm64]
-  # Signing (task 4.8): set CSC_LINK / CSC_KEY_PASSWORD env to sign with a
-  # Developer ID. Notarization needs an afterSign hook + APPLE_ID/APP_PASSWORD.
-  # Unsigned builds run on the dev machine but won't pass Gatekeeper elsewhere.
+  # Code signing + notarization (see .github/workflows/release.yml):
+  #   - Set CSC_LINK / CSC_KEY_PASSWORD env (base64 .p12 + password) to sign
+  #     with a Developer ID. Absent -> unsigned build (still succeeds).
+  #   - `notarize: true` delegates to @electron/notarize using APPLE_ID /
+  #     APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID env. electron-builder
+  #     SKIPS notarization with a warning when those env vars are absent, so
+  #     unsigned CI smoke builds succeed.
+  #   - hardenedRuntime is required for notarization; applied during signing
+  #     only (no-op for unsigned builds).
+  #   - TODO (when certs are provisioned): the bundled standalone Node (V8 JIT)
+  #     spawned by the supervisor likely needs entitlements
+  #     (com.apple.security.cs.allow-jit / allow-unsigned-executable-memory)
+  #     to run under hardened runtime. Unsigned builds are unaffected.
+  hardenedRuntime: true
+  notarize: true
 
 win:
   target:

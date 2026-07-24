@@ -60,7 +60,7 @@ async function boot() {
   // Dev: stores stay in the project dir; system `node` runs children.
   const dataDir = app.isPackaged ? app.getPath("userData") : (process.env.PLATFORM_DATA_DIR || "");
   const nodeBin = app.isPackaged
-    ? path.join(process.resourcesPath, "node", "bin", "node")
+    ? path.join(process.resourcesPath, "node", ...(process.platform === "win32" ? ["node.exe"] : ["bin", "node"]))
     : (process.env.PLATFORM_NODE_BIN || "node");
   const resourcesDir = app.isPackaged ? process.resourcesPath : path.join(PROJECT_ROOT, "resources");
 

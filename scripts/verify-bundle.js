@@ -24,6 +24,11 @@ const checks = [
     required: process.env.PLATFORM_SKIP_OC_BUILD ? false : true,
   },
   {
+    name: "Bundled Node",
+    path: path.join(RESOURCES_ROOT, "node", ...(IS_WIN ? ["node.exe"] : ["bin", "node"])),
+    required: process.env.PLATFORM_SKIP_NODE_BUILD ? false : PY_TARGET,
+  },
+  {
     name: "Python runtime",
     path: path.join(RESOURCES_ROOT, "python", ...PYTHON_BIN_PARTS),
     required: process.env.PLATFORM_SKIP_PYTHON_BUILD ? false : PY_TARGET,
