@@ -90,6 +90,13 @@ export function runFirstRun(opts) {
       fs.renameSync(tempPath, litellmUserPath);
       console.log("[bootstrap] Seeded default litellm.yaml to", litellmUserPath);
     }
+
+    // Step 6b: Make the bundled venv relocatable. `python -m venv` (run on the
+    // CI runner) bakes absolute runner paths into bin/python3 (symlink target)
+    // and pyvenv.cfg `home` - both break when the app is installed elsewhere.
+    // The `litellm` wrapper shebang is bypassed by the supervisor (it invokes
+    // litellm via the venv python), so only the symlink + pyvenv.cfg need fixing.
+    fixupBundledVenv(resourcesDir);
   }
 
   // Step 7: Write settings atomically if we changed it OR it didn't exist
@@ -101,4 +108,40 @@ export function runFirstRun(opts) {
   }
 
   return merged;
+}
+
+// Make the bundled LiteLLM venv relocatable (mac only; Windows venv copies
+// python.exe so there's no symlink/home issue). Idempotent + non-fatal.
+function fixupBundledVenv(resourcesDir) {
+  if (process.platform === "win32") return;
+  const venvDir = path.join(resourcesDir, "litellm", "venv");
+  const venvBin = path.join(venvDir, "bin");
+  const python3Link = path.join(venvBin, "python3");
+  // Relative from venv/bin/ to the bundled python: bin -> venv -> litellm -> resources -> python/bin
+  const relTarget = "../../../python/bin/python3";
+  try {
+    const cur = fs.existsSync(python3Link) && fs.readlinkSync(python3Link);
+    if (cur !== relTarget) {
+      fs.rmSync(python3Link, { force: true });
+      fs.symlinkSync(relTarget, python3Link);
+      console.log("[bootstrap] Repointed venv python3 -> relative bundled python");
+    }
+    // pyvenv.cfg `home` must be absolute (relative isn't supported by CPython)
+    // and points to the runner's python bin in a fresh build -> pin to the local
+    // bundled python. Re-pinned each launch (self-heals if the app is moved).
+    const pyvenvCfg = path.join(venvDir, "pyvenv.cfg");
+    if (fs.existsSync(pyvenvCfg)) {
+      const pyBin = path.join(resourcesDir, "python", "bin");
+      let cfg = fs.readFileSync(pyvenvCfg, "utf8");
+      const before = cfg;
+      cfg = cfg.replace(/^home = .*/m, `home = ${pyBin}`);
+      cfg = cfg.replace(/^executable = .*/m, `executable = ${path.join(pyBin, "python3.13")}`);
+      if (cfg !== before) {
+        fs.writeFileSync(pyvenvCfg, cfg);
+        console.log("[bootstrap] Pinned venv pyvenv.cfg home/executable -> local bundled python");
+      }
+    }
+  } catch (e) {
+    console.warn("[bootstrap] venv relocation fixup failed (non-fatal):", e.message);
+  }
 }

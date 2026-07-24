@@ -23,8 +23,15 @@ import path from "node:path";
 const IS_WIN = process.platform === "win32";
 const PYTHON_BIN_PARTS = IS_WIN ? ["python.exe"] : ["bin", "python3"];
 const LITELLM_BIN_PARTS = IS_WIN ? ["venv", "Scripts", "litellm.exe"] : ["venv", "bin", "litellm"];
+// The venv python interpreter. On mac the `litellm` wrapper script's shebang is
+// an absolute path baked at venv-creation time (the CI runner's path) which
+// breaks when the app is installed elsewhere - so litellm is invoked via the
+// venv python directly (bypassShebang in the litellm descriptor) instead of
+// exec'ing the wrapper script and trusting its shebang.
+const VENV_PYTHON_PARTS = IS_WIN ? ["venv", "Scripts", "python.exe"] : ["venv", "bin", "python"];
 const pythonBinPath = (root) => path.join(root, "python", ...PYTHON_BIN_PARTS);
 const litellmBinPath = (llmRoot) => path.join(llmRoot, ...LITELLM_BIN_PARTS);
+const litellmPythonPath = (llmRoot) => path.join(llmRoot, ...VENV_PYTHON_PARTS);
 
 // Check if bundled resources exist (relative to projectRoot in dev, process.resourcesPath when packaged)
 function getResourceRoot(projectRoot) {
@@ -127,6 +134,12 @@ export function getDescriptors({
   if (bundledLiteLLM) {
     const llmRoot = process.env.PLATFORM_LITELLM_BUNDLED_ROOT || path.join(resourceRoot, "litellm");
     const litellmBin = litellmBinPath(llmRoot);
+    // On mac, invoke litellm via the venv python directly: the `litellm` wrapper
+    // script's shebang is an absolute path baked at venv-creation time (the CI
+    // runner's path) which breaks when the app is installed elsewhere. Windows
+    // uses litellm.exe (a real launcher, no shebang) so it runs directly.
+    const bypassShebang = process.platform !== "win32";
+    const litellmPython = litellmPythonPath(llmRoot);
     litellmDescriptor = {
       id: "litellm",
       name: "LiteLLM gateway",
@@ -135,13 +148,19 @@ export function getDescriptors({
       enabled: true,
       optional: true,
       start: {
-        cmd: litellmBin,
-        args: ["--port", String(litellmPort), "--config", path.join(dataDir || projectRoot, "litellm.yaml")],
+        cmd: bypassShebang ? litellmPython : litellmBin,
+        args: [...(bypassShebang ? [litellmBin] : []), "--port", String(litellmPort), "--config", path.join(dataDir || projectRoot, "litellm.yaml")],
         cwd: llmRoot,
         env: {
           VOLCES_API_KEY: agentEnv.VOLCES_API_KEY || "",
           VOLCES_BASE_URL: agentEnv.VOLCES_BASE_URL || "https://aquasearch.volces.com",
           LITELLM_API_KEY: agentEnv.LITELLM_API_KEY || "",
+          // Volces plan/v3 upstream for the Agent-harness alias + plan models (litellm.yaml
+          // references these via os.environ/). Two keys for rotation.
+          VOLCES_PLAN_BASE_URL:
+            agentEnv.VOLCES_PLAN_BASE_URL || "https://ark.cn-beijing.volces.com/api/plan/v3",
+          VOLCES_PLAN_KEY_1: agentEnv.VOLCES_PLAN_KEY_1 || "",
+          VOLCES_PLAN_KEY_2: agentEnv.VOLCES_PLAN_KEY_2 || "",
         },
       },
       url: `http://localhost:${litellmPort}`,

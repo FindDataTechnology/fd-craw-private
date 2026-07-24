@@ -20,7 +20,7 @@ import { LogStore } from "./logs.js";
 
 const HEALTH_POLL_MS = 3000; // ongoing probe interval
 const START_PROBE_MS = 500; // probe interval while waiting for a fresh start
-const START_TIMEOUT_MS = 45000; // how long to wait for a server to go green
+const START_TIMEOUT_MS = 120000; // how long to wait for a server to go green (server.js cold-start - MCP/provider/agent init before listen - can take ~50s)
 const RESTART_BACKOFFS = [1000, 2000, 5000, 10000, 15000];
 
 export class Supervisor {
