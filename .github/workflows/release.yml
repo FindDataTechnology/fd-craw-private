@@ -42,12 +42,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # LTS; build-node.js bundles this same version (process.version) so the
-      # native-addon ABI matches the install-time ABI. Track the project's dev
-      # Node here - bump together if you move off this version.
+      # Node 25 (not an LTS) MUST match the version package-lock.json was
+      # generated under (npm 11). Node 22's npm 10 misreads the npm-11 lock
+      # ("Missing: zod@... from lock file"). build-node.js bundles this same
+      # version (process.version) so the bundled-Node ABI matches the install
+      # ABI. Bump together with the project's dev Node if you regenerate the lock.
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '25'
           cache: 'npm'
 
       # Cache the bundled resources (OpenConnector + Node + Python + LiteLLM
