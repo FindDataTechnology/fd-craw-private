@@ -15,14 +15,20 @@ The release pipeline SHALL build a working desktop installer from a fresh checko
 - **AND** `verify-bundle.js` fails the build if the platform-correct Node binary is missing
 
 ### Requirement: Platform matrix build
-The release pipeline SHALL build the macOS and Windows installers on their native runners in parallel, because the bundled Python/LiteLLM venv is host-interpreter-specific and cannot be cross-built.
+The release pipeline SHALL build the macOS (arm64 + x64) and Windows installers as parallel matrix jobs. The bundled Python/LiteLLM venv is host-interpreter-specific and cannot be cross-built; the macOS x64 build runs on the arm64 runner via Rosetta (`setup-node architecture: x64`), so `npm ci` compiles native addons for the x64 ABI and `build-node.js`/`build-python-litellm.js` (arch-aware via `process.arch`) fetch the x64 assets. The arch is selected per job by the `--arm64`/`--x64` flag (no `mac.target.arch` config list, which would make every job build all archs).
 
-#### Scenario: macOS arm64 runner builds the dmg
-- **WHEN** the matrix job for `macos-latest` runs
+#### Scenario: macOS arm64 job builds the dmg
+- **WHEN** the matrix job for `macos-latest` arm64 runs
 - **THEN** it builds the arm64 `python-build-standalone` asset and venv
 - **AND** produces the `Platform-<version>-arm64.dmg`
 
-#### Scenario: Windows x64 runner builds the exe
+#### Scenario: macOS x64 job builds the dmg via Rosetta
+- **WHEN** the matrix job for `macos-latest` x64 runs
+- **THEN** it installs Rosetta and sets up x64 Node
+- **AND** builds the x86_64-apple-darwin `python-build-standalone` asset and venv (python runs via Rosetta)
+- **AND** produces the `Platform-<version>-x64.dmg`
+
+#### Scenario: Windows x64 job builds the exe
 - **WHEN** the matrix job for `windows-latest` runs
 - **THEN** it builds the x86_64-msvc `python-build-standalone` asset and venv (`venv/Scripts/litellm.exe`)
 - **AND** produces the `Platform Setup <version>.exe` (NSIS)
@@ -37,11 +43,11 @@ Because native addons run under the bundled standalone Node with `npmRebuild: fa
 - **AND** the bundled Node therefore loads `better-sqlite3`/`tree-sitter`/`fsevents` without rebuild
 
 ### Requirement: Tag-triggered release
-The release pipeline SHALL publish a GitHub Release with both installers attached when a `v*` tag is pushed, and SHALL also support an on-demand (`workflow_dispatch`) build that uploads artifacts without cutting a release.
+The release pipeline SHALL publish a GitHub Release with all installers (mac arm64 + x64 + win) attached when a `v*` tag is pushed, and SHALL also support an on-demand (`workflow_dispatch`) build that uploads artifacts without cutting a release.
 
 #### Scenario: Tag push creates a release
 - **WHEN** a tag matching `v*` is pushed
-- **THEN** both matrix jobs build their installer
+- **THEN** all matrix jobs build their installer
 - **AND** a GitHub Release is created (or updated) with the `.dmg` and `.exe` attached
 
 #### Scenario: Manual dispatch uploads artifacts

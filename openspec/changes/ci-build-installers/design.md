@@ -1,6 +1,6 @@
 ## Context
 
-The Platform desktop app is packaged with `electron-builder` (`electron-builder.yml`): `mac` target `dmg` arm64-only, `win` target `nsis` x64. `asar: false` because a **bundled standalone Node** (`resources/node/`) runs `server.js` + the LiteLLM/OpenConnector sidecars - it cannot read inside an asar archive. `npmRebuild: false` because native addons (`better-sqlite3`, `tree-sitter`, `fsevents`) run on the **bundled Node's standard ABI** using the prebuilt `.node` files already in `node_modules` - no `electron-rebuild`.
+The Platform desktop app is packaged with `electron-builder` (`electron-builder.yml`): `mac` target `dmg` (arm64 + x64), `win` target `nsis` x64. `asar: false` because a **bundled standalone Node** (`resources/node/`) runs `server.js` + the LiteLLM/OpenConnector sidecars - it cannot read inside an asar archive. `npmRebuild: false` because native addons (`better-sqlite3`, `tree-sitter`, `fsevents`) run on the **bundled Node's standard ABI** using the prebuilt `.node` files already in `node_modules` - no `electron-rebuild`.
 
 The build flow is:
 
@@ -23,13 +23,13 @@ Repo is private (`scs001/law-private`), already on GitHub, no `.github/workflows
 ## Goals / Non-Goals
 
 **Goals:**
-- A clean-checkout CI build that produces a working `.dmg` (mac arm64) and `.exe` (win x64) - reproducible, no hand-placed binaries.
-- Tag push (`v*`) cuts a GitHub Release with both installers attached; `workflow_dispatch` for on-demand builds.
+- A clean-checkout CI build that produces a working `.dmg` (mac arm64 + x64) and `.exe` (win x64) - reproducible, no hand-placed binaries.
+- Tag push (`v*`) cuts a GitHub Release with all installers (arm64 + x64 + win) attached; `workflow_dispatch` for on-demand builds.
 - Code signing + notarization work **when secrets are present** and degrade gracefully (unsigned build still succeeds) when they are not.
 - Close the `resources/node/` build gap so local `predist` is also self-sufficient.
 
 **Non-Goals:**
-- Linux packaging, macOS Intel/x64 or universal, iOS/Android, hosted backend.
+- Linux packaging, macOS universal (single dmg for both arches; we ship separate arm64 + x64 dmgs instead), iOS/Android, hosted backend.
 - Auto-updates / a release feed (separate change; `electron-updater` later).
 - Cross-compiling both OSes from one runner (ruled out - see D1).
 
@@ -54,7 +54,7 @@ Repo is private (`scs001/law-private`), already on GitHub, no `.github/workflows
 - **[ABI mismatch: bundled Node vs prebuilt native addon]** -> Pin Node version (D4); add a CI assertion that the bundled Node version equals the `setup-node` version and that `better-sqlite3` has a matching prebuild. Fail fast in CI, not in a user's first chat.
 - **[macOS notarization of embedded Node/Python binaries]** -> Sign + notarize the whole bundle (`afterSign` hook runs `electron-notarize`); `python-build-standalone` is generally notarization-friendly (already noted as a risk in the supervisor design). Verify with a real tagged release once certs exist.
 - **[Build time / cost]** -> Caching (D6); tag/dispatch-only (D2). Expect ~10-20 min/job uncached; minutes cached.
-- **[mac arm64-only]** -> Intel Macs unsupported. Acceptable for v1 (all shipping Macs are Apple Silicon); universal is a later config + an `x86_64-apple-darwin` python asset.
+- **[x64 mac via Rosetta]** -> The x64 build runs on the arm64 runner via Rosetta (`setup-node architecture: x64` so `npm ci` compiles native addons for the x64 ABI; `build-node.js`/`build-python-litellm.js` are arch-aware via `process.arch`). Slower than a native Intel runner, but avoids depending on the deprecated `macos-13` Intel runner. **Verified:** run 30080157584 built both arm64 (290 MB) + x64 (294 MB) dmgs green. Two sub-gotchas surfaced: electron-builder uses `--arm64`/`--x64` flags (not `--arch`), and a config `mac.target.arch: [arm64, x64]` list makes EVERY job build ALL archs (so the config arch is omitted and the flag selects).
 - **[Secrets not yet provisioned]** -> Unsigned builds succeed (D5); the first tagged release can ship unsigned with a documented Gatekeeper/SmartScreen bypass until certs arrive.
 - **[python-build-standalone / nodejs.org download flakes]** -> retries in the build scripts; cache `resources/` so a flaky download doesn't repeat.
 

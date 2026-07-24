@@ -20,9 +20,9 @@ See `CLAUDE.md` for the full architecture and configuration reference.
 
 ## Building installers / releases
 
-`npm run dist` packages the Electron desktop app via `electron-builder` (`electron-builder.yml`): a `.dmg` (mac arm64) and a `Setup .exe` (win x64).
+`npm run dist` packages the Electron desktop app via `electron-builder` (`electron-builder.yml`): `.dmg` (mac arm64 + x64) and a `Setup .exe` (win x64).
 
-**CI** (`.github/workflows/release.yml`) builds both on a two-runner matrix (`macos-latest` arm64 + `windows-latest` x64 - the bundled LiteLLM venv is host-specific, so the `.exe` must be built on Windows):
+**CI** (`.github/workflows/release.yml`) builds three on a 3-entry matrix (`macos-latest` arm64, `macos-latest` x64 via Rosetta, + `windows-latest` x64 - the bundled LiteLLM venv is host-specific, so the `.exe` must be built on Windows):
 
 - **Cut a release:** push a `v*` tag (`git tag v1.0.0 && git push --tags`). Both installers are attached to a GitHub Release with auto-generated notes.
 - **On-demand build:** run the workflow via `workflow_dispatch` (Actions tab -> "Run workflow"). Installers are uploaded as workflow artifacts (no release created).

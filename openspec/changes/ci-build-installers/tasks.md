@@ -12,7 +12,7 @@
 - [x] 2.3 Caches - **simplified**: `setup-node cache: npm` (root) + `resources/` keyed by `os + hashFiles('package.json')` (covers the heavy litellm venv via `predist` idempotency). Dropped the pip cache (build-python-litellm uses `--no-cache-dir`, so pip cache is useless) and the electron-builder cache (the resources cache is the real win).
 - [x] 2.4 `npm run predist` then `npm run dist` (signing secrets passed as env).
 - [x] 2.5 `actions/upload-artifact@v4` uploads `dist/*.dmg` (mac) / `dist/*.exe` (win) + `latest*.yml`, `if-no-files-found: error`.
-- [x] 2.6 Separate `release` job (`if: startsWith(github.ref,'refs/tags/v')`, `needs: build`) downloads both artifacts and creates/updates a GitHub Release via `softprops/action-gh-release@v2` with `generate_release_notes: true`. Dispatch builds skip the release.
+- [x] 2.6 Separate `release` job (`if: startsWith(github.ref,'refs/tags/v')`, `needs: build`) downloads all three artifacts (arm64 + x64 + win) and creates/updates a GitHub Release via `softprops/action-gh-release@v2` with `generate_release_notes: true`. Dispatch builds skip the release.
 
 ## 3. Code signing + notarization (gated on secrets)
 
@@ -27,7 +27,7 @@
   - **`resources/litellm/default-config.yaml` untracked** — gitignored + never committed (the embed change's task 6.2 modified it locally only); `build-python-litellm.js` copies it from-itself, so a fresh checkout never had it -> `verify-bundle` failed. Fixed: `git add -f` the template.
   - **Windows `spawnSync('npm')`** — `npm` is `npm.cmd` on Windows; spawnSync can't exec it without a shell -> `postinstall-web.js` silently failed. Fixed: `shell: true`.
   - **Empty-string signing env** — a missing GitHub secret becomes `CSC_LINK=""`, which electron-builder treats as "set" and tries to sign with an empty cert path ("`<project> not a file`"). Fixed: strip empty signing env before `dist` (bash, `shell: bash` on both OSes). Also added `--publish never` (electron-builder in CI triggers implicit publishing; we release via softprops).
-- [ ] 4.2 A `v*` tag produces a GitHub Release with both installers attached and downloadable. **Deferred to CI** - requires pushing a `v*` tag to `origin` (`scs001/law-private`); the `release` job is wired and `if:`-gated on tag. Now that the build is green, a tag will produce a real Release.
+- [ ] 4.2 A `v*` tag produces a GitHub Release with all three installers (arm64 + x64 + win) attached and downloadable. **Deferred to CI** - requires pushing a `v*` tag to `origin` (`scs001/law-private`); the `release` job is wired and `if:`-gated on tag. Now that the build is green, a tag will produce a real Release.
 - [ ] 4.3 (When certs provisioned) signed + notarized `.dmg` passes Gatekeeper on a second Mac; signed `.exe` has no SmartScreen warning. Satisfies `desktop-supervisor` task 4.8. **Blocked on certs** - signing/notarization is wired (env + `mac.notarize`) but cannot be verified without the Apple/Windows certificates. Also needs the entitlements-for-bundled-Node follow-up (see 3.1).
 - [x] 4.4 Local fresh-clone regression: `npm run predist && npm run dist` on mac arm64 produces a working `.dmg` with no pre-existing `resources/node/`. **Verified:** removed `resources/node/`, `build-node.js` rebuilt it from nodejs.org (v25.9.0), `verify-bundle.js` passed, `npm run dist` produced a valid `Platform-1.0.0-arm64.dmg` (308 MB, `hdiutil verify` VALID) with the bundled Node inside the `.app` and runnable. (A truly empty `npm ci` is CI's job; the resources/node gap is confirmed closed.)
 
