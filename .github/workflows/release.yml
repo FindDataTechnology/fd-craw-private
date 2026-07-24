@@ -1,4 +1,4 @@
-# ── Release: build .dmg (mac arm64) + .exe (win x64) on tag / dispatch ─────────
+# ── Release: build .dmg (mac arm64 + x64) + .exe (win x64) on tag / dispatch ───
 #
 # Triggers:
 #   - push tag v*        -> build both, attach installers to a GitHub Release
@@ -33,23 +33,36 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest # Apple Silicon (arm64) -> matches the mac target
-            artifact: dmg
-          - os: windows-latest # x64 -> matches the win target
+          - os: macos-latest # Apple Silicon (arm64)
+            arch: arm64
+            artifact: dmg-arm64
+          - os: macos-latest # arm64 host, x64 target via Rosetta
+            arch: x64
+            artifact: dmg-x64
+          - os: windows-latest # x64
+            arch: x64
             artifact: exe
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
+      # x64 mac build runs on the arm64 runner via Rosetta: install it so the
+      # x64 Node + x64 python-build-standalone binaries can execute.
+      - name: Install Rosetta
+        if: runner.os == 'macOS' && matrix.arch == 'x64'
+        run: softwareupdate --install-rosetta --agree-to-license || true
+
       # Node 25 (not an LTS) MUST match the version package-lock.json was
       # generated under (npm 11). Node 22's npm 10 misreads the npm-11 lock
-      # ("Missing: zod@... from lock file"). build-node.js bundles this same
-      # version (process.version) so the bundled-Node ABI matches the install
-      # ABI. Bump together with the project's dev Node if you regenerate the lock.
+      # ("Missing: zod@... from lock file"). architecture: x64 on the x64 mac
+      # job installs x64 Node (runs via Rosetta) so npm ci compiles
+      # better-sqlite3 for the x64 ABI; build-node.js then bundles the matching
+      # x64 Node (process.arch == x64). Bump with the dev Node if you regen lock.
       - uses: actions/setup-node@v4
         with:
           node-version: '25'
+          architecture: ${{ matrix.arch }}
           cache: 'npm'
 
       # Cache the bundled resources (OpenConnector + Node + Python + LiteLLM
@@ -60,9 +73,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: resources
-          key: resources-${{ matrix.os }}-${{ hashFiles('package.json') }}
+          key: resources-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json') }}
+          # Same-arch only: do NOT fall back across arches (an arm64 cache
+          # restored into the x64 job would skip the rebuild and ship arm64
+          # binaries in an x64 dmg).
           restore-keys: |
-            resources-${{ matrix.os }}-
+            resources-${{ matrix.os }}-${{ matrix.arch }}-
 
       # postinstall installs web/ deps + builds web/dist AND builds the bundled
       # resources (when not cached). predist then ensures the bundled Node is
@@ -95,7 +111,7 @@ jobs:
           for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
             [ -z "${!v}" ] && unset "$v"
           done
-          npm run dist
+          npm run dist -- --arch ${{ matrix.arch }}
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
@@ -115,10 +131,15 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download mac installer
+      - name: Download mac arm64 installer
         uses: actions/download-artifact@v4
         with:
-          name: platform-dmg
+          name: platform-dmg-arm64
+          path: dist
+      - name: Download mac x64 installer
+        uses: actions/download-artifact@v4
+        with:
+          name: platform-dmg-x64
           path: dist
       - name: Download windows installer
         uses: actions/download-artifact@v4

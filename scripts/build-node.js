@@ -28,19 +28,20 @@ const PROJECT_ROOT = path.resolve(__dirname, "..");
 const TARGET = path.join(PROJECT_ROOT, "resources", "node");
 
 const IS_WIN = process.platform === "win32";
-// Only mac arm64 + win x64 are build targets (mirror build-python-litellm.js).
+// mac arm64 + mac x64 (via Rosetta on an arm64 host) + win x64 are build targets.
 const IS_TARGET =
-  (process.platform === "darwin" && process.arch === "arm64") ||
+  (process.platform === "darwin" && (process.arch === "arm64" || process.arch === "x64")) ||
   (process.platform === "win32" && process.arch === "x64");
 if (!IS_TARGET) {
-  console.warn(`⚠️  Skipping Node build: only mac arm64 / win x64 supported. Got ${process.platform}/${process.arch}`);
+  console.warn(`⚠️  Skipping Node build: only mac arm64/x64 / win x64 supported. Got ${process.platform}/${process.arch}`);
   process.exit(0);
 }
 
 // Match the Node running the build (ABI parity with the prebuilt native addons).
-// process.version is like "v25.9.0".
+// process.version is like "v25.9.0". process.arch is "arm64"|"x64" -> matches
+// nodejs.org asset suffixes (darwin-arm64 / darwin-x64 / win-x64).
 const VERSION = (process.env.PLATFORM_NODE_VERSION || process.version).replace(/^v/, "");
-const PLATFORM_TAG = IS_WIN ? "win-x64" : "darwin-arm64";
+const PLATFORM_TAG = IS_WIN ? "win-x64" : `darwin-${process.arch}`;
 const ARCHIVE_EXT = IS_WIN ? "zip" : "tar.gz";
 const ARCHIVE = `node-v${VERSION}-${PLATFORM_TAG}.${ARCHIVE_EXT}`;
 const URL = `https://nodejs.org/dist/v${VERSION}/${ARCHIVE}`;

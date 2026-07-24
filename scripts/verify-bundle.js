@@ -13,8 +13,8 @@ const RESOURCES_ROOT = path.join(PROJECT_ROOT, "resources");
 const IS_WIN = process.platform === "win32";
 const PYTHON_BIN_PARTS = IS_WIN ? ["python.exe"] : ["bin", "python3"];
 const LITELLM_BIN_PARTS = IS_WIN ? ["venv", "Scripts", "litellm.exe"] : ["venv", "bin", "litellm"];
-// Python/LiteLLM are required on the two build targets (mac arm64, win x64).
-const PY_TARGET = (process.platform === "darwin" && process.arch === "arm64") ||
+// Python/LiteLLM are required on the build targets (mac arm64/x64, win x64).
+const PY_TARGET = (process.platform === "darwin" && (process.arch === "arm64" || process.arch === "x64")) ||
                   (process.platform === "win32" && process.arch === "x64");
 
 const checks = [
