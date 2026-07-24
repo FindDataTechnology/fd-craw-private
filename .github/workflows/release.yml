@@ -74,6 +74,7 @@ jobs:
         run: npm run predist
 
       - name: Build web + package installers
+        shell: bash
         env:
           # macOS signing + notarization (gated - empty/absent = unsigned;
           # electron-builder's built-in `mac.notarize` skips when APPLE_* env
@@ -86,7 +87,15 @@ jobs:
           # Windows signing (gated - empty/absent = unsigned)
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-        run: npm run dist
+        run: |
+          # A missing GitHub secret becomes an empty-string env var, which
+          # electron-builder treats as "set" and tries to sign with an empty
+          # cert path (fails: "<project> not a file"). Unset empties so it
+          # skips signing -> unsigned build when no cert is configured.
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
+            [ -z "${!v}" ] && unset "$v"
+          done
+          npm run dist
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
