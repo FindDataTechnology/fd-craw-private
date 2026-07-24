@@ -117,9 +117,14 @@ extraResources:
 
 mac:
   category: public.app-category.developer-tools
+  # Force an arch suffix on every dmg so arm64 + x64 are distinguishable
+  # (without this, the x64 dmg is named "Platform-1.0.0.dmg" - ambiguous).
+  artifactName: "Platform-${version}-${arch}.${ext}"
   target:
+    # No `arch` here: the arch is selected per CI job via `electron-builder
+    # --arm64` / `--x64` (a config arch list would make EVERY job build ALL
+    # listed archs, ignoring the flag and producing a broken other-arch dmg).
     - target: dmg
-      arch: [arm64, x64]
   # Code signing + notarization (see .github/workflows/release.yml):
   #   - Set CSC_LINK / CSC_KEY_PASSWORD env (base64 .p12 + password) to sign
   #     with a Developer ID. Absent -> unsigned build (still succeeds).
