@@ -31,9 +31,12 @@ if (existsSync(dist)) {
 }
 
 console.log("[postinstall] installing web/ deps...");
-let r = spawnSync("npm", ["install"], { cwd: webDir, stdio: "inherit" });
+// shell: true so Windows resolves `npm` -> `npm.cmd` (a .cmd batch file that
+// spawnSync cannot exec without a shell; without it the install silently
+// fails on windows-latest).
+let r = spawnSync("npm", ["install"], { cwd: webDir, stdio: "inherit", shell: true });
 if (r.status !== 0) process.exit(r.status ?? 1);
 
 console.log("[postinstall] building web/...");
-r = spawnSync("npm", ["run", "build"], { cwd: webDir, stdio: "inherit" });
+r = spawnSync("npm", ["run", "build"], { cwd: webDir, stdio: "inherit", shell: true });
 process.exit(r.status ?? 0);

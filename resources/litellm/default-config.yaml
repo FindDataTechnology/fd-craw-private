@@ -1,0 +1,31 @@
+# Default bundled LiteLLM configuration (macOS arm64)
+# Volces is configured by default - add more models below as needed.
+# This file is seeded once on first run; edit it via Preferences → LiteLLM.
+
+model_list:
+  - model_name: volces-coding
+    litellm_params:
+      model: openai/volces-coding
+      api_base: os.environ/VOLCES_BASE_URL
+      api_key: os.environ/VOLCES_API_KEY
+
+  - model_name: volces-coding-plan-v3
+    litellm_params:
+      model: openai/volces-coding-plan-v3
+      api_base: os.environ/VOLCES_BASE_URL
+      api_key: os.environ/VOLCES_API_KEY
+
+  - model_name: deepseek-v4-pro
+    litellm_params:
+      model: openai/deepseek-v4-pro
+      api_base: os.environ/VOLCES_BASE_URL
+      api_key: os.environ/VOLCES_API_KEY
+
+# Master key for accessing this LiteLLM proxy from the app
+master_key: os.environ/LITELLM_API_KEY
+
+# Listen on all interfaces (localhost only via our port)
+bind: 0.0.0.0
+
+# Enable debug logging
+# log_level: DEBUG
