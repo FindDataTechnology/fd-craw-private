@@ -15,7 +15,7 @@
 import { findFreePort } from "./ports.js";
 import { getDescriptors } from "./descriptors.js";
 import { spawnServer, stopChild } from "./process.js";
-import { httpProbe } from "./health.js";
+import { httpProbe, tcpProbe } from "./health.js";
 import { LogStore } from "./logs.js";
 
 const HEALTH_POLL_MS = 3000; // ongoing probe interval
@@ -24,7 +24,7 @@ const START_TIMEOUT_MS = 120000; // how long to wait for a server to go green (s
 const RESTART_BACKOFFS = [1000, 2000, 5000, 10000, 15000];
 
 export class Supervisor {
-  constructor({ nodeBin, projectRoot, dataDir, agentEnv = {}, serverPort = null, litellmPort = null, ocPort = null }) {
+  constructor({ nodeBin, projectRoot, dataDir, agentEnv = {}, serverPort = null, litellmPort = null, ocPort = null, pgPort = null }) {
     this.nodeBin = nodeBin;
     this.projectRoot = projectRoot;
     this.dataDir = dataDir || "";
@@ -37,6 +37,7 @@ export class Supervisor {
     this.fixedServerPort = serverPort;
     this.fixedLitellmPort = litellmPort;
     this.fixedOcPort = ocPort;
+    this.fixedPgPort = pgPort;
     this.servers = new Map(); // id -> state object
     this.logs = new LogStore();
     this.shuttingDown = false;
@@ -48,10 +49,12 @@ export class Supervisor {
     this.serverPort = this.fixedServerPort || (await findFreePort("127.0.0.1"));
     this.ocPort = this.fixedOcPort || (await findFreePort("127.0.0.1"));
     this.litellmPort = this.fixedLitellmPort || (await findFreePort("127.0.0.1"));
+    this.pgPort = this.fixedPgPort || (await findFreePort("127.0.0.1"));
     const descriptors = getDescriptors({
       serverPort: this.serverPort,
       ocPort: this.ocPort,
       litellmPort: this.litellmPort,
+      pgPort: this.pgPort,
       projectRoot: this.projectRoot,
       nodeBin: this.nodeBin,
       dataDir: this.dataDir,
@@ -63,7 +66,10 @@ export class Supervisor {
         state: "pending",
         pid: null,
         port: d.transport === "http-port"
-          ? (d.id === "server-js" ? this.serverPort : d.id === "openconnector" ? this.ocPort : this.litellmPort)
+          ? (d.id === "server-js" ? this.serverPort
+            : d.id === "openconnector" ? this.ocPort
+            : d.id === "postgres" ? this.pgPort
+            : this.litellmPort)
           : null,
         restartCount: 0,
         lastCheck: null,
@@ -82,7 +88,7 @@ export class Supervisor {
     // a failure is non-fatal (tracked by health polling / restart-on-crash).
     // http-external / disabled sidecars are NOT spawned here - the main loop
     // below still handles them (health-probe external, mark disabled).
-    const SIDECARS = ["litellm", "openconnector"];
+    const SIDECARS = ["postgres", "litellm", "openconnector"];
     const spawnedSidecars = new Set();
     for (const id of SIDECARS) {
       const s = this.servers.get(id);
@@ -164,15 +170,23 @@ export class Supervisor {
 
   async _waitForHealthy(id, timeoutMs) {
     const s = this.servers.get(id);
-    const url = s.descriptor.url + (s.descriptor.healthPath || "");
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       if (this.shuttingDown) return false;
       if (s.child && s.child.exitCode !== null) return false; // died during start
-      if (await httpProbe(url)) { s.lastCheck = Date.now(); return true; }
+      if (await this._probeHealth(s)) { s.lastCheck = Date.now(); return true; }
       await sleep(START_PROBE_MS);
     }
     return false;
+  }
+
+  // Transport-appropriate probe: TCP for descriptors with healthKind "tcp"
+  // (bundled Postgres, which does not speak HTTP), HTTP GET otherwise.
+  async _probeHealth(s) {
+    const d = s.descriptor;
+    if (d.healthKind === "tcp") return tcpProbe("127.0.0.1", s.port);
+    if (!d.url) return false;
+    return httpProbe(d.url + (d.healthPath || ""));
   }
 
   _onExit(id, code, signal) {
@@ -201,7 +215,7 @@ export class Supervisor {
     if (s.state === "stopped" || s.state === "disabled" || !d.url) return;
     // Spawned servers are only HTTP-polled once healthy (liveness otherwise via exit).
     if (d.kind !== "http-external" && s.state !== "healthy") return;
-    const ok = await httpProbe(d.url + (d.healthPath || ""));
+    const ok = await this._probeHealth(s);
     s.lastCheck = Date.now();
     if (ok) { s.state = "healthy"; s.lastError = null; }
     else { s.state = "unhealthy"; s.lastError = "health check failed"; }

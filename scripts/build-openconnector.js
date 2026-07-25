@@ -36,14 +36,16 @@ const proxy = process.env.http_proxy || process.env.HTTP_PROXY || "";
 const gitProxyArgs = proxy ? ["-c", `http.proxy=${proxy}`, "-c", `https.proxy=${proxy}`] : [];
 
 // Directories not needed at runtime (trim bundle size). Applied at EVERY depth.
-// NOTE: "web" is NOT here - the web/ workspace SOURCE is skipped only at the
-// top level (TOP_LEVEL_SKIP_DIRS) so that the built `dist/web` console (a dir
-// also named "web", nested under dist/) IS copied.
-const SKIP_DIRS = new Set([".git", "docs", "examples", "docker", ".github", "assets"]);
+// NOTE: "web" and "assets" are NOT here - both are top-level-only skips
+// (TOP_LEVEL_SKIP_DIRS) so the built `dist/web` console (a dir also named "web",
+// nested under dist/) AND its `dist/web/assets/` (a dir also named "assets") ARE
+// copied. Skipping "assets" at every depth previously dropped dist/web/assets/,
+// leaving the embedded OC UI unable to load its JS (blank /openconnector page).
+const SKIP_DIRS = new Set([".git", "docs", "examples", "docker", ".github"]);
 const SKIP_FILES = new Set([".codex"]);
-// Skipped only at the top level (depth 0) - e.g. the `web/` workspace source,
-// whose built output lives at `dist/web` and must be copied.
-const TOP_LEVEL_SKIP_DIRS = new Set(["web"]);
+// Skipped only at the top level (depth 0) - e.g. the `web/` workspace source and
+// the top-level `assets/` dir, whose built output lives at `dist/web` / `dist/web/assets`.
+const TOP_LEVEL_SKIP_DIRS = new Set(["web", "assets"]);
 
 async function main() {
   if (fs.existsSync(path.join(TARGET_DIR, "src", "server", "index.ts"))) {
@@ -82,6 +84,20 @@ async function main() {
   await fs.promises.mkdir(TARGET_DIR, { recursive: true });
   console.log("Copying source tree...");
   await copyDir(tempDir, TARGET_DIR);
+
+  // Assert the web console's hashed assets were copied. A missing dist/web/assets/
+  // leaves the embedded OC UI blank (the SPA's /assets/*.js fall through to the
+  // runtime's index.html catch-all). Fail loud instead of shipping a broken UI.
+  const webAssetsDir = path.join(TARGET_DIR, "dist", "web", "assets");
+  const webAssetFiles = fs.existsSync(webAssetsDir)
+    ? await fs.promises.readdir(webAssetsDir)
+    : [];
+  if (webAssetFiles.length === 0) {
+    throw new Error(
+      "dist/web/assets/ is empty after copy - the OC web console assets did not copy (check SKIP_DIRS)."
+    );
+  }
+  console.log(`✅ dist/web/assets/ populated (${webAssetFiles.length} files)`);
 
   // Reinstall prod-only node_modules in the target (drops devDeps).
   console.log("Pruning to production dependencies...");

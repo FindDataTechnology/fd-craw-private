@@ -2,7 +2,7 @@
 // Nav items use react-router <NavLink> for in-app navigation (no page reload,
 // WebSocket stays connected). The active route is highlighted automatically.
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { useChatStore } from "@/hooks/useChatStore";
 import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
@@ -15,7 +15,6 @@ const NAV_BASE = [
   { to: "/chat", label: "💬 Chat", testId: "nav-chat" },
   { to: "/dashboard", label: "📊 Dashboard", testId: "nav-dashboard" },
   { to: "/documents", label: "📚 Documents", testId: "nav-documents" },
-  { to: "/history", label: "🕘 History", testId: "nav-history" },
   { to: "/openconnector", label: "🔌 OpenConnector", testId: "nav-openconnector" },
 ];
 const LITELLM_NAV = { to: "/litellm", label: "🧭 LiteLLM", testId: "nav-litellm" };
@@ -28,6 +27,7 @@ export function Sidebar({ send }: Props) {
   const currentSessionId = useChatStore((s) => s.currentSessionId);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const clearView = useChatStore((s) => s.clearView);
+  const navigate = useNavigate();
 
   // Gate the LiteLLM link on server config. Hidden until /api/config resolves
   // (matches how the legacy vanilla nav skips the link when unconfigured).
@@ -70,7 +70,10 @@ export function Sidebar({ send }: Props) {
         <div className="flex items-center justify-between px-1 pb-2 pt-1 text-xs font-semibold text-muted-foreground">
           <span>Chats</span>
           <button
-            onClick={() => send({ type: "new_session" })}
+            onClick={() => {
+              navigate("/chat");
+              send({ type: "new_session" });
+            }}
             data-testid="new-chat-btn"
             className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           >

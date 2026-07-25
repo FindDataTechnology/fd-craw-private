@@ -48,6 +48,22 @@ function run(cmd, args, opts = {}) {
   execFileSync(cmd, args, { stdio: "inherit", ...opts });
 }
 
+// Find the Prisma query-engine binary produced by `prisma generate` (lands under
+// <cache>/node_modules/prisma/engines/<hash>/query-engine-<platform>-<arch>[.exe]).
+function findPrismaEngine(cacheDir) {
+  if (!fs.existsSync(cacheDir)) return null;
+  let result = null;
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else if (entry.name.startsWith("query-engine")) result = p;
+    }
+  };
+  walk(cacheDir);
+  return result;
+}
+
 // Skip if already built.
 const pythonBin = path.join(TARGET_PY, ...PYTHON_BIN_PARTS);
 const litellmBin = path.join(TARGET_LL, "venv", VENV_BIN_DIR, LITELLM_NAME);
@@ -100,6 +116,38 @@ run(pythonBin, ["-m", "venv", venvDir]);
 const pipBin = path.join(venvDir, VENV_BIN_DIR, PIP_NAME);
 console.log(`Installing litellm[proxy]==${PINNED_VERSION}...`);
 run(pipBin, ["install", "--no-cache-dir", `litellm[proxy]==${PINNED_VERSION}`]);
+
+// 3.5. Install Prisma + generate the litellm client (needed for the admin UI's DB).
+// litellm[proxy] does not pull `prisma`; litellm shells out to `prisma` + `node` at
+// startup (`prisma db push`), so the engine + generated client must live in the
+// venv and PATH + PRISMA_QUERY_ENGINE_BINARY must be set at runtime (see
+// supervisor/descriptors.js). PRISMA_BINARY_CACHE_DIR points inside the venv so
+// the engine is bundled (the default ~/.cache is NOT bundled).
+console.log(`Installing prisma + generating the LiteLLM Prisma client...`);
+const prismaBin = path.join(venvDir, VENV_BIN_DIR, IS_WIN ? "prisma.exe" : "prisma");
+const prismaCacheDir = path.join(venvDir, "prisma-cache");
+const PY_DIR = "python" + PY_VER.split(".").slice(0, 2).join(".");
+const prismaSchema = path.join(venvDir, "lib", PY_DIR, "site-packages", "litellm", "proxy", "schema.prisma");
+run(pipBin, ["install", "--no-cache-dir", "prisma==0.11.0"]);
+run(prismaBin, ["generate", `--schema=${prismaSchema}`], {
+  env: {
+    ...process.env,
+    PRISMA_BINARY_CACHE_DIR: prismaCacheDir,
+    PRISMA_USE_GLOBAL_NODE: "true",
+    // prisma-client-py (the generator) lives in the venv bin; the node CLI
+    // invokes it via PATH, so the venv bin must be on PATH for `generate`.
+    PATH: [path.dirname(prismaBin), process.env.PATH].filter(Boolean).join(IS_WIN ? ";" : ":"),
+  },
+});
+// Copy the platform query-engine to a stable path - the generated client bakes
+// build-time absolute paths, so a stable runtime path is required (the supervisor
+// sets PRISMA_QUERY_ENGINE_BINARY to this path).
+const engineSrc = findPrismaEngine(prismaCacheDir);
+if (!engineSrc) throw new Error("prisma generate did not produce a query-engine binary under " + prismaCacheDir);
+const engineDir = path.join(venvDir, "prisma-engine");
+fs.mkdirSync(engineDir, { recursive: true });
+fs.copyFileSync(engineSrc, path.join(engineDir, "query-engine"));
+console.log(`✅ Prisma engine -> ${path.join(engineDir, "query-engine")}`);
 
 // 4. Strip unused stdlib (pyc/__pycache__ cleanup is left to electron-builder
 //    extraResources filters, which exclude them at packaging time).

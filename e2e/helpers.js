@@ -45,7 +45,7 @@ export function cleanupTempStoreDirs() {
 // ── Chat-page helpers (React app under /chat/) ────────────────────────────────
 //
 // The React SPA is the sole frontend. `/` is served by the SPA which routes
-// to /chat; Documents/Dashboard/History/OpenConnector/LiteLLM are React routes.
+// to /chat; Documents/Dashboard/OpenConnector/LiteLLM are React routes.
 
 // Navigate to the React chat and wait for the WS to connect.
 export async function gotoChat(page) {
@@ -63,10 +63,4 @@ export async function gotoDocuments(page) {
 export async function gotoDashboard(page) {
   await page.goto("/dashboard");
   await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 15000 });
-}
-
-// Navigate to the React Chat History page.
-export async function gotoHistory(page) {
-  await page.goto("/history");
-  await expect(page.getByTestId("history-page")).toBeVisible({ timeout: 15000 });
 }

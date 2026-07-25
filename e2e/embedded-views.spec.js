@@ -9,6 +9,12 @@ async function stubConfig(page, config) {
   });
 }
 
+async function stubLitellmCredentials(page) {
+  await page.route("**/api/litellm/credentials", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ masterKey: "test-master-key-123" }) });
+  });
+}
+
 test.describe("embedded service views", () => {
   test("OpenConnector renders iframe when enabled", async ({ page }) => {
     await stubConfig(page, { openconnectorEnabled: true, litellmEnabled: false });
@@ -23,26 +29,60 @@ test.describe("embedded service views", () => {
     await expect(page.getByTestId("openconnector-iframe")).toHaveCount(0);
   });
 
-  test("LiteLLM renders open-in-new-tab link when enabled", async ({ page }) => {
+  test("LiteLLM renders iframe when enabled", async ({ page }) => {
     await stubConfig(page, {
       openconnectorEnabled: false,
       litellmEnabled: true,
       litellmManagementUrl: "http://litellm.example:4000/ui",
     });
+    await stubLitellmCredentials(page);
     await page.goto("/litellm");
-    const link = page.getByTestId("litellm-open-link");
-    await expect(link).toBeVisible({ timeout: 10000 });
-    await expect(link).toHaveAttribute("href", "http://litellm.example:4000/ui");
-    await expect(link).toHaveAttribute("target", "_blank");
-    // The LiteLLM dashboard is opened in a new tab, not embedded in an iframe.
-    await expect(page.getByTestId("litellm-iframe")).toHaveCount(0);
+    await expect(page.getByTestId("litellm-iframe")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId("litellm-master-key-bar")).toBeVisible();
+  });
+
+  test("clicking LiteLLM button in sidebar navigates to LiteLLM web UI", async ({ page }) => {
+    // Stub config to enable LiteLLM
+    await stubConfig(page, {
+      openconnectorEnabled: false,
+      litellmEnabled: true,
+      litellmManagementUrl: "http://litellm.example:4000/ui",
+    });
+    await stubLitellmCredentials(page);
+
+    // Start on chat page
+    await page.goto("/chat");
+    await expect(page.getByTestId("sidebar")).toBeVisible({ timeout: 15000 });
+
+    // Verify LiteLLM button exists and click it
+    const litellmButton = page.getByTestId("nav-litellm");
+    await expect(litellmButton).toBeVisible();
+    await litellmButton.click();
+
+    // Verify we're on the LiteLLM page with the embedded web UI
+    await expect(page).toHaveURL(/.*\/litellm/);
+    await expect(page.getByTestId("litellm-page")).toBeVisible();
+
+    // Verify the iframe is present (the actual LiteLLM web UI)
+    await expect(page.getByTestId("litellm-iframe")).toBeVisible();
+
+    // Verify the iframe is loading LiteLLM UI at the correct path
+    const iframe = page.getByTestId("litellm-iframe");
+    await expect(iframe).toHaveAttribute("src", "/ui");
   });
 
   test("LiteLLM shows placeholder when disabled", async ({ page }) => {
     await stubConfig(page, { openconnectorEnabled: false, litellmEnabled: false });
     await page.goto("/litellm");
     await expect(page.getByTestId("litellm-disabled")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId("litellm-open-link")).toHaveCount(0);
+    await expect(page.getByTestId("litellm-iframe")).toHaveCount(0);
+  });
+
+  test("LiteLLM button is hidden in sidebar when disabled", async ({ page }) => {
+    await stubConfig(page, { openconnectorEnabled: false, litellmEnabled: false });
+    await page.goto("/chat");
+    await expect(page.getByTestId("sidebar")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("nav-litellm")).toHaveCount(0);
   });
 
   test("real /api/config exposes openconnectorEnabled (not stubbed)", async ({ page }) => {

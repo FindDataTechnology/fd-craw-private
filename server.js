@@ -56,8 +56,8 @@ const DEFAULT_MODEL = process.env.DEFAULT_MODEL || "";
 // The extension reads LITELLM_BASE_URL / LITELLM_API_KEY from the environment
 // (loaded from .env by dotenv/config above). When either is missing, the
 // litellm provider is skipped so the server still starts Volces-only.
-const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL;
-const LITELLM_API_KEY = process.env.LITELLM_API_KEY;
+const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL?.trim();
+const LITELLM_API_KEY = process.env.LITELLM_API_KEY?.trim();
 const litellmEnabled = Boolean(LITELLM_BASE_URL && LITELLM_API_KEY);
 if (!litellmEnabled) {
   console.warn("[litellm] LITELLM_BASE_URL or LITELLM_API_KEY not set; skipping litellm provider");
@@ -321,6 +321,17 @@ async function initAgent() {
     systemPromptOverride: () => "You are a helpful coding assistant. Be concise.",
   });
   await loader.reload();
+
+  // The LiteLLM extension registers models WITHOUT a `baseUrl`, but the SDK's
+  // provider-attribution check calls `model.baseUrl.includes(...)` (no optional
+  // chaining) and crashes on undefined -> "Cannot read properties of undefined
+  // (reading 'includes')". Backfill baseUrl on LiteLLM-routed models so the
+  // check is safe (the value is the local proxy, never an openrouter/nvidia host).
+  if (litellmEnabled) {
+    for (const m of modelRegistry?.getAvailable() ?? []) {
+      if (m.baseUrl === undefined) m.baseUrl = LITELLM_BASE_URL;
+    }
+  }
 
   defaultModel = resolveDefaultModel();
   if (defaultModel) {
@@ -898,7 +909,7 @@ app.use(express.static(webDist));
 // OpenConnector (and LiteLLM) /v1 reverse-proxy routes - registered below - are
 // not shadowed by this fallback (which would serve index.html for the embedded
 // SPA's API calls).
-app.get(/^\/(?!api\/|oc-web|litellm-web|assets\/|v1\/).*/, (_req, res) => {
+app.get(/^\/(?!api\/|oc-web|litellm-web|assets\/|v1\/|v2\/|ui|key\/|spend\/|model\/|models|sso\/|login|logout|user\/|get_image|get_favicon|get\/|litellm-asset-prefix\/).*/, (_req, res) => {
   res.sendFile(path.join(webDist, "index.html"));
 });
 
@@ -918,7 +929,13 @@ app.get("/api/config", (_req, res) => {
 // credentials and this returns null (no key reaches the browser in that case).
 app.get("/api/litellm/credentials", (_req, res) => {
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(LITELLM_BASE_URL || "");
-  res.json({ masterKey: isLocal ? (LITELLM_API_KEY || null) : null });
+  // apiBaseUrl is non-secret (already derivable from litellmManagementUrl) and lets the
+  // user call ${apiBaseUrl}/v1/... directly with the master key as bearer. masterKey
+  // stays gated on the local-proxy case; both are null for a remote proxy.
+  res.json({
+    masterKey: isLocal ? (LITELLM_API_KEY || null) : null,
+    apiBaseUrl: isLocal ? (LITELLM_BASE_URL || null) : null,
+  });
 });
 
 // ── Supervisor / system status (for the Dashboard view) ──────────────────────
@@ -1236,12 +1253,21 @@ function createWebProxy({ prefix, getBase, getToken, label = "Upstream" }) {
     if (upstream === "") upstream = "/";
     const url = base + upstream;
 
-    // Forwarded headers: drop client Authorization + hop-by-hop; keep content-type.
+    // Forwarded headers: keep content-type. For Authorization: the embedded
+    // LiteLLM dashboard extracts a virtual key from its session JWT and sends it
+    // as Bearer - forward that so /user/info etc. authenticate as the session
+    // user (the master_key returns user_id=null). When no client Authorization
+    // is present (e.g. the app's own server-side calls, or the OC dashboard),
+    // inject the server-held token.
     const ct = req.headers["content-type"];
     const reqHeaders = {};
     if (ct) reqHeaders["content-type"] = ct;
-    const token = getToken(upstream);
-    if (token) reqHeaders.authorization = `Bearer ${token}`;
+    if (req.headers.authorization) {
+      reqHeaders.authorization = req.headers.authorization;
+    } else {
+      const token = getToken(upstream);
+      if (token) reqHeaders.authorization = `Bearer ${token}`;
+    }
 
     // Body forwarding: JSON bodies were parsed by express.json -> stringify; other
     // content types (multipart, form) are read raw from the stream (express.json
@@ -1327,6 +1353,118 @@ const litellmWebProxy = createWebProxy({
   label: "LiteLLM",
 });
 
+// Forward /ui/* -> LiteLLM /ui/* verbatim (the dashboard's basePath is /ui, so its
+// absolute /ui/_next/... asset refs must reach LiteLLM's /ui/_next/...). Unlike
+// createWebProxy this does NOT strip the prefix and does NOT inject a <base> tag
+// (the dashboard has its own basePath). Token-injected same as the other proxies.
+//
+// Auto-login: the dashboard's client-side auth gate reads the `token` cookie
+// (set by POST /login) and redirects to /sso/key/generate if absent. Since we
+// already hold the master key, we fetch that JWT once and Set-Cookie it on the
+// /ui response so the user never sees the login form.
+let litellmUiToken = null;
+let litellmUiUserId = null;
+let litellmUiTokenPromise = null;
+async function getLitellmUiToken() {
+  if (litellmUiToken) return litellmUiToken;
+  if (litellmUiTokenPromise) return litellmUiTokenPromise;
+  litellmUiTokenPromise = (async () => {
+    try {
+      const r = await fetch(`${LITELLM_BASE_URL}/login`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ username: "admin", password: LITELLM_API_KEY }).toString(),
+        redirect: "manual",
+      });
+      const setCookie = r.headers.get("set-cookie") || "";
+      const m = setCookie.match(/token=([^;]+)/);
+      if (m) {
+        litellmUiToken = m[1];
+        // Extract user_id from the JWT payload for the ?userID= redirect target.
+        try {
+          const payload = litellmUiToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+          const decoded = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+          if (decoded.user_id) litellmUiUserId = decoded.user_id;
+        } catch { /* leave null; falls back to default_user_id */ }
+      } else {
+        console.warn("[litellm] auto-login: no token cookie in /login response");
+      }
+    } catch (err) {
+      console.warn("[litellm] auto-login failed:", err.message);
+    }
+    litellmUiTokenPromise = null;
+    return litellmUiToken;
+  })();
+  return litellmUiTokenPromise;
+}
+
+async function proxyLitellmUi(req, res) {
+  // Auto-login (idempotent): the dashboard requires BOTH a `token` session cookie
+  // AND a `?userID=` query param. Without userID the app clears the cookie and
+  // bounces to /sso/key/generate. So EVERY /ui entry lacking ?userID= redirects to
+  // /ui/?userID=<userID> - a full 303 (Set-Cookie + Location) when no token cookie
+  // is present, or a plain 302 (Location only) when the cookie is already set.
+  // This prevents rapid re-navigations from landing on the login page.
+  const parsed = (() => { try { return new URL(req.originalUrl, "http://x"); } catch { return null; } })();
+  const isUiEntry = req.method === "GET" && parsed && /^\/ui\/?$/.test(parsed.pathname);
+  const hasUserId = Boolean(parsed && parsed.searchParams.has("userID"));
+  if (isUiEntry && !hasUserId && LITELLM_API_KEY) {
+    const token = await getLitellmUiToken();
+    if (token) {
+      const hasTokenCookie = /(^|;\s*)token=/.test(req.headers.cookie || "");
+      const userID = encodeURIComponent(litellmUiUserId || "default_user_id");
+      res.status(hasTokenCookie ? 302 : 303);
+      if (!hasTokenCookie) res.setHeader("Set-Cookie", `token=${token}; Path=/; SameSite=Lax`);
+      res.setHeader("Location", `/ui/?userID=${userID}`);
+      return res.end();
+    }
+  }
+  const url = LITELLM_BASE_URL + req.originalUrl;
+  const ct = req.headers["content-type"];
+  const reqHeaders = {};
+  if (ct) reqHeaders["content-type"] = ct;
+  // Forward the dashboard's virtual-key Authorization (extracted from its session
+  // JWT) when present; else inject the master key. Same rationale as createWebProxy.
+  if (req.headers.authorization) {
+    reqHeaders.authorization = req.headers.authorization;
+  } else if (LITELLM_API_KEY) {
+    reqHeaders.authorization = `Bearer ${LITELLM_API_KEY}`;
+  }
+  // Forward the client's token cookie so LiteLLM endpoints that read the session
+  // cookie (not just the Bearer header) authenticate correctly.
+  if (req.headers.cookie) reqHeaders.cookie = req.headers.cookie;
+  let body;
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+    const isJson = (ct || "").includes("application/json");
+    if (isJson && req.body !== undefined) {
+      body = JSON.stringify(req.body);
+    } else if (!isJson) {
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        req.on("data", (c) => chunks.push(c));
+        req.on("end", resolve);
+        req.on("error", reject);
+      });
+      body = Buffer.concat(chunks);
+    }
+  }
+  let upstreamRes;
+  try {
+    upstreamRes = await fetch(url, { method: req.method, headers: reqHeaders, body, redirect: "manual" });
+  } catch (err) {
+    return res.status(502).send(`LiteLLM UI unreachable: ${err.message}`);
+  }
+  res.status(upstreamRes.status);
+  const respType = upstreamRes.headers.get("content-type") || "";
+  if (respType) res.setHeader("content-type", respType);
+  const loc = upstreamRes.headers.get("location");
+  if (loc) {
+    try { const u = new URL(loc, LITELLM_BASE_URL); res.setHeader("location", u.pathname + u.search); }
+    catch { res.setHeader("location", loc); }
+  }
+  res.send(Buffer.from(await upstreamRes.arrayBuffer()));
+}
+
 if (openConnector.openConnectorEnabled) {
   // Embed the runtime's native web UI behind a token-injecting proxy.
   app.all("/oc-web", openConnectorWebProxy);
@@ -1403,6 +1541,13 @@ if (openConnector.openConnectorEnabled) {
 if (litellmEnabled) {
   app.all("/litellm-web", litellmWebProxy);
   app.all("/litellm-web/*", litellmWebProxy);
+  // Dashboard SPA assets (loaded by the embedded iframe src=/litellm-web/ui).
+  app.all("/ui", proxyLitellmUi);
+  app.all("/ui/*", proxyLitellmUi);
+  // LiteLLM dashboard Next.js assets are served at /litellm-asset-prefix/_next/...
+  // (the dashboard's assetPrefix). Forward verbatim - litellmWebProxy's /litellm-web
+  // prefix doesn't match, so originalUrl is passed through untouched to LiteLLM.
+  app.all("/litellm-asset-prefix/*", litellmWebProxy);
   // LiteLLM-specific admin roots never conflict with the app or OpenConnector,
   // so proxy them to LiteLLM whenever LiteLLM is configured (keeps the
   // management UI's API reachable when accessed through the /litellm-web proxy
@@ -1410,6 +1555,24 @@ if (litellmEnabled) {
   app.all("/key/*", litellmWebProxy);
   app.all("/spend/*", litellmWebProxy);
   app.all("/model/*", litellmWebProxy);
+  app.all("/models", litellmWebProxy);
+  app.all("/models/*", litellmWebProxy);
+  app.all("/user/*", litellmWebProxy);
+  app.all("/get_image", litellmWebProxy);
+  app.all("/get_favicon", litellmWebProxy);
+  // LiteLLM v2 admin API + the /get/* data roots (e.g. /get/litellm_model_cost_map)
+  // are used by the dashboard's Models page; proxy them so they return LiteLLM JSON
+  // instead of falling through to the SPA catch-all (which serves index.html and
+  // leaves the Models table empty).
+  app.all("/v2/*", litellmWebProxy);
+  app.all("/get/*", litellmWebProxy);
+  // LiteLLM dashboard auth flow: /ui/ redirects to /sso/key/generate (login).
+  // Proxy it so the redirect stays on the LiteLLM backend instead of falling
+  // through to the SPA catch-all (which would route the iframe to /chat).
+  app.all("/sso/*", litellmWebProxy);
+  // /login is the form-submit target (fallback if the auto-login token expires).
+  app.all("/login", litellmWebProxy);
+  app.all("/logout", litellmWebProxy);
   // /v1/* and /api/* are contested with OpenConnector (and the app's own /api/*
   // routes), so proxy them to LiteLLM only when OpenConnector is not enabled;
   // otherwise the LiteLLM view surfaces a fallback "open in new tab" link.

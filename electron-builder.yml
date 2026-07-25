@@ -17,6 +17,9 @@ productName: Platform
 directories:
   output: dist
 asar: false
+# Codesign bundled Postgres binaries + dylibs on mac after packing (ad-hoc,
+# gated on CSC_LINK). See scripts/sign-postgres.cjs.
+afterPack: scripts/sign-postgres.cjs
 # Native addons (better-sqlite3, tree-sitter, fsevents) run under the BUNDLED
 # Node (resources/node), not Electron's Node - so do NOT rebuild them for
 # Electron's ABI. The prebuilt .node files (Node v25 arm64) are used as-is.
@@ -107,6 +110,7 @@ extraResources:
     filter:
       - "default-config.yaml"
       - "venv/**/*"
+      - "!venv/prisma-cache/**"
       - "!venv/**/__pycache__/**"
       - "!venv/**/*.pyc"
       - "!venv/**/*.dist-info/tests/**"
@@ -114,6 +118,13 @@ extraResources:
       - "!venv/**/tests/**"
       - "!venv/**/*.pyi.h"
       - "!venv/**/*.tar.gz"
+  - from: resources/postgres/
+    to: postgres/
+    filter:
+      - "bin/**/*"
+      - "lib/**/*"
+      - "share/**/*"
+      - "!**/*.tar.gz"
 
 mac:
   category: public.app-category.developer-tools

@@ -81,6 +81,18 @@ export function runFirstRun(opts) {
       merged.LITELLM_API_KEY = "sk-" + crypto.randomBytes(32).toString("hex");
       console.log("[bootstrap] Generated new LITELLM_API_KEY");
     }
+    // LITELLM_SALT_KEY encrypts credentials stored in the LiteLLM Postgres DB.
+    // Generate ONCE and never overwrite - changing it orphans every encrypted
+    // value (API keys, model params) already stored in the DB.
+    if (!merged.LITELLM_SALT_KEY) {
+      merged.LITELLM_SALT_KEY = crypto.randomBytes(32).toString("hex");
+      console.log("[bootstrap] Generated new LITELLM_SALT_KEY");
+    }
+    // LITELLM_MASTER_KEY is the env the admin UI checks for sign-in; reuse the
+    // proxy master key so there's one secret to manage.
+    if (!merged.LITELLM_MASTER_KEY && merged.LITELLM_API_KEY) {
+      merged.LITELLM_MASTER_KEY = merged.LITELLM_API_KEY;
+    }
 
     // Step 6: Copy default litellm.yaml if missing
     if (!fs.existsSync(litellmUserPath)) {

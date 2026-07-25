@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node scripts/start.js",
     "start:electron": "electron .",
-    "predist": "node scripts/build-openconnector.js && node scripts/build-node.js && node scripts/build-python-litellm.js && node scripts/verify-bundle.js",
+    "predist": "node scripts/build-openconnector.js && node scripts/build-node.js && node scripts/build-python-litellm.js && node scripts/build-postgres.js && node scripts/verify-bundle.js",
     "dist": "npm --prefix web run build && electron-builder --publish never",
     "clean:bundle": "rm -rf resources/openconnector resources/python resources/litellm/venv",
     "test:e2e": "playwright test --project=fast",
@@ -49,6 +49,7 @@
     "openconnectorSha": "0dfc73e5f826f2efdcacf274347d7a8284b7d9dd",
     "litellmVersion": "1.53.9",
     "pythonBuildStandaloneTag": "20250115",
-    "pythonVersion": "3.13.1"
+    "pythonVersion": "3.13.1",
+    "postgresVersion": "17.10.0-beta.17"
   }
 }

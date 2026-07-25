@@ -73,84 +73,24 @@ export function OpenConnectorPage() {
     return <Placeholder title="OpenConnector" testId="openconnector-disabled" message="OpenConnector is not configured." />;
   }
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="openconnector-page">
+    <main className="flex h-full min-w-0 flex-col" data-testid="openconnector-page">
       <EmbeddedFrame src="/oc-web" testId="openconnector-iframe" />
     </main>
   );
 }
 
-function useLitellmCredentials(enabled?: boolean) {
-  const [creds, setCreds] = useState<{ masterKey: string | null }>({ masterKey: null });
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-    fetch("/api/litellm/credentials")
-      .then((r) => r.json())
-      .then((c) => { if (!cancelled) setCreds(c); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [enabled]);
-  return creds;
-}
-
 export function LiteLLMPage() {
   const config = useConfig();
-  const creds = useLitellmCredentials(config?.litellmEnabled);
-  const [copied, setCopied] = useState(false);
   if (!config) return <div className="p-6 text-muted-foreground">Loading…</div>;
   if (!config.litellmEnabled || !config.litellmManagementUrl) {
     return <Placeholder title="LiteLLM" testId="litellm-disabled" message="LiteLLM is not configured." />;
   }
-  // The LiteLLM management dashboard is a Next.js SPA with an interactive login
-  // flow that the server-side token-injecting proxy cannot satisfy, so the view
-  // links to the management UI (litellmManagementUrl) which the user opens in a
-  // new tab. For the LOCAL bundled proxy the master key is auto-generated, so we
-  // surface it here for the user to copy into the dashboard's sign-in. For a
-  // remote proxy the user has their own credentials (no key is exposed).
-  const copyKey = async () => {
-    try {
-      await navigator.clipboard.writeText(creds.masterKey || "");
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch { /* clipboard unavailable */ }
-  };
+  // The LiteLLM dashboard is embedded in-page at /ui. The server's proxy
+  // auto-logs in (POST /login -> session cookie + ?userID= redirect), so the
+  // user never sees a sign-in form and no master key is surfaced here.
   return (
-    <main
-      className="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-3 p-6"
-      data-testid="litellm-page"
-    >
-      <h1 className="text-2xl font-semibold">LiteLLM</h1>
-      <p className="max-w-md text-center text-sm text-muted-foreground">
-        Open the LiteLLM management dashboard in a new tab and sign in.
-      </p>
-      {creds.masterKey ? (
-        <div className="w-full max-w-md rounded-md border border-border p-3 text-sm" data-testid="litellm-master-key">
-          <p className="mb-1 text-muted-foreground">Local proxy master key — paste this into the dashboard sign-in:</p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 break-all rounded bg-muted px-2 py-1 text-xs">{creds.masterKey}</code>
-            <button
-              onClick={copyKey}
-              className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
-              data-testid="litellm-copy-key"
-            >
-              {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <p className="max-w-md text-center text-xs text-muted-foreground">
-          Sign in with your LiteLLM credentials.
-        </p>
-      )}
-      <a
-        href={config.litellmManagementUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        data-testid="litellm-open-link"
-        className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
-      >
-        Open LiteLLM dashboard ↗
-      </a>
+    <main className="flex h-full min-w-0 flex-col" data-testid="litellm-page">
+      <EmbeddedFrame src="/ui" testId="litellm-iframe" />
     </main>
   );
 }

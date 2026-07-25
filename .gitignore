@@ -16,6 +16,7 @@ resources/node/
 resources/openconnector/
 resources/python/
 resources/litellm/
+resources/postgres/
 # Keep original tarballs out of the repo
 resources/node/*.tar.gz
 resources/python/*.tar.xz
@@ -33,3 +34,10 @@ test-results/
 dev-settings.json
 litellm.yaml
 openconnector.db
+
+# Bundled Postgres data dir (dev)
+postgres-data/
+
+# Local Playwright CLI console logs (scratch)
+.playwright-cli/
+web/.playwright-cli/

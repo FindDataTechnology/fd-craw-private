@@ -43,6 +43,16 @@ const checks = [
     path: path.join(RESOURCES_ROOT, "litellm", "default-config.yaml"),
     required: true,
   },
+  {
+    name: "Postgres",
+    path: path.join(RESOURCES_ROOT, "postgres", "bin", IS_WIN ? "postgres.exe" : "postgres"),
+    required: process.env.PLATFORM_SKIP_POSTGRES_BUILD ? false : PY_TARGET,
+  },
+  {
+    name: "LiteLLM Prisma engine",
+    path: path.join(RESOURCES_ROOT, "litellm", "venv", "prisma-engine", "query-engine"),
+    required: process.env.PLATFORM_SKIP_PYTHON_BUILD ? false : PY_TARGET,
+  },
 ];
 
 let allGood = true;

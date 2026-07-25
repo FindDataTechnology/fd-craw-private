@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { gotoChat } from "./helpers.js";
 
 // App shell: the React SPA is the sole frontend. `/` is served by the SPA
-// which routes to /chat; Documents/Dashboard/History/OpenConnector/LiteLLM
+// which routes to /chat; Documents/Dashboard/OpenConnector/LiteLLM
 // are React routes. No legacy vanilla page exists anymore.
 
 test.describe("app shell", () => {
@@ -23,7 +23,7 @@ test.describe("app shell", () => {
 
   test("sidebar shows the React nav entries", async ({ page }) => {
     await gotoChat(page);
-    for (const id of ["nav-chat", "nav-dashboard", "nav-documents", "nav-history", "nav-openconnector"]) {
+    for (const id of ["nav-chat", "nav-dashboard", "nav-documents", "nav-openconnector"]) {
       await expect(page.getByTestId(id)).toBeVisible();
     }
   });
