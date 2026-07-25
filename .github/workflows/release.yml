@@ -158,3 +158,37 @@ jobs:
           files: |
             dist/*.dmg
             dist/*.exe
+
+      - name: Publish installers to MinIO (public download page)
+        env:
+          MINIO_ENDPOINT: ${{ secrets.MINIO_ENDPOINT }}
+          MINIO_ACCESS_KEY: ${{ secrets.MINIO_ACCESS_KEY }}
+          MINIO_SECRET_KEY: ${{ secrets.MINIO_SECRET_KEY }}
+          MINIO_BUCKET: ${{ secrets.MINIO_BUCKET }}
+        run: |
+          set -euo pipefail
+          # mc (MinIO client) - single static binary.
+          curl -fsSL -o /usr/local/bin/mc https://dl.min.io/client/mc/release/linux-amd64/mc
+          chmod +x /usr/local/bin/mc
+          mc alias set minio "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
+          # Upload this release's installers (overwrites same-name objects;
+          # different versions accumulate so all releases stay downloadable).
+          mc cp dist/*.dmg minio/"$MINIO_BUCKET"/
+          mc cp dist/*.exe minio/"$MINIO_BUCKET"/
+          # Regenerate a cumulative index.html listing every installer in the
+          # bucket so the public "download page" shows all versions. mc ls lines
+          # look like: [date time TZ]  <size> STANDARD <name>  -> size=$4, name=$NF
+          {
+            echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">'
+            echo '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            echo '<title>Platform Releases</title>'
+            echo '<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:760px;margin:2rem auto;padding:0 1rem;color:#222}h1{border-bottom:1px solid #ddd;padding-bottom:.5rem}ul{list-style:none;padding:0}li{margin:.6rem 0}.sz{color:#888;font-size:.85rem}a{font-weight:600}</style>'
+            echo '</head><body><h1>Platform Releases</h1><ul>'
+            mc ls minio/"$MINIO_BUCKET"/ | awk '/\.(dmg|exe)[[:space:]]*$/ { name=$NF; size=$4; printf "<li><a href=\"%s\">%s</a> <span class=\"sz\">(%s)</span></li>\n", name, name, size }'
+            echo '</ul></body></html>'
+          } > dist/index.html
+          mc cp dist/index.html minio/"$MINIO_BUCKET"/
+          PAGE_URL="$MINIO_ENDPOINT/$MINIO_BUCKET/index.html"
+          echo "::notice::Public download page: $PAGE_URL"
+          echo "Public download page: $PAGE_URL"
+          mc ls minio/"$MINIO_BUCKET"/
