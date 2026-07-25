@@ -79,7 +79,13 @@ function ensurePrismaEngine(venvDir) {
   const prismaBin = path.join(venvDir, VENV_BIN_DIR, IS_WIN ? "prisma.exe" : "prisma");
   const prismaCacheDir = path.join(venvDir, "prisma-cache");
   const PY_DIR = "python" + PY_VER.split(".").slice(0, 2).join(".");
-  const prismaSchema = path.join(venvDir, "lib", PY_DIR, "site-packages", "litellm", "proxy", "schema.prisma");
+  // Windows venvs lay out site-packages as Lib/site-packages (no pythonX.Y
+  // subdir); UNIX venvs use lib/pythonX.Y/site-packages. Both must resolve or
+  // prisma generate cannot find litellm's schema.prisma.
+  const sitePackages = IS_WIN
+    ? path.join(venvDir, "Lib", "site-packages")
+    : path.join(venvDir, "lib", PY_DIR, "site-packages");
+  const prismaSchema = path.join(sitePackages, "litellm", "proxy", "schema.prisma");
   if (!fs.existsSync(prismaSchema)) {
     throw new Error(`LiteLLM Prisma schema not found at ${prismaSchema} - venv may be incomplete`);
   }
