@@ -66,14 +66,19 @@ jobs:
           cache: 'npm'
 
       # Cache the bundled resources (OpenConnector + Node + Python + LiteLLM
-      # venv). predist is idempotent and skips when present, so a cache hit turns
-      # the heaviest step (litellm pip install) into a no-op. Keyed by OS +
-      # platformBundles (in package.json) so a pin bump rebuilds.
+      # venv + Prisma engine + Postgres). predist is idempotent and skips when
+      # present, so a cache hit turns the heaviest step (litellm pip install)
+      # into a no-op. Keyed by OS + arch + platformBundles (package.json) AND
+      # the build scripts - a build-logic change (e.g. adding the Prisma engine
+      # step) busts the cache so the new artifacts are rebuilt and persisted
+      # instead of an older partial cache being reused forever. restore-keys
+      # still falls back to the OS+arch prefix so a venv from a prior key is
+      # reused (only the missing piece is regenerated).
       - name: Cache resources/
         uses: actions/cache@v4
         with:
           path: resources
-          key: resources-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json') }}
+          key: resources-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'scripts/build-*.js', 'scripts/verify-bundle.js') }}
           # Same-arch only: do NOT fall back across arches (an arm64 cache
           # restored into the x64 job would skip the rebuild and ship arm64
           # binaries in an x64 dmg).
