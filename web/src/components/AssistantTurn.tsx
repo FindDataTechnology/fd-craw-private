@@ -1,6 +1,12 @@
 // Full-width assistant turn. Blocks nest inside a left-rail so tool/thinking
 // visibly belong to the same turn as the text. This is the "not siblings"
 // design decision from proposal.md.
+//
+// The assistant name label, the streaming "Thinking…" placeholder, and the
+// tool/thinking block labels resolve through the i18n bundle. Command and
+// error block payloads (⚙️ /name, ⚠️ message) are server/agent output and
+// stay literal.
+import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import type { Turn } from "@/hooks/useChatStore";
 import { Markdown } from "@/components/Markdown";
@@ -10,6 +16,7 @@ import { SkillBlock } from "@/components/SkillBlock";
 import { cn } from "@/lib/utils";
 
 export function AssistantTurn({ turn }: { turn: Extract<Turn, { role: "assistant" }> }) {
+  const { t } = useTranslation();
   const toggleBlock = useChatStore((s) => s.toggleBlock);
   return (
     <article
@@ -21,7 +28,7 @@ export function AssistantTurn({ turn }: { turn: Extract<Turn, { role: "assistant
         <span className="grid h-6 w-6 place-items-center rounded-full bg-primary/20 text-primary">
           ●
         </span>
-        <span>pi</span>
+        <span>{t("turn.assistantName")}</span>
       </div>
       <div className="flex flex-col gap-2 border-l border-border pl-4">
         {turn.blocks.map((b, i) => {
@@ -73,7 +80,7 @@ export function AssistantTurn({ turn }: { turn: Extract<Turn, { role: "assistant
           }
         })}
         {turn.streaming && turn.blocks.length === 0 && (
-          <div className="text-xs text-muted-foreground">Thinking…</div>
+          <div className="text-xs text-muted-foreground">{t("turn.thinkingStreaming")}</div>
         )}
       </div>
     </article>

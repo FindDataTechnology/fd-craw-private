@@ -1,0 +1,135 @@
+{
+  "common": {
+    "loading": "Cargando…"
+  },
+  "nav": {
+    "chat": "💬 Chat",
+    "dashboard": "📊 Panel",
+    "documents": "📚 Documentos",
+    "openconnector": "🔌 OpenConnector",
+    "litellm": "🧭 LiteLLM"
+  },
+  "sidebar": {
+    "brand": "Platform",
+    "chats": "Chats",
+    "new": "+ Nuevo",
+    "noChats": "Aún no hay chats. Haz clic en \"+ Nuevo\".",
+    "untitled": "Sin título",
+    "loadingModels": "Cargando modelos…",
+    "clearChat": "Borrar chat",
+    "language": "Idioma"
+  },
+  "status": {
+    "connected": "Conectado",
+    "connecting": "Conectando…",
+    "disconnected": "Desconectado"
+  },
+  "composer": {
+    "placeholder": "Pregúntale a pi lo que sea… (escribe / para comandos, Enter para enviar, Shift+Enter para salto de línea)",
+    "placeholderDisabled": "Conectando…",
+    "send": "Enviar",
+    "helpHeader": "Comandos disponibles:",
+    "dropHint": "Suelta archivos para subirlos a la colección de documentos",
+    "uploaded": "Subido {{name}}",
+    "uploadFailed": "Error al subir: {{message}}",
+    "cmd": {
+      "model": "cambiar o mostrar el modelo activo",
+      "new": "iniciar una nueva sesión de chat",
+      "clear": "borrar la vista del chat",
+      "help": "listar los comandos disponibles"
+    }
+  },
+  "chat": {
+    "empty": "Envía un mensaje para empezar a chatear."
+  },
+  "turn": {
+    "assistantName": "pi",
+    "thinkingStreaming": "Pensando…",
+    "thinking": "💭 Pensando",
+    "statusRunning": "ejecutando…",
+    "statusError": "error",
+    "statusDone": "listo",
+    "input": "Entrada",
+    "partial": "Parcial",
+    "output": "Salida",
+    "outputError": "Error"
+  },
+  "markdown": {
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "copyFailed": "Error al copiar"
+  },
+  "dashboard": {
+    "title": "Panel",
+    "refresh": "Actualizar",
+    "refreshing": "Actualizando…",
+    "loadFailed": "Error al cargar el estado: {{error}}",
+    "retry": "reintentar",
+    "none": "ninguno",
+    "servers": "Servidores",
+    "activeModel": "Modelo activo",
+    "provider": "Proveedor: {{name}}",
+    "uptime": "Tiempo activo: {{sec}}s",
+    "documents": "Documentos",
+    "collections": "Colecciones: {{count}}",
+    "mcpTools": "Herramientas MCP",
+    "state": {
+      "healthy": "saludable",
+      "unhealthy": "en fallo",
+      "starting": "iniciando",
+      "disabled": "deshabilitado"
+    }
+  },
+  "documents": {
+    "title": "Documentos",
+    "loading": "Cargando…",
+    "disabledMessage": "Los documentos no están disponibles (la colección de documentos está deshabilitada o la base de datos es inaccesible).",
+    "remove": "Quitar",
+    "status": {
+      "ready": "listo",
+      "indexing": "indexando",
+      "queued": "en cola",
+      "error": "error"
+    },
+    "list": {
+      "count": "Documentos ({{count}})",
+      "refresh": "Actualizar",
+      "empty": "Aún no hay documentos. Añade uno arriba."
+    },
+    "content": {
+      "title": "Contenido"
+    },
+    "ingest": {
+      "uploadFile": "Subir archivo",
+      "working": "Trabajando…",
+      "textPlaceholder": "Pega texto plano o notas…",
+      "addNote": "Añadir nota",
+      "addUrl": "Añadir URL"
+    },
+    "query": {
+      "title": "Preguntar a los documentos",
+      "placeholder": "Haz una pregunta sobre tus documentos…",
+      "ask": "Preguntar",
+      "sources": "Fuentes: {{names}}"
+    },
+    "collection": {
+      "title": "Colecciones",
+      "namePlaceholder": "Nombre de la colección…",
+      "create": "Crear",
+      "empty": "Aún no hay colecciones.",
+      "docsCount": "{{count}} docs",
+      "delete": "Eliminar",
+      "noDocuments": "No hay documentos.",
+      "addDocPlaceholder": "Añadir documento…",
+      "add": "Añadir",
+      "queryPlaceholder": "Pregunta sobre esta colección…",
+      "confirmDelete": "¿Eliminar esta colección?"
+    }
+  },
+  "embedded": {
+    "iframeTitle": "servicio integrado",
+    "blockedMessage": "La interfaz integrada no pudo cargarse en un marco.",
+    "openInNewTab": "Abrir en una pestaña nueva",
+    "notConfigured": "{{name}} no está configurado."
+  }
+}

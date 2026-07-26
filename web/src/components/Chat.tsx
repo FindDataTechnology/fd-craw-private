@@ -1,10 +1,12 @@
 // Message log. Renders turns; auto-scrolls to bottom unless the user scrolled up.
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import { UserTurn } from "@/components/UserTurn";
 import { AssistantTurn } from "@/components/AssistantTurn";
 
 export function Chat() {
+  const { t } = useTranslation();
   const turns = useChatStore((s) => s.turns);
   const containerRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -37,7 +39,7 @@ export function Chat() {
     >
       {turns.length === 0 ? (
         <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
-          Send a message to start chatting.
+          {t("chat.empty")}
         </div>
       ) : (
         <div className="mx-auto flex max-w-3xl flex-col gap-6">

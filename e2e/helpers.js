@@ -47,20 +47,38 @@ export function cleanupTempStoreDirs() {
 // The React SPA is the sole frontend. `/` is served by the SPA which routes
 // to /chat; Documents/Dashboard/OpenConnector/LiteLLM are React routes.
 
+// Default the app to English for the test run. The app reads
+// localStorage["platform.locale"] at i18n init (before any page script), so
+// addInitScript runs early enough. It only sets the key when none is stored, so
+// it does NOT fight a locale the test (or a real user) sets afterwards, and a
+// later reload re-reads the stored choice instead of being forced back to en.
+// This keeps existing text assertions (e.g. status-text -> "Connected") valid
+// regardless of the browser's default language.
+export async function pinLocaleEn(page) {
+  await page.addInitScript(() => {
+    try {
+      if (!localStorage.getItem("platform.locale")) localStorage.setItem("platform.locale", "en");
+    } catch { /* ignore */ }
+  });
+}
+
 // Navigate to the React chat and wait for the WS to connect.
 export async function gotoChat(page) {
+  await pinLocaleEn(page);
   await page.goto("/chat/");
   await expect(page.getByTestId("status-text")).toHaveText("Connected", { timeout: 15000 });
 }
 
 // Navigate to the React Documents page and wait for it to render.
 export async function gotoDocuments(page) {
+  await pinLocaleEn(page);
   await page.goto("/documents");
   await expect(page.getByTestId("documents-page")).toBeVisible({ timeout: 15000 });
 }
 
 // Navigate to the React Dashboard page.
 export async function gotoDashboard(page) {
+  await pinLocaleEn(page);
   await page.goto("/dashboard");
   await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 15000 });
 }

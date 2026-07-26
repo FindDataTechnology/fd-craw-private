@@ -1,0 +1,135 @@
+{
+  "common": {
+    "loading": "Chargement…"
+  },
+  "nav": {
+    "chat": "💬 Discussion",
+    "dashboard": "📊 Tableau de bord",
+    "documents": "📚 Documents",
+    "openconnector": "🔌 OpenConnector",
+    "litellm": "🧭 LiteLLM"
+  },
+  "sidebar": {
+    "brand": "Platform",
+    "chats": "Discussions",
+    "new": "+ Nouveau",
+    "noChats": "Aucune discussion. Cliquez sur « + Nouveau ».",
+    "untitled": "Sans titre",
+    "loadingModels": "Chargement des modèles…",
+    "clearChat": "Effacer la discussion",
+    "language": "Langue"
+  },
+  "status": {
+    "connected": "Connecté",
+    "connecting": "Connexion…",
+    "disconnected": "Déconnecté"
+  },
+  "composer": {
+    "placeholder": "Demandez n'importe quoi à pi… (tapez / pour les commandes, Entrée pour envoyer, Maj+Entrée pour un saut de ligne)",
+    "placeholderDisabled": "Connexion…",
+    "send": "Envoyer",
+    "helpHeader": "Commandes disponibles :",
+    "dropHint": "Déposez des fichiers pour les envoyer vers la collection de documents",
+    "uploaded": "{{name}} envoyé",
+    "uploadFailed": "Échec de l'envoi : {{message}}",
+    "cmd": {
+      "model": "changer ou afficher le modèle actif",
+      "new": "démarrer une nouvelle session de discussion",
+      "clear": "effacer la vue de discussion",
+      "help": "lister les commandes disponibles"
+    }
+  },
+  "chat": {
+    "empty": "Envoyez un message pour commencer à discuter."
+  },
+  "turn": {
+    "assistantName": "pi",
+    "thinkingStreaming": "Réflexion…",
+    "thinking": "💭 Réflexion",
+    "statusRunning": "en cours…",
+    "statusError": "erreur",
+    "statusDone": "terminé",
+    "input": "Entrée",
+    "partial": "Partiel",
+    "output": "Sortie",
+    "outputError": "Erreur"
+  },
+  "markdown": {
+    "copy": "Copier",
+    "copied": "Copié",
+    "copyFailed": "Échec de la copie"
+  },
+  "dashboard": {
+    "title": "Tableau de bord",
+    "refresh": "Actualiser",
+    "refreshing": "Actualisation…",
+    "loadFailed": "Échec du chargement de l'état : {{error}}",
+    "retry": "réessayer",
+    "none": "aucun",
+    "servers": "Serveurs",
+    "activeModel": "Modèle actif",
+    "provider": "Fournisseur : {{name}}",
+    "uptime": "Disponibilité : {{sec}}s",
+    "documents": "Documents",
+    "collections": "Collections : {{count}}",
+    "mcpTools": "Outils MCP",
+    "state": {
+      "healthy": "sain",
+      "unhealthy": "défaillant",
+      "starting": "démarrage",
+      "disabled": "désactivé"
+    }
+  },
+  "documents": {
+    "title": "Documents",
+    "loading": "Chargement…",
+    "disabledMessage": "Les documents sont indisponibles (la collection de documents est désactivée ou la base de données est inaccessible).",
+    "remove": "Retirer",
+    "status": {
+      "ready": "prêt",
+      "indexing": "indexation",
+      "queued": "en file d'attente",
+      "error": "erreur"
+    },
+    "list": {
+      "count": "Documents ({{count}})",
+      "refresh": "Actualiser",
+      "empty": "Aucun document. Ajoutez-en un ci-dessus."
+    },
+    "content": {
+      "title": "Contenu"
+    },
+    "ingest": {
+      "uploadFile": "Envoyer un fichier",
+      "working": "Traitement…",
+      "textPlaceholder": "Collez du texte brut ou des notes…",
+      "addNote": "Ajouter une note",
+      "addUrl": "Ajouter une URL"
+    },
+    "query": {
+      "title": "Interroger les documents",
+      "placeholder": "Posez une question sur vos documents…",
+      "ask": "Demander",
+      "sources": "Sources : {{names}}"
+    },
+    "collection": {
+      "title": "Collections",
+      "namePlaceholder": "Nom de la collection…",
+      "create": "Créer",
+      "empty": "Aucune collection.",
+      "docsCount": "{{count}} docs",
+      "delete": "Supprimer",
+      "noDocuments": "Aucun document.",
+      "addDocPlaceholder": "Ajouter un document…",
+      "add": "Ajouter",
+      "queryPlaceholder": "Posez une question sur cette collection…",
+      "confirmDelete": "Supprimer cette collection ?"
+    }
+  },
+  "embedded": {
+    "iframeTitle": "service intégré",
+    "blockedMessage": "L'interface intégrée n'a pas pu être chargée dans un cadre.",
+    "openInNewTab": "Ouvrir dans un nouvel onglet",
+    "notConfigured": "{{name}} n'est pas configuré."
+  }
+}

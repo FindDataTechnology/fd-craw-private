@@ -1,0 +1,135 @@
+{
+  "common": {
+    "loading": "加载中…"
+  },
+  "nav": {
+    "chat": "💬 聊天",
+    "dashboard": "📊 仪表盘",
+    "documents": "📚 文档",
+    "openconnector": "🔌 OpenConnector",
+    "litellm": "🧭 LiteLLM"
+  },
+  "sidebar": {
+    "brand": "Platform",
+    "chats": "对话",
+    "new": "+ 新建",
+    "noChats": "暂无对话。点击「+ 新建」。",
+    "untitled": "未命名",
+    "loadingModels": "正在加载模型…",
+    "clearChat": "清空对话",
+    "language": "语言"
+  },
+  "status": {
+    "connected": "已连接",
+    "connecting": "连接中…",
+    "disconnected": "已断开"
+  },
+  "composer": {
+    "placeholder": "向 pi 提问…（输入 / 查看命令，回车发送，Shift+回车换行）",
+    "placeholderDisabled": "连接中…",
+    "send": "发送",
+    "helpHeader": "可用命令：",
+    "dropHint": "拖放文件以上传到文档集合",
+    "uploaded": "已上传 {{name}}",
+    "uploadFailed": "上传失败：{{message}}",
+    "cmd": {
+      "model": "切换或显示当前模型",
+      "new": "开始新对话",
+      "clear": "清空对话视图",
+      "help": "列出可用命令"
+    }
+  },
+  "chat": {
+    "empty": "发送消息开始对话。"
+  },
+  "turn": {
+    "assistantName": "pi",
+    "thinkingStreaming": "思考中…",
+    "thinking": "💭 思考",
+    "statusRunning": "运行中…",
+    "statusError": "错误",
+    "statusDone": "完成",
+    "input": "输入",
+    "partial": "部分结果",
+    "output": "输出",
+    "outputError": "错误"
+  },
+  "markdown": {
+    "copy": "复制",
+    "copied": "已复制",
+    "copyFailed": "复制失败"
+  },
+  "dashboard": {
+    "title": "仪表盘",
+    "refresh": "刷新",
+    "refreshing": "刷新中…",
+    "loadFailed": "加载状态失败：{{error}}",
+    "retry": "重试",
+    "none": "无",
+    "servers": "服务器",
+    "activeModel": "当前模型",
+    "provider": "提供商：{{name}}",
+    "uptime": "运行时间：{{sec}}秒",
+    "documents": "文档",
+    "collections": "集合：{{count}}",
+    "mcpTools": "MCP 工具",
+    "state": {
+      "healthy": "健康",
+      "unhealthy": "异常",
+      "starting": "启动中",
+      "disabled": "已禁用"
+    }
+  },
+  "documents": {
+    "title": "文档",
+    "loading": "加载中…",
+    "disabledMessage": "文档不可用（文档集合已禁用或数据库无法访问）。",
+    "remove": "移除",
+    "status": {
+      "ready": "就绪",
+      "indexing": "索引中",
+      "queued": "排队中",
+      "error": "错误"
+    },
+    "list": {
+      "count": "文档（{{count}}）",
+      "refresh": "刷新",
+      "empty": "暂无文档。请在上方添加。"
+    },
+    "content": {
+      "title": "内容"
+    },
+    "ingest": {
+      "uploadFile": "上传文件",
+      "working": "处理中…",
+      "textPlaceholder": "粘贴纯文本或笔记…",
+      "addNote": "添加笔记",
+      "addUrl": "添加 URL"
+    },
+    "query": {
+      "title": "向文档提问",
+      "placeholder": "针对你的文档提问…",
+      "ask": "提问",
+      "sources": "来源：{{names}}"
+    },
+    "collection": {
+      "title": "集合",
+      "namePlaceholder": "集合名称…",
+      "create": "创建",
+      "empty": "暂无集合。",
+      "docsCount": "{{count}} 篇文档",
+      "delete": "删除",
+      "noDocuments": "暂无文档。",
+      "addDocPlaceholder": "添加文档…",
+      "add": "添加",
+      "queryPlaceholder": "针对此集合提问…",
+      "confirmDelete": "删除此集合？"
+    }
+  },
+  "embedded": {
+    "iframeTitle": "嵌入式服务",
+    "blockedMessage": "嵌入式界面无法在框架中加载。",
+    "openInNewTab": "在新标签页打开",
+    "notConfigured": "{{name}} 未配置。"
+  }
+}

@@ -1,9 +1,14 @@
 // Left nav: brand, tabs, session list, model select + status + clear.
 // Nav items use react-router <NavLink> for in-app navigation (no page reload,
 // WebSocket stays connected). The active route is highlighted automatically.
+// All visible labels resolve through the i18n bundle (keys, not literals);
+// tab identity/ordering/icons are stable across locales.
 import { useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
+import { useLanguage } from "@/i18n/useLanguage";
+import type { Locale } from "@/i18n/config";
 import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
 
@@ -12,14 +17,16 @@ interface Props {
 }
 
 const NAV_BASE = [
-  { to: "/chat", label: "💬 Chat", testId: "nav-chat" },
-  { to: "/dashboard", label: "📊 Dashboard", testId: "nav-dashboard" },
-  { to: "/documents", label: "📚 Documents", testId: "nav-documents" },
-  { to: "/openconnector", label: "🔌 OpenConnector", testId: "nav-openconnector" },
+  { to: "/chat", key: "nav.chat", testId: "nav-chat" },
+  { to: "/dashboard", key: "nav.dashboard", testId: "nav-dashboard" },
+  { to: "/documents", key: "nav.documents", testId: "nav-documents" },
+  { to: "/openconnector", key: "nav.openconnector", testId: "nav-openconnector" },
 ];
-const LITELLM_NAV = { to: "/litellm", label: "🧭 LiteLLM", testId: "nav-litellm" };
+const LITELLM_NAV = { to: "/litellm", key: "nav.litellm", testId: "nav-litellm" };
 
 export function Sidebar({ send }: Props) {
+  const { t, i18n } = useTranslation();
+  const { locale, locales, changeLocale } = useLanguage();
   const status = useChatStore((s) => s.status);
   const models = useChatStore((s) => s.models);
   const currentModel = useChatStore((s) => s.currentModel);
@@ -44,7 +51,7 @@ export function Sidebar({ send }: Props) {
 
   return (
     <nav className="flex h-screen flex-col border-r border-border bg-card" data-testid="sidebar">
-      <div className="border-b border-border p-4 text-base font-semibold">Platform</div>
+      <div className="border-b border-border p-4 text-base font-semibold">{t("sidebar.brand")}</div>
 
       <div className="flex flex-col gap-0.5 p-2">
         {nav.map((n) => (
@@ -60,7 +67,7 @@ export function Sidebar({ send }: Props) {
               )
             }
           >
-            {n.label}
+            {t(n.key)}
           </NavLink>
         ))}
       </div>
@@ -68,7 +75,7 @@ export function Sidebar({ send }: Props) {
       {/* Session list */}
       <div className="flex min-h-0 flex-1 flex-col border-t border-border p-2" data-testid="session-list-section">
         <div className="flex items-center justify-between px-1 pb-2 pt-1 text-xs font-semibold text-muted-foreground">
-          <span>Chats</span>
+          <span>{t("sidebar.chats")}</span>
           <button
             onClick={() => {
               navigate("/chat");
@@ -77,13 +84,13 @@ export function Sidebar({ send }: Props) {
             data-testid="new-chat-btn"
             className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            + New
+            {t("sidebar.new")}
           </button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto" data-testid="session-list">
           {sessions.length === 0 && (
             <div className="px-2 py-1 text-xs text-muted-foreground">
-              No chats yet. Click "+ New".
+              {t("sidebar.noChats")}
             </div>
           )}
           {sessions.map((s) => (
@@ -100,10 +107,10 @@ export function Sidebar({ send }: Props) {
                 s.id === currentSessionId && "bg-muted",
               )}
             >
-              <span className="truncate text-foreground">{s.title || "Untitled"}</span>
+              <span className="truncate text-foreground">{s.title || t("sidebar.untitled")}</span>
               {s.updatedAt && (
                 <span className="text-[10px] text-muted-foreground">
-                  {new Date(s.updatedAt).toLocaleString()}
+                  {new Date(s.updatedAt).toLocaleString(i18n.language)}
                 </span>
               )}
             </button>
@@ -124,7 +131,7 @@ export function Sidebar({ send }: Props) {
             "disabled:cursor-not-allowed disabled:opacity-50",
           )}
         >
-          {models.length === 0 && <option>Loading models…</option>}
+          {models.length === 0 && <option>{t("sidebar.loadingModels")}</option>}
           {models.map((m) => (
             <option key={m.id} value={m.id}>
               {m.name || m.id}
@@ -137,16 +144,33 @@ export function Sidebar({ send }: Props) {
           data-testid="clear-btn"
           className="rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
         >
-          Clear chat
+          {t("sidebar.clearChat")}
         </button>
+        <select
+          value={locale}
+          onChange={(e) => changeLocale(e.target.value as Locale)}
+          data-testid="locale-select"
+          aria-label={t("sidebar.language")}
+          className={cn(
+            "w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs text-foreground",
+            "focus:border-primary focus:outline-none",
+          )}
+        >
+          {locales.map((l) => (
+            <option key={l.code} value={l.code}>
+              {l.label}
+            </option>
+          ))}
+        </select>
       </div>
     </nav>
   );
 }
 
 function StatusRow({ status }: { status: "connecting" | "connected" | "disconnected" }) {
-  const label =
-    status === "connected" ? "Connected" : status === "connecting" ? "Connecting…" : "Disconnected";
+  const { t } = useTranslation();
+  const key =
+    status === "connected" ? "status.connected" : status === "connecting" ? "status.connecting" : "status.disconnected";
   const dot =
     status === "connected"
       ? "bg-[color:var(--color-success)]"
@@ -156,7 +180,7 @@ function StatusRow({ status }: { status: "connecting" | "connected" | "disconnec
   return (
     <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="status">
       <span className={cn("h-2 w-2 shrink-0 rounded-full", dot)} data-testid="status-dot" />
-      <span data-testid="status-text">{label}</span>
+      <span data-testid="status-text">{t(key)}</span>
     </div>
   );
 }

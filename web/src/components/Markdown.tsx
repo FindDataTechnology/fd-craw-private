@@ -9,6 +9,7 @@ import { memo, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { showToast } from "@/components/Toast";
 
 const LANGS = [
@@ -137,6 +138,7 @@ function CodeRenderer(props: any) {
 }
 
 function HighlightedCode({ code, lang }: { code: string; lang: string }) {
+  const { t } = useTranslation();
   const [html, setHtml] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const canonical = (LANG_ALIAS[lang] ?? lang) as (typeof LANGS)[number];
@@ -169,10 +171,10 @@ function HighlightedCode({ code, lang }: { code: string; lang: string }) {
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-      showToast("Copied");
+      showToast(t("markdown.copied"));
       setTimeout(() => setCopied(false), 1200);
     } catch {
-      showToast("Copy failed");
+      showToast(t("markdown.copyFailed"));
     }
   };
 
@@ -185,7 +187,7 @@ function HighlightedCode({ code, lang }: { code: string; lang: string }) {
           className="flex items-center gap-1 rounded px-1 py-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
         >
           {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("markdown.copied") : t("markdown.copy")}
         </button>
       </div>
       {html ? (

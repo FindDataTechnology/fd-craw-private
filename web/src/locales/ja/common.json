@@ -1,0 +1,135 @@
+{
+  "common": {
+    "loading": "読み込み中…"
+  },
+  "nav": {
+    "chat": "💬 チャット",
+    "dashboard": "📊 ダッシュボード",
+    "documents": "📚 ドキュメント",
+    "openconnector": "🔌 OpenConnector",
+    "litellm": "🧭 LiteLLM"
+  },
+  "sidebar": {
+    "brand": "Platform",
+    "chats": "チャット",
+    "new": "+ 新規",
+    "noChats": "チャットはまだありません。「+ 新規」をクリックしてください。",
+    "untitled": "無題",
+    "loadingModels": "モデルを読み込み中…",
+    "clearChat": "チャットを消去",
+    "language": "言語"
+  },
+  "status": {
+    "connected": "接続済み",
+    "connecting": "接続中…",
+    "disconnected": "切断済み"
+  },
+  "composer": {
+    "placeholder": "pi に何でも質問…（/ でコマンド、Enter で送信、Shift+Enter で改行）",
+    "placeholderDisabled": "接続中…",
+    "send": "送信",
+    "helpHeader": "利用可能なコマンド:",
+    "dropHint": "ファイルをドロップしてドキュメントコレクションにアップロード",
+    "uploaded": "{{name}} をアップロードしました",
+    "uploadFailed": "アップロード失敗: {{message}}",
+    "cmd": {
+      "model": "アクティブなモデルを切り替えまたは表示",
+      "new": "新しいチャットセッションを開始",
+      "clear": "チャットビューを消去",
+      "help": "利用可能なコマンド一覧"
+    }
+  },
+  "chat": {
+    "empty": "メッセージを送信してチャットを開始してください。"
+  },
+  "turn": {
+    "assistantName": "pi",
+    "thinkingStreaming": "考え中…",
+    "thinking": "💭 思考",
+    "statusRunning": "実行中…",
+    "statusError": "エラー",
+    "statusDone": "完了",
+    "input": "入力",
+    "partial": "部分",
+    "output": "出力",
+    "outputError": "エラー"
+  },
+  "markdown": {
+    "copy": "コピー",
+    "copied": "コピー済み",
+    "copyFailed": "コピー失敗"
+  },
+  "dashboard": {
+    "title": "ダッシュボード",
+    "refresh": "更新",
+    "refreshing": "更新中…",
+    "loadFailed": "ステータスの読み込みに失敗しました: {{error}}",
+    "retry": "再試行",
+    "none": "なし",
+    "servers": "サーバー",
+    "activeModel": "アクティブモデル",
+    "provider": "プロバイダー: {{name}}",
+    "uptime": "稼働時間: {{sec}}秒",
+    "documents": "ドキュメント",
+    "collections": "コレクション: {{count}}",
+    "mcpTools": "MCP ツール",
+    "state": {
+      "healthy": "正常",
+      "unhealthy": "異常",
+      "starting": "起動中",
+      "disabled": "無効"
+    }
+  },
+  "documents": {
+    "title": "ドキュメント",
+    "loading": "読み込み中…",
+    "disabledMessage": "ドキュメントは利用できません（ドキュメントコレクションが無効か、データベースに接続できません）。",
+    "remove": "削除",
+    "status": {
+      "ready": "準備完了",
+      "indexing": "インデックス中",
+      "queued": "待機中",
+      "error": "エラー"
+    },
+    "list": {
+      "count": "ドキュメント ({{count}})",
+      "refresh": "更新",
+      "empty": "ドキュメントはまだありません。上で追加してください。"
+    },
+    "content": {
+      "title": "内容"
+    },
+    "ingest": {
+      "uploadFile": "ファイルをアップロード",
+      "working": "処理中…",
+      "textPlaceholder": "プレーンテキストやメモを貼り付け…",
+      "addNote": "メモを追加",
+      "addUrl": "URL を追加"
+    },
+    "query": {
+      "title": "ドキュメントに質問",
+      "placeholder": "ドキュメントについて質問してください…",
+      "ask": "質問",
+      "sources": "出典: {{names}}"
+    },
+    "collection": {
+      "title": "コレクション",
+      "namePlaceholder": "コレクション名…",
+      "create": "作成",
+      "empty": "コレクションはまだありません。",
+      "docsCount": "{{count}} 件",
+      "delete": "削除",
+      "noDocuments": "ドキュメントはありません。",
+      "addDocPlaceholder": "ドキュメントを追加…",
+      "add": "追加",
+      "queryPlaceholder": "このコレクションについて質問…",
+      "confirmDelete": "このコレクションを削除しますか？"
+    }
+  },
+  "embedded": {
+    "iframeTitle": "埋め込みサービス",
+    "blockedMessage": "埋め込み UI をフレーム内で読み込めませんでした。",
+    "openInNewTab": "新しいタブで開く",
+    "notConfigured": "{{name}} は設定されていません。"
+  }
+}

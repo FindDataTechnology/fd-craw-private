@@ -1,15 +1,19 @@
 // Composer: textarea + send + slash-command autocomplete + drop-target.
 //
 // Slash commands mirror public/app.js:
-//   /clear /help    — client-handled, never sent to server
-//   /model /new     — server-handled
-//   /skill:<name>   — server expands from loaded skills
+//   /clear /help    - client-handled, never sent to server
+//   /model /new     - server-handled
+//   /skill:<name>   - server expands from loaded skills
 //
 // Autocomplete opens when the text starts with "/". Arrow keys navigate,
 // Tab/Enter accepts, Esc closes.
+//
+// All user-visible strings resolve through the i18n bundle. Slash-command
+// tokens (/model, /new, …) are identifiers and stay literal.
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
@@ -19,14 +23,17 @@ interface Props {
   send: (m: ClientMessage) => void;
 }
 
-const META = [
-  { label: "/model", description: "switch or show the active model" },
-  { label: "/new", description: "start a new chat session" },
-  { label: "/clear", description: "clear the chat view" },
-  { label: "/help", description: "list available commands" },
+// Command tokens (identifiers, not translated) paired with i18n keys for their
+// descriptions. Built into a translated commands array inside the component.
+const CMD_META = [
+  { label: "/model", descKey: "composer.cmd.model" },
+  { label: "/new", descKey: "composer.cmd.new" },
+  { label: "/clear", descKey: "composer.cmd.clear" },
+  { label: "/help", descKey: "composer.cmd.help" },
 ];
 
 export function Composer({ send }: Props) {
+  const { t } = useTranslation();
   const status = useChatStore((s) => s.status);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const skills = useChatStore((s) => s.skills);
@@ -40,6 +47,11 @@ export function Composer({ send }: Props) {
   const disabled = status !== "connected";
   const trimmed = value.trim();
 
+  const commands = [
+    ...CMD_META.map((c) => ({ label: c.label, description: t(c.descKey) })),
+    ...skills.map((s) => ({ label: `/skill:${s.name}`, description: s.description || "" })),
+  ];
+
   // Autogrow.
   useEffect(() => {
     const el = textareaRef.current;
@@ -48,10 +60,6 @@ export function Composer({ send }: Props) {
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [value]);
 
-  const commands = [
-    ...META,
-    ...skills.map((s) => ({ label: `/skill:${s.name}`, description: s.description || "" })),
-  ];
   const showAc = value.startsWith("/") && commands.length > 0;
   const filter = value.toLowerCase();
   const acItems = showAc
@@ -70,8 +78,8 @@ export function Composer({ send }: Props) {
     }
     if (/^\/help\b/i.test(trimmed)) {
       const help = [
-        "Available commands:",
-        ...META.map((c) => `  ${c.label} - ${c.description}`),
+        t("composer.helpHeader"),
+        ...CMD_META.map((c) => `  ${c.label} - ${t(c.descKey)}`),
         ...skills.map((s) => `  /skill:${s.name} - ${s.description || ""}`),
       ].join("\n");
       showToast(help);
@@ -79,7 +87,7 @@ export function Composer({ send }: Props) {
       return;
     }
 
-    // The server echoes the user turn back as a `user` event — no optimistic
+    // The server echoes the user turn back as a `user` event - no optimistic
     // append here, or it renders twice.
     send({ type: "prompt", text: trimmed });
     setValue("");
@@ -140,9 +148,9 @@ export function Composer({ send }: Props) {
       try {
         const r = await fetch("/api/documents", { method: "POST", body: fd });
         if (!r.ok) throw new Error(await r.text());
-        showToast(`Uploaded ${f.name}`);
+        showToast(t("composer.uploaded", { name: f.name }));
       } catch (err) {
-        showToast(`Upload failed: ${(err as Error).message.slice(0, 80)}`);
+        showToast(t("composer.uploadFailed", { message: (err as Error).message.slice(0, 80) }));
       }
     }
   };
@@ -194,11 +202,7 @@ export function Composer({ send }: Props) {
           disabled={disabled}
           rows={1}
           data-testid="composer-input"
-          placeholder={
-            disabled
-              ? "Connecting…"
-              : "Ask pi anything… (type / for commands, Enter to send, Shift+Enter for newline)"
-          }
+          placeholder={disabled ? t("composer.placeholderDisabled") : t("composer.placeholder")}
           className={cn(
             "min-h-[24px] flex-1 resize-none bg-transparent text-sm text-foreground outline-none",
             "placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
@@ -207,7 +211,7 @@ export function Composer({ send }: Props) {
         <button
           onClick={submit}
           disabled={!trimmed || disabled || isStreaming}
-          aria-label="Send"
+          aria-label={t("composer.send")}
           data-testid="composer-send"
           className={cn(
             "grid h-8 w-8 place-items-center rounded-full bg-primary text-primary-foreground",
@@ -219,7 +223,7 @@ export function Composer({ send }: Props) {
       </div>
       {drag && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-md border-2 border-dashed border-primary bg-primary/5 text-sm text-primary">
-          Drop files to upload to the document collection
+          {t("composer.dropHint")}
         </div>
       )}
     </div>

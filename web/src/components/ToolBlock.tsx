@@ -1,4 +1,5 @@
 import { ChevronRight, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import type { Block } from "@/hooks/useChatStore";
 
@@ -18,6 +19,7 @@ function stringify(v: unknown): string {
 }
 
 export function ToolBlock({ block, onToggle }: Props) {
+  const { t } = useTranslation();
   const { name, args, state, result, partial, open } = block;
   const accent =
     state === "running"
@@ -25,8 +27,8 @@ export function ToolBlock({ block, onToggle }: Props) {
       : state === "error"
         ? "border-l-destructive"
         : "border-l-[color:var(--color-success)]";
-  const statusLabel =
-    state === "running" ? "running…" : state === "error" ? "error" : "done";
+  const statusKey =
+    state === "running" ? "turn.statusRunning" : state === "error" ? "turn.statusError" : "turn.statusDone";
 
   return (
     <div
@@ -51,20 +53,20 @@ export function ToolBlock({ block, onToggle }: Props) {
           )}
         >
           {state === "running" && <Loader2 className="h-3 w-3 animate-spin" />}
-          {statusLabel}
+          {t(statusKey)}
         </span>
       </button>
       {open && (
         <div className="max-h-72 space-y-2 overflow-y-auto border-t border-border px-3 py-2 text-[11px]">
           {args !== undefined && args !== null && (
-            <Section label="Input" body={stringify(args)} />
+            <Section label={t("turn.input")} body={stringify(args)} />
           )}
           {state === "running" && partial !== undefined && (
-            <Section label="Partial" body={stringify(partial)} />
+            <Section label={t("turn.partial")} body={stringify(partial)} />
           )}
           {state !== "running" && result !== undefined && (
             <Section
-              label={state === "error" ? "Error" : "Output"}
+              label={state === "error" ? t("turn.outputError") : t("turn.output")}
               body={stringify(result)}
               error={state === "error"}
             />

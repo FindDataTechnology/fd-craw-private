@@ -1,0 +1,135 @@
+{
+  "common": {
+    "loading": "Loading…"
+  },
+  "nav": {
+    "chat": "💬 Chat",
+    "dashboard": "📊 Dashboard",
+    "documents": "📚 Documents",
+    "openconnector": "🔌 OpenConnector",
+    "litellm": "🧭 LiteLLM"
+  },
+  "sidebar": {
+    "brand": "Platform",
+    "chats": "Chats",
+    "new": "+ New",
+    "noChats": "No chats yet. Click \"+ New\".",
+    "untitled": "Untitled",
+    "loadingModels": "Loading models…",
+    "clearChat": "Clear chat",
+    "language": "Language"
+  },
+  "status": {
+    "connected": "Connected",
+    "connecting": "Connecting…",
+    "disconnected": "Disconnected"
+  },
+  "composer": {
+    "placeholder": "Ask pi anything… (type / for commands, Enter to send, Shift+Enter for newline)",
+    "placeholderDisabled": "Connecting…",
+    "send": "Send",
+    "helpHeader": "Available commands:",
+    "dropHint": "Drop files to upload to the document collection",
+    "uploaded": "Uploaded {{name}}",
+    "uploadFailed": "Upload failed: {{message}}",
+    "cmd": {
+      "model": "switch or show the active model",
+      "new": "start a new chat session",
+      "clear": "clear the chat view",
+      "help": "list available commands"
+    }
+  },
+  "chat": {
+    "empty": "Send a message to start chatting."
+  },
+  "turn": {
+    "assistantName": "pi",
+    "thinkingStreaming": "Thinking…",
+    "thinking": "💭 Thinking",
+    "statusRunning": "running…",
+    "statusError": "error",
+    "statusDone": "done",
+    "input": "Input",
+    "partial": "Partial",
+    "output": "Output",
+    "outputError": "Error"
+  },
+  "markdown": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Copy failed"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing…",
+    "loadFailed": "Failed to load status: {{error}}",
+    "retry": "retry",
+    "none": "none",
+    "servers": "Servers",
+    "activeModel": "Active Model",
+    "provider": "Provider: {{name}}",
+    "uptime": "Uptime: {{sec}}s",
+    "documents": "Documents",
+    "collections": "Collections: {{count}}",
+    "mcpTools": "MCP Tools",
+    "state": {
+      "healthy": "healthy",
+      "unhealthy": "unhealthy",
+      "starting": "starting",
+      "disabled": "disabled"
+    }
+  },
+  "documents": {
+    "title": "Documents",
+    "loading": "Loading…",
+    "disabledMessage": "Documents are unavailable (document collection is disabled or the database is unreachable).",
+    "remove": "Remove",
+    "status": {
+      "ready": "ready",
+      "indexing": "indexing",
+      "queued": "queued",
+      "error": "error"
+    },
+    "list": {
+      "count": "Documents ({{count}})",
+      "refresh": "Refresh",
+      "empty": "No documents yet. Add one above."
+    },
+    "content": {
+      "title": "Content"
+    },
+    "ingest": {
+      "uploadFile": "Upload file",
+      "working": "Working…",
+      "textPlaceholder": "Paste plain text or notes…",
+      "addNote": "Add note",
+      "addUrl": "Add URL"
+    },
+    "query": {
+      "title": "Ask the documents",
+      "placeholder": "Ask a question about your documents…",
+      "ask": "Ask",
+      "sources": "Sources: {{names}}"
+    },
+    "collection": {
+      "title": "Collections",
+      "namePlaceholder": "Collection name…",
+      "create": "Create",
+      "empty": "No collections yet.",
+      "docsCount": "{{count}} docs",
+      "delete": "Delete",
+      "noDocuments": "No documents.",
+      "addDocPlaceholder": "Add document…",
+      "add": "Add",
+      "queryPlaceholder": "Ask about this collection…",
+      "confirmDelete": "Delete this collection?"
+    }
+  },
+  "embedded": {
+    "iframeTitle": "embedded service",
+    "blockedMessage": "The embedded UI could not be loaded in a frame.",
+    "openInNewTab": "Open in new tab",
+    "notConfigured": "{{name}} is not configured."
+  }
+}
