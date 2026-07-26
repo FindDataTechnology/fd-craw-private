@@ -29,6 +29,18 @@ To run the web server with a different port: `PORT=8080 npm start`. To run the d
 
 The `openspec` CLI (v1.4.1, `@fission-ai/openspec`, installed globally) drives spec-driven development — see **OpenSpec workflow** below.
 
+## Starting the full service ("open web")
+
+When the user says **"open web"** (or "open the app" / "start the app" / equivalent), start the **full service** with `npm start` - **not** `node server.js`. `npm start` (`scripts/start.js`) brings up `server.js` **plus** the bundled LiteLLM and OpenConnector as localhost child processes, so every panel - Chat, Documents, Dashboard, OpenConnector, LiteLLM - works for real at http://localhost:3000. `node server.js` alone does **not** spawn OC/LiteLLM; with a localhost `OPENCONNECTOR_BASE_URL` it then burns ~30s retrying the OC MCP connection, and the OpenConnector/LiteLLM panels fall back to "not configured" / blocked-frame placeholders.
+
+Steps:
+1. Stop anything already holding :3000 (e.g. a leftover `node server.js`) first.
+2. `npm start` in the background.
+3. Wait for the `Platform running at http://localhost:3000` line (and for the bundled children to report healthy).
+4. `open http://localhost:3000`.
+
+Caveats: the bundled LiteLLM/OC spawn only when `resources/` are built (`npm run predist`) **and** their `.env` URLs are localhost; a non-localhost URL (e.g. a remote LiteLLM) is used as-is with no spawn. If `resources/` are absent or both URLs are external, `npm start` degrades to `server.js` alone - in that case the panels won't be live, so say so rather than presenting the placeholder UI as "working".
+
 ## Configuration (all optional, all env-driven)
 
 Everything sensitive or environment-specific lives in **`.env`** (gitignored) and **`mcp.json`** (gitignored). `mcp.example.json` is the template. The server degrades gracefully when optional config is missing — it always starts.
