@@ -6,6 +6,7 @@
     "chat": "💬 Discussion",
     "dashboard": "📊 Tableau de bord",
     "documents": "📚 Documents",
+    "knowledge": "📚 Knowledge",
     "openconnector": "🔌 OpenConnector",
     "litellm": "🧭 LiteLLM"
   },
@@ -71,6 +72,7 @@
     "provider": "Fournisseur : {{name}}",
     "uptime": "Disponibilité : {{sec}}s",
     "documents": "Documents",
+    "knowledge": "📚 Knowledge",
     "collections": "Collections : {{count}}",
     "mcpTools": "Outils MCP",
     "state": {

@@ -4,7 +4,7 @@
 TBD - created by archiving change chat-commands-and-session-fixes. Update Purpose after archive.
 ## Requirements
 ### Requirement: Server parses and dispatches general chat slash-commands
-The server SHALL accept chat prompts whose first token is a slash-command and dispatch them according to a command table that includes `/model`, `/new`, `/clear`, `/help`, and `/skill:<name>`. Server-handled commands (`/model`, `/new`, `/skill:`) SHALL be dispatched to their behavior; client-handled commands (`/clear`, `/help`) SHALL be intercepted by the UI before the prompt is sent and SHALL NOT be forwarded to the agent. The raw text of a recognised server-handled command SHALL NOT be echoed as a normal user message.
+The server SHALL accept chat prompts whose first token is a slash-command and dispatch them according to a command table that includes `/model`, `/new`, `/clear`, `/help`, and `/skill:<name>`. Server-handled commands (`/model`, `/new`, `/skill:`) SHALL be dispatched to their behavior; client-handled commands (`/clear`, `/help`) SHALL be intercepted by the UI before the prompt is sent and SHALL NOT be forwarded to the agent. The raw text of a recognised server-handled command SHALL NOT be echoed as a normal user message. The UI SHALL clear the chat input field after executing any slash command.
 
 #### Scenario: server-handled command is dispatched
 - **WHEN** a client sends `{ "type": "prompt", "text": "/model deepseek-v4-pro" }`
@@ -19,6 +19,10 @@ The server SHALL accept chat prompts whose first token is a slash-command and di
 #### Scenario: unknown command falls through to the agent
 - **WHEN** a client sends a prompt beginning with `/` that is not a recognised command
 - **THEN** the server SHALL forward the text to the agent as a normal prompt
+
+#### Scenario: input is cleared after slash command
+- **WHEN** the user executes any slash command (local or server-handled)
+- **THEN** the chat input field SHALL be cleared
 
 ### Requirement: Command invocations render as collapsible blocks
 The chat UI SHALL render each server-handled command invocation as a collapsible `command_use` block showing the command name in its header and the arguments (and any informational message) in its body, in place of echoing the raw command text as a user message.

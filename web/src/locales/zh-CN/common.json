@@ -6,6 +6,7 @@
     "chat": "💬 聊天",
     "dashboard": "📊 仪表盘",
     "documents": "📚 文档",
+    "knowledge": "📚 Knowledge",
     "openconnector": "🔌 OpenConnector",
     "litellm": "🧭 LiteLLM"
   },
@@ -71,6 +72,7 @@
     "provider": "提供商：{{name}}",
     "uptime": "运行时间：{{sec}}秒",
     "documents": "文档",
+    "knowledge": "📚 Knowledge",
     "collections": "集合：{{count}}",
     "mcpTools": "MCP 工具",
     "state": {

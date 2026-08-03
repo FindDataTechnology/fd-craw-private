@@ -46,12 +46,6 @@ export function useWebSocket() {
         try {
           const msg = JSON.parse(e.data) as ServerMessage;
           apply(msg);
-          // Forward document status events to the documents store (live updates).
-          if (msg.type === "documents_status") {
-            import("@/hooks/useDocumentsStore").then(({ useDocumentsStore }) =>
-              useDocumentsStore.getState().applyEvent(msg),
-            );
-          }
         } catch (err) {
           console.error("[ws] bad JSON", err);
         }

@@ -1,6 +1,6 @@
 # lawcraw
 
-Browser-based chat interface around the `@earendil-works/pi-coding-agent` SDK, with an optional LlamaIndex document RAG and an OpenConnector SaaS-actions proxy.
+Browser-based chat interface around the `@earendil-works/pi-coding-agent` SDK, with an optional knowledge platform (WeKnora) and an OpenConnector SaaS-actions proxy.
 
 ## Dev quickstart
 
@@ -29,3 +29,37 @@ See `CLAUDE.md` for the full architecture and configuration reference.
 - **Signing** is gated on Actions secrets (`CSC_LINK`/`CSC_KEY_PASSWORD` + `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID` for mac, `WIN_CSC_LINK`/`WIN_CSC_KEY_PASSWORD` for win). With no secrets set, builds are **unsigned** (still succeed; Gatekeeper/SmartScreen warnings only).
 
 `scripts/build-node.js` downloads the standalone Node matching `process.version`, so the bundled Node's ABI always matches the `npm ci` Node (required because `electron-builder.yml` sets `npmRebuild: false`).
+
+## Knowledge Platform (WeKnora)
+
+The Knowledge panel embeds [WeKnora](https://github.com/Tencent/WeKnora) — an open-source knowledge platform from Tencent with RAG, agents, and auto-wiki capabilities. WeKnora is deployed separately (typically via Docker) and connected to Platform via a reverse proxy.
+
+### Deploying WeKnora
+
+```bash
+# Clone WeKnora
+git clone https://github.com/Tencent/WeKnora.git
+cd WeKnora
+
+# Start with Docker Compose (Postgres + Redis + WeKnora)
+docker compose up -d
+
+# WeKnora serves on http://localhost:8080 by default
+```
+
+See the [WeKnora documentation](https://github.com/Tencent/WeKnora) for full deployment instructions.
+
+### Configuring Platform
+
+Set `WEKNORA_BASE_URL` and `WEKNORA_API_KEY` in `.env`:
+
+```bash
+WEKNORA_BASE_URL=http://localhost:8080
+WEKNORA_API_KEY=your-weknora-api-key
+```
+
+When set, the Knowledge panel appears in the sidebar and embeds WeKnora's native web UI via `/weknora-web`. Leave empty to disable.
+
+### Migration from documents.js
+
+The previous knowledge module (`documents.js`, PageIndex-based) has been replaced by WeKnora. Users with existing `documents-store/` data must re-ingest their documents into WeKnora (no automatic migration path).

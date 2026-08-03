@@ -1,4 +1,4 @@
-// Composer: textarea + send + slash-command autocomplete + drop-target.
+// Composer: textarea + send + slash-command autocomplete.
 //
 // Slash commands mirror public/app.js:
 //   /clear /help    - client-handled, never sent to server
@@ -41,8 +41,8 @@ export function Composer({ send }: Props) {
 
   const [value, setValue] = useState("");
   const [acIdx, setAcIdx] = useState(0);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [drag, setDrag] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const disabled = status !== "connected";
   const trimmed = value.trim();
@@ -148,9 +148,9 @@ export function Composer({ send }: Props) {
       try {
         const r = await fetch("/api/documents", { method: "POST", body: fd });
         if (!r.ok) throw new Error(await r.text());
-        showToast(t("composer.uploaded", { name: f.name }));
+        showToast(`Uploaded ${f.name}`);
       } catch (err) {
-        showToast(t("composer.uploadFailed", { message: (err as Error).message.slice(0, 80) }));
+        showToast(`Upload failed: ${(err as Error).message.slice(0, 80)}`);
       }
     }
   };

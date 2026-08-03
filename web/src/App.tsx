@@ -5,8 +5,8 @@ import { useWebSocket } from "@/hooks/useWebSocket";
 import { Sidebar } from "@/components/Sidebar";
 import { ToastHost } from "@/components/Toast";
 import { ChatPage } from "@/pages/ChatPage";
-import { DocumentsPage } from "@/pages/DocumentsPage";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { DocumentsPage } from "@/pages/DocumentsPage";
 import { OpenConnectorPage, LiteLLMPage } from "@/pages/EmbeddedServicePages";
 
 export default function App() {

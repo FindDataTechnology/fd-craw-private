@@ -16,20 +16,11 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { connectMcpServers, connectServers, closeMcpClients } from "./mcp-bridge.js";
 import multer from "multer";
-import {
-  initStore,
-  addDocument,
-  listDocuments,
-  getDocumentContent,
-  removeDocument,
-  queryCollection,
-  typeForFilename,
-  SUPPORTED_EXTS,
-} from "./documents.js";
 import { fetchLitellmModels } from "./litellm-models.js";
-import * as collections from "./collections.js";
 import * as chatHistory from "./chat-history.js";
 import * as openConnector from "./open-connector.js";
+import * as documents from "./documents.js";
+import * as collections from "./collections.js";
 import * as db from "./db.js";
 import * as migrate from "./migrate.js";
 import * as cron from "./cron.js";
@@ -41,11 +32,6 @@ const HOST = process.env.HOST || "localhost";
 
 const VOLCES_API_KEY = process.env.VOLCES_API_KEY || "REDACTED_VOLCES_API_KEY";
 const VOLCES_BASE_URL = process.env.VOLCES_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3";
-
-// Document collection (LlamaIndex.TS) model. Defaults to the same family used for
-// chat; override with DOCUMENTS_MODEL. Must be a model id registered on the Volces
-// provider above.
-const DOCUMENTS_MODEL = process.env.DOCUMENTS_MODEL || "deepseek-v4-pro";
 
 // Default chat model. When set, the agent session starts on this model id.
 // Otherwise the server prefers the first LiteLLM model (when LiteLLM is configured)
@@ -889,6 +875,141 @@ wss.on("connection", (ws) => {
   });
 });
 
+// ── Documents REST API routes (local PageIndex + LlamaIndex) ───────────────
+// Ingests PDF, Markdown, text, URL, DOCX, XLSX, PPTX, CSV, HTML. Indexes
+// via PageIndex through LlamaIndex.TS framework with SQLite persistence.
+// Status transitions broadcast as documents_status WS events.
+
+app.post("/api/documents", upload.single("file"), async (req, res) => {
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Document collection is disabled (database unavailable)" });
+  }
+  try {
+    const { id, name, type } = req.body;
+    if (!req.file && !type) {
+      return res.status(400).json({ error: "Missing file or type" });
+    }
+
+    const result = await documents.addDocument({
+      id,
+      name: req.file ? req.file.originalname : name,
+      type: req.file ? documents.typeForFilename(req.file.originalname) : type,
+      buffer: req.file?.buffer,
+      content: req.body.content,
+      url: req.body.url,
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.get("/api/documents", (req, res) => {
+  res.json({ documents: documents.listDocuments() });
+});
+
+app.get("/api/documents/:id", async (req, res) => {
+  try {
+    const content = await documents.getDocumentContent(req.params.id);
+    if (content === null) return res.status(404).json({ error: "Not found" });
+    res.json({ content });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/documents/:id", async (req, res) => {
+  const removed = await documents.removeDocument(req.params.id);
+  res.status(removed ? 200 : 404).json({ removed });
+});
+
+app.post("/api/documents/query", async (req, res) => {
+  const query = (req.body?.query || "").trim();
+  if (!query) return res.status(400).json({ error: "Missing query" });
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Document collection is disabled (database unavailable)" });
+  }
+  try {
+    const result = await documents.queryCollection(query);
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// ── Collections REST API routes (named document groups) ───────────────────
+// Collections allow organizing documents into named groups for scoped querying.
+
+app.get("/api/collections", (_req, res) => {
+  res.json({ collections: collections.listCollections() });
+});
+
+app.post("/api/collections", async (req, res) => {
+  const { name, description } = req.body;
+  if (!name) return res.status(400).json({ error: "Missing name" });
+  try {
+    const collection = await collections.createCollection({ name, description });
+    res.json(collection);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.patch("/api/collections/:id", async (req, res) => {
+  const { name, description } = req.body;
+  try {
+    const collection = await collections.renameCollection(req.params.id, { name, description });
+    res.json(collection);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/collections/:id", async (req, res) => {
+  await collections.deleteCollection(req.params.id);
+  res.json({ ok: true });
+});
+
+app.get("/api/collections/:id/documents", async (req, res) => {
+  try {
+    const docs = await collections.listCollectionDocuments(req.params.id);
+    res.json({ documents: docs });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.post("/api/collections/:id/documents", async (req, res) => {
+  const { documentId } = req.body;
+  if (!documentId) return res.status(400).json({ error: "Missing documentId" });
+  try {
+    await collections.addDocumentToCollection(req.params.id, documentId);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/collections/:id/documents/:documentId", async (req, res) => {
+  await collections.removeDocumentFromCollection(req.params.id, req.params.documentId);
+  res.json({ ok: true });
+});
+
+app.post("/api/collections/:id/query", async (req, res) => {
+  const query = (req.body?.query || "").trim();
+  if (!query) return res.status(400).json({ error: "Missing query" });
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Document collection is disabled (database unavailable)" });
+  }
+  try {
+    const result = await collections.queryCollection(req.params.id, query);
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 // ── Static files ─────────────────────────────────────────────────────────────
 //
 // Two frontends coexist during the React migration (see openspec change
@@ -918,8 +1039,8 @@ app.get("/api/config", (_req, res) => {
   res.json({
     litellmEnabled,
     openconnectorEnabled: openConnector.openConnectorEnabled,
-    litellmManagementUrl: LITELLM_BASE_URL ? `${LITELLM_BASE_URL}/ui` : null,
     documentsEnabled: db.isDbReady(),
+    litellmManagementUrl: LITELLM_BASE_URL ? `${LITELLM_BASE_URL}/ui` : null,
   });
 });
 
@@ -944,12 +1065,7 @@ app.get("/api/litellm/credentials", (_req, res) => {
 // Electron app the Electron main process can override this via IPC (future); for
 // now it returns the same self-status which is sufficient for the dashboard.
 app.get("/api/supervisor/status", (_req, res) => {
-  const docs = listDocuments();
-  const docByStatus = docs.reduce((acc, d) => {
-    acc[d.status] = (acc[d.status] || 0) + 1;
-    return acc;
-  }, {});
-  const colls = db.isDbReady() ? collections.listCollections() : [];
+  const docByStatus = {};
   res.json({
     servers: [
       {
@@ -978,180 +1094,9 @@ app.get("/api/supervisor/status", (_req, res) => {
     ],
     provider: defaultModel ? defaultModel.provider : null,
     currentModel: defaultModel ? defaultModel.id : null,
-    documentCount: docs.length,
-    documentByStatus: docByStatus,
-    collectionCount: colls.length,
     mcpToolCount,
     uptimeMs: process.uptime() * 1000,
   });
-});
-
-// ── Document collection endpoints ────────────────────────────────────────────
-// LlamaIndex framework + PageIndex indexing, persisted to the SQLite project
-// database. Mirrors the former /api/knowledge/* surface. Multipart file uploads
-// (PDF / Markdown) use multer memory storage; text/url arrive as JSON. Status
-// flows to clients via documents_status WS events broadcast by the documents
-// module. Disabled (503) when the project database is unavailable.
-
-app.post("/api/documents", upload.single("file"), async (req, res) => {
-  if (!db.isDbReady()) {
-    return res.status(503).json({ error: "Document collection is disabled (database unavailable)" });
-  }
-  try {
-    let input;
-    if (req.file) {
-      const type = typeForFilename(req.file.originalname);
-      if (!type) {
-        return res.status(415).json({
-          error: `Unsupported file type. Supported extensions: ${SUPPORTED_EXTS.join(", ")}`,
-        });
-      }
-      input = {
-        type,
-        name: req.file.originalname,
-        buffer: req.file.buffer,
-      };
-    } else {
-      const { type, content, url, name } = req.body || {};
-      if (type !== "text" && type !== "url") {
-        return res
-          .status(400)
-          .json({ error: "Invalid type; upload a file or set type to text|url" });
-      }
-      if (type === "text" && !content) {
-        return res.status(400).json({ error: "Missing content" });
-      }
-      if (type === "url" && !url) {
-        return res.status(400).json({ error: "Missing url" });
-      }
-      input = { type, content, url, name };
-    }
-    const result = await addDocument(input);
-    res.json(result);
-  } catch (err) {
-    console.error("[documents] add error:", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/api/documents", (req, res) => {
-  res.json({ documents: listDocuments() });
-});
-
-app.get("/api/documents/:id", async (req, res) => {
-  try {
-    const content = await getDocumentContent(req.params.id);
-    if (content === null) return res.status(404).json({ error: "Not found" });
-    res.json({ content });
-  } catch (err) {
-    console.error("[documents] content error:", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete("/api/documents/:id", async (req, res) => {
-  const removed = await removeDocument(req.params.id);
-  res.status(removed ? 200 : 404).json({ removed });
-});
-
-app.post("/api/documents/query", async (req, res) => {
-  const query = (req.body?.query || "").trim();
-  if (!query) return res.status(400).json({ error: "Missing query" });
-  if (!db.isDbReady()) {
-    return res.status(503).json({ error: "Document collection is disabled (database unavailable)" });
-  }
-  try {
-    const result = await queryCollection(query);
-    res.json(result);
-  } catch (err) {
-    console.error("[documents] query error:", err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── Document collections endpoints ───────────────────────────────────────────
-// Named groups of documents, persisted in the project SQLite database. Disabled
-// (503) when the database is unavailable. Memberships cascade-delete with the
-// parent document or collection (FK ON DELETE CASCADE).
-
-function collectionsDisabled(res) {
-  return res
-    .status(503)
-    .json({ error: "Collections are disabled (database unavailable)" });
-}
-
-app.get("/api/collections", (_req, res) => {
-  if (!db.isDbReady()) return collectionsDisabled(res);
-  res.json({ collections: collections.listCollections() });
-});
-
-app.post("/api/collections", (req, res) => {
-  if (!db.isDbReady()) return collectionsDisabled(res);
-  try {
-    const { name, description } = req.body || {};
-    if (!name || !name.trim()) {
-      return res.status(400).json({ error: "Missing collection name" });
-    }
-    res.json({ collection: collections.createCollection({ name, description }) });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.patch("/api/collections/:id", (req, res) => {
-  if (!db.isDbReady()) return collectionsDisabled(res);
-  try {
-    const { name, description } = req.body || {};
-    const updated = collections.renameCollection(req.params.id, { name, description });
-    res.json({ collection: updated });
-  } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
-  }
-});
-
-app.delete("/api/collections/:id", (req, res) => {
-  if (!db.isDbReady()) return collectionsDisabled(res);
-  collections.deleteCollection(req.params.id);
-  res.json({ ok: true });
-});
-
-app.get("/api/collections/:id/documents", (req, res) => {
-  if (!db.isDbReady()) return collectionsDisabled(res);
-  try {
-    res.json({ documents: collections.listMembers(req.params.id) });
-  } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
-  }
-});
-
-app.post("/api/collections/:id/documents", (req, res) => {
-  if (!db.isDbReady()) return collectionsDisabled(res);
-  try {
-    const { documentId } = req.body || {};
-    if (!documentId) return res.status(400).json({ error: "Missing documentId" });
-    const collection = collections.addDocument(req.params.id, documentId);
-    res.json({ collection });
-  } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
-  }
-});
-
-app.delete("/api/collections/:id/documents/:docId", (req, res) => {
-  if (!db.isDbReady()) return collectionsDisabled(res);
-  collections.removeDocument(req.params.id, req.params.docId);
-  res.json({ ok: true });
-});
-
-app.post("/api/collections/:id/query", async (req, res) => {
-  if (!db.isDbReady()) return collectionsDisabled(res);
-  const query = (req.body?.query || "").trim();
-  if (!query) return res.status(400).json({ error: "Missing query" });
-  try {
-    const result = await collections.queryCollection(req.params.id, query);
-    res.json(result);
-  } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
-  }
 });
 
 // ── User preferences endpoints (single-user, key/value) ──────────────────────
@@ -1592,6 +1537,15 @@ await chatHistory.initChatHistory();
 // feature init. Degrades gracefully: if it cannot open, dbReady stays false and
 // the server continues (chat in-memory, documents disabled).
 await db.initDb();
+// Initialize document store (PageIndex indexing, LlamaIndex framework)
+if (db.isDbReady()) {
+  await documents.initStore({
+    baseUrl: VOLCES_BASE_URL,
+    apiKey: VOLCES_API_KEY,
+    model: documents.DOCUMENTS_MODEL,
+    broadcast,
+  });
+}
 await initAgent();
 // One-time best-effort import of legacy chat-history-store/* into the SDK session
 // store (runs only when the session store is empty). Per-session failures are
@@ -1602,12 +1556,6 @@ await chatHistory.importLegacySessions();
 // the legacy stores. Runs after importLegacySessions so chat-history-store data
 // flows through the SDK store into SQLite.
 await migrate.runLegacyMigrations();
-await initStore({
-  baseUrl: VOLCES_BASE_URL,
-  apiKey: VOLCES_API_KEY,
-  model: DOCUMENTS_MODEL,
-  broadcast,
-});
 
 // Initialize cron module
 await cron.initCron({

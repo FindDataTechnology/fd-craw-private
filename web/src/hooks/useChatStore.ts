@@ -234,7 +234,6 @@ export const useChatStore = create<State>((set) => ({
           };
 
         // Non-chat channels. Ignored for now — vanilla views own them.
-        case "documents_status":
         case "cron_jobs":
         case "cron_status":
         case "cron_removed":

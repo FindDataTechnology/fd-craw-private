@@ -6,6 +6,7 @@
     "chat": "💬 チャット",
     "dashboard": "📊 ダッシュボード",
     "documents": "📚 ドキュメント",
+    "knowledge": "📚 Knowledge",
     "openconnector": "🔌 OpenConnector",
     "litellm": "🧭 LiteLLM"
   },
@@ -71,6 +72,7 @@
     "provider": "プロバイダー: {{name}}",
     "uptime": "稼働時間: {{sec}}秒",
     "documents": "ドキュメント",
+    "knowledge": "📚 Knowledge",
     "collections": "コレクション: {{count}}",
     "mcpTools": "MCP ツール",
     "state": {

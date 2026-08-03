@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`Platform` — a browser-based chat interface around the `@earendil-works/pi-coding-agent` SDK. The project's stated long-term goal is an "openclaw-like" assistant targeting a special industry, but the code today is a general-purpose coding-assistant web app: an Express + WebSocket server that hosts a single pi agent session, streams its events to vanilla-JS frontend clients, and adds two optional capabilities — a LlamaIndex-backed document collection (RAG) and an OpenConnector proxy (1000+ SaaS actions via MCP).
+`Platform` — a browser-based chat interface around the `@earendil-works/pi-coding-agent` SDK. The project's stated long-term goal is an "openclaw-like" assistant targeting a special industry, but the code today is a general-purpose coding-assistant web app: an Express + WebSocket server that hosts a single pi agent session, streams its events to React frontend clients, and adds two optional capabilities — a WeKnora knowledge platform (remote, deployed separately via Docker) and an OpenConnector proxy (1000+ SaaS actions via MCP).
 
-This is a **greenfield, ESM** Node project (`"type": "module"`). The backend remains buildless plain JavaScript — no transpiler, no bundler, no test runner, no linter configured. The **frontend chat surface is being ported to React** under `web/` (Vite + TypeScript + Tailwind v4 + shadcn/ui — see `web/README.md` and `openspec/changes/redesign-chat-ui-react-shadcn/`); other frontend views (Documents, OpenConnector, Dashboard, LiteLLM) remain vanilla JS under `public/` until their own migration changes.
+This is a **greenfield, ESM** Node project (`"type": "module"`). The backend remains buildless plain JavaScript — no transpiler, no bundler, no test runner, no linter configured. The **frontend is React** under `web/` (Vite + TypeScript + Tailwind v4 + shadcn/ui — see `web/README.md`). Routes: `/chat` (default), `/dashboard`, `/weknora` (Knowledge panel), `/openconnector`, `/litellm`, `/history`.
 
 ## Commands
 
@@ -31,7 +31,7 @@ The `openspec` CLI (v1.4.1, `@fission-ai/openspec`, installed globally) drives s
 
 ## Starting the full service ("open web")
 
-When the user says **"open web"** (or "open the app" / "start the app" / equivalent), start the **full service** with `npm start` - **not** `node server.js`. `npm start` (`scripts/start.js`) brings up `server.js` **plus** the bundled LiteLLM and OpenConnector as localhost child processes, so every panel - Chat, Documents, Dashboard, OpenConnector, LiteLLM - works for real at http://localhost:3000. `node server.js` alone does **not** spawn OC/LiteLLM; with a localhost `OPENCONNECTOR_BASE_URL` it then burns ~30s retrying the OC MCP connection, and the OpenConnector/LiteLLM panels fall back to "not configured" / blocked-frame placeholders.
+When the user says **"open web"** (or "open the app" / "start the app" / equivalent), start the **full service** with `npm start` - **not** `node server.js`. `npm start` (`scripts/start.js`) brings up `server.js` **plus** the bundled LiteLLM and OpenConnector as localhost child processes, so every panel - Chat, Dashboard, Knowledge (WeKnora), OpenConnector, LiteLLM - works for real at http://localhost:3000. `node server.js` alone does **not** spawn OC/LiteLLM; with a localhost `OPENCONNECTOR_BASE_URL` it then burns ~30s retrying the OC MCP connection, and the OpenConnector/LiteLLM panels fall back to "not configured" / blocked-frame placeholders. The Knowledge panel requires a separate WeKnora deployment (see Configuration below).
 
 Steps:
 1. Stop anything already holding :3000 (e.g. a leftover `node server.js`) first.
@@ -48,7 +48,7 @@ Everything sensitive or environment-specific lives in **`.env`** (gitignored) an
 - `VOLCES_API_KEY` / `VOLCES_BASE_URL` — the hardcoded default provider (火山引擎/Volces Coding). A fallback API key is baked into `server.js`; override via env.
 - `LITELLM_BASE_URL` / `LITELLM_API_KEY` — registers the `pi-provider-litellm` extension as an extra provider. If either is unset, litellm is skipped (server starts Volces-only). Under `npm start`, setting this to a localhost URL (e.g. `http://localhost:4000`) makes the launcher spawn the **bundled local LiteLLM** on that port (see Local services above); set a non-localhost URL to use a remote proxy.
 - `OPENCONNECTOR_BASE_URL` (+ `OPENCONNECTOR_RUNTIME_TOKEN`, `OPENCONNECTOR_ADMIN_TOKEN`) — enables the OpenConnector panel, MCP registration, and the embedded native web UI at `/oc-web`. Unset = fully disabled. Under `npm start`, setting this to a localhost URL (e.g. `http://localhost:3001`) makes the launcher spawn the **bundled local OpenConnector** on that port; set a non-localhost URL to use a remote runtime.
-- `DOCUMENTS_MODEL` — model id used for document indexing/retrieval (default `deepseek-v4-pro`); must be a model registered on the Volces provider.
+- `WEKNORA_BASE_URL` / `WEKNORA_API_KEY` — enables the Knowledge panel (WeKnora knowledge platform). WeKnora is deployed separately (typically via Docker: `docker compose up` with Postgres + Redis + WeKnora). Set `WEKNORA_BASE_URL` to the WeKnora URL (e.g. `http://localhost:8080`) and `WEKNORA_API_KEY` to the API key. The server mounts a reverse proxy at `/weknora-web` that embeds WeKnora's native web UI in the Knowledge panel. Unset = fully disabled.
 - `PORT` / `HOST` — bind address (default `3000` / `localhost`).
 - `PLATFORM_DATA_DIR` - root for all on-disk stores (SQLite, sessions, cron). Unset in dev (stores stay relative to CWD); the Electron supervisor sets this to `app.getPath('userData')` when packaged so state lands in a per-user, update-safe directory (the macOS bundle is read-only). See `paths.js`.
 - In the **packaged Electron app**, end users cannot edit `.env`; the same knobs are read from `app.getPath('userData')/settings.json` (`electron/config/settings.js`), which the supervisor injects into the `server.js` child's env. Settings.json takes precedence over inherited env.
@@ -75,14 +75,8 @@ WS message protocol (client→server): `prompt`, `list_models`, `set_model`, `li
 ### mcp-bridge.js — MCP → pi tool bridge
 The pi SDK has **no native MCP support**, so this module connects to each server in `mcp.json` (stdio via `command`/`args`, or http/sse via `url`/`headers`), calls `listTools()`, and wraps each MCP tool as a pi `ToolDefinition` whose `execute()` proxies to `callTool()`. Tool names are namespaced `mcp__<server>__<tool>`. For http servers it tries Streamable HTTP first, then falls back to legacy SSE. `connectServers()` is the reusable primitive; `connectMcpServers()` reads `mcp.json` and delegates. **Failed servers are logged and skipped — they never abort agent startup.**
 
-### documents.js — LlamaIndex document RAG
-Ingests PDF / Markdown / text / URL, indexes each with LlamaIndex.TS (`SummaryIndex`) configured against the server's OpenAI-compatible Volces provider, and persists each index under `documents-store/<id>/` plus an atomic `manifest.json`. Indexing runs in a **serialized queue** (one doc at a time) with per-doc failure isolation; status transitions (`queued`/`indexing`/`ready`/`error`) are broadcast as `documents_status` WS events. Retrieval (`queryCollection`) queries each ready doc's `SummaryIndex` and synthesizes a single answer (via `llm-chat.js`) with source names.
-
-Non-obvious behaviors (documented in-file):
-- LlamaIndex.TS's `SummaryIndex` requires an `embedModel` at indexing time even though retrieval is not similarity-based. A no-op `BaseEmbedding` subclass (`NoopEmbedding`) satisfies this without an embedding endpoint (Volces is chat-only). Swap for `OpenAIEmbedding` + `VectorStoreIndex` if embeddings become available.
-- Sets `process.env.OPENAI_BASE_URL`/`OPENAI_API_KEY` at init (LlamaIndex's OpenAI client falls back to `api.openai.com` otherwise).
-- On restart, any doc left `queued`/`indexing` is marked `error` (its in-memory payload is gone and cannot resume).
-- URL ingestion has SSRF protection (`isPrivateHost`) and a 2 MB / 15 s fetch cap; `manifest.json` is written atomically (temp + rename).
+### weknora.js — Knowledge platform proxy
+Thin module that reads `WEKNORA_BASE_URL` + `WEKNORA_API_KEY` from env and exposes `getRuntimeBase()` + `tokenForPath()` so `server.js` can mount a token-injecting reverse proxy of WeKnora's native web UI at `/weknora-web`. The React SPA loads it in a same-origin iframe. **Tokens stay server-side; the browser never sees them.** WeKnora is deployed separately (typically via Docker); this module does NOT embed it.
 
 ### chat-history.js — read-only chat persistence
 Persists each chat session as `chat-history-store/<sessionId>.json` (atomic temp+rename). The server tracks one in-memory "current" session (single shared agent) and appends the user turn on `prompt` and the assistant's final text on `done`. `/api/chat-history/sessions` lists metadata (title derived from the first user message); `/api/chat-history/sessions/:id` returns full messages for read-only viewing. No resume into the live agent.
@@ -93,12 +87,9 @@ Thin HTTP client for an **externally-run** OpenConnector runtime (a Composio alt
 ### web/ - React SPA (sole frontend)
 Vite + React 19 + TypeScript + Tailwind v4 + shadcn-style primitives + `react-router-dom`. The **sole frontend** - the legacy vanilla `public/` directory has been deleted. `server.js` serves `web/dist/` at `/` with a SPA fallback so the client router handles deep links. Vite `base` is `/`.
 
-Routes: `/chat` (default), `/documents`, `/dashboard`, `/history`, `/openconnector`, `/litellm`. The sidebar uses `<NavLink>` for in-app navigation (no page reload, WebSocket stays connected). OpenConnector + LiteLLM are third-party projects with their own native UIs - the React pages are thin `<iframe>` wrappers around the `/oc-web` and `/litellm-web` same-origin proxies (tokens injected server-side, never reach the renderer). Documents, Dashboard, and Chat History are first-party React pages. WebSocket + REST contracts are unchanged - the React app talks to the same `ws://<host>/` and `/api/*` endpoints.
+Routes: `/chat` (default), `/dashboard`, `/weknora` (Knowledge panel), `/openconnector`, `/litellm`, `/history`. The sidebar uses `<NavLink>` for in-app navigation (no page reload, WebSocket stays connected). OpenConnector + LiteLLM + WeKnora are third-party projects with their own native UIs - the React pages are thin `<iframe>` wrappers around the `/oc-web`, `/litellm-web`, and `/weknora-web` same-origin proxies (tokens injected server-side, never reach the renderer). Dashboard and Chat History are first-party React pages. WebSocket + REST contracts are unchanged - the React app talks to the same `ws://<host>/` and `/api/*` endpoints.
 
-Dev: `npm run web:dev` (Vite on :5173, proxies `/api` + `/oc-web` + `/litellm-web` to :3000; backend must also run). Prod: `npm run web:build` -> `web/dist/`, served by `server.js` at `/`. See `web/README.md` for layout and dev workflow.
-
-### web/ — React chat surface (in progress)
-                   #   / and all routes -> React SPA from web/dist/ (client-side router)
+Dev: `npm run web:dev` (Vite on :5173, proxies `/api` + `/oc-web` + `/litellm-web` + `/weknora-web` to :3000; backend must also run). Prod: `npm run web:build` -> `web/dist/`, served by `server.js` at `/`. See `web/README.md` for layout and dev workflow.
 
 ### skills/ — local skills
 Markdown `SKILL.md` files (YAML frontmatter `name`/`description` + body). Loaded into the agent via `additionalSkillPaths: [path.resolve("skills")]`. Invoked from the chat as `/skill:<name> <args>`; `server.js` parses this, broadcasts a `skill_use` event, and **manually expands** the skill body (stripping frontmatter) before forwarding to `session.prompt()` — it does not rely on the SDK's slash-command expansion. `skills/example-skill/` is a template.
