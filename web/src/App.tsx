@@ -7,6 +7,7 @@ import { ToastHost } from "@/components/Toast";
 import { ChatPage } from "@/pages/ChatPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
+import { ExtensionsPage } from "@/pages/ExtensionsPage";
 import { OpenConnectorPage, LiteLLMPage } from "@/pages/EmbeddedServicePages";
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="/chat/:sessionId" element={<ChatPage send={send} />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/extensions" element={<ExtensionsPage />} />
         <Route path="/openconnector" element={<OpenConnectorPage />} />
         <Route path="/litellm" element={<LiteLLMPage />} />
         <Route path="*" element={<Navigate to="/chat" replace />} />

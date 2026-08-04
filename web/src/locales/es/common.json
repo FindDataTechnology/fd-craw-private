@@ -1,11 +1,16 @@
 {
   "common": {
-    "loading": "Cargando…"
+    "loading": "Cargando…",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "add": "Agregar"
   },
   "nav": {
     "chat": "💬 Chat",
     "dashboard": "📊 Panel",
     "documents": "📚 Documentos",
+    "extensions": "🧩 Extensiones",
     "knowledge": "📚 Knowledge",
     "openconnector": "🔌 OpenConnector",
     "litellm": "🧭 LiteLLM"
@@ -133,5 +138,70 @@
     "blockedMessage": "La interfaz integrada no pudo cargarse en un marco.",
     "openInNewTab": "Abrir en una pestaña nueva",
     "notConfigured": "{{name}} no está configurado."
+  },
+  "extensions": {
+    "title": "Extensiones",
+    "description": "Gestiona servidores MCP y habilidades para extender las capacidades de la plataforma",
+    "tabs": {
+      "installed": "Instaladas",
+      "market": "Mercado"
+    },
+    "status": {
+      "disabled": "Deshabilitado"
+    },
+    "fields": {
+      "enabled": "Habilitado"
+    },
+    "mcp": {
+      "title": "Servidores MCP",
+      "addButton": "Agregar servidor MCP",
+      "empty": "No hay servidores MCP configurados. Agrega uno para extender las capacidades del agente.",
+      "addTitle": "Agregar servidor MCP",
+      "editTitle": "Editar servidor MCP",
+      "confirmDelete": "¿Eliminar el servidor MCP \"{{name}}\"?",
+      "fields": {
+        "name": "Nombre",
+        "type": "Tipo",
+        "command": "Comando",
+        "args": "Argumentos (separados por espacios)",
+        "env": "Variables de entorno (JSON)",
+        "url": "URL",
+        "headers": "Encabezados (JSON)"
+      },
+      "errors": {
+        "nameRequired": "El nombre es requerido",
+        "commandRequired": "El comando es requerido para servidores stdio",
+        "urlRequired": "La URL es requerida para servidores HTTP",
+        "envInvalid": "Las variables de entorno deben ser JSON válido",
+        "headersInvalid": "Los encabezados deben ser JSON válido"
+      }
+    },
+    "skills": {
+      "title": "Habilidades",
+      "addButton": "Agregar habilidad personalizada",
+      "empty": "No hay habilidades personalizadas. Agrega una para crear comportamientos de agente reutilizables.",
+      "addTitle": "Agregar habilidad personalizada",
+      "editTitle": "Editar habilidad personalizada",
+      "confirmDelete": "¿Eliminar la habilidad \"{{name}}\"?",
+      "custom": "Personalizada",
+      "builtIn": "Integrada",
+      "fields": {
+        "name": "Nombre",
+        "description": "Descripción",
+        "content": "Contenido (Markdown)"
+      },
+      "errors": {
+        "nameRequired": "El nombre es requerido",
+        "contentRequired": "El contenido es requerido"
+      }
+    },
+    "market": {
+      "mcpTitle": "Servidores MCP",
+      "skillsTitle": "Habilidades",
+      "empty": "No hay artículos disponibles en el catálogo del mercado.",
+      "install": "Instalar",
+      "installSuccess": "{{name}} instalado",
+      "installFailed": "Error al instalar {{name}}: {{error}}"
+    }
   }
 }

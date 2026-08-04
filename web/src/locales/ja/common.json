@@ -1,11 +1,16 @@
 {
   "common": {
-    "loading": "読み込み中…"
+    "loading": "読み込み中…",
+    "cancel": "キャンセル",
+    "save": "保存",
+    "saving": "保存中…",
+    "add": "追加"
   },
   "nav": {
     "chat": "💬 チャット",
     "dashboard": "📊 ダッシュボード",
     "documents": "📚 ドキュメント",
+    "extensions": "🧩 拡張機能",
     "knowledge": "📚 Knowledge",
     "openconnector": "🔌 OpenConnector",
     "litellm": "🧭 LiteLLM"
@@ -133,5 +138,70 @@
     "blockedMessage": "埋め込み UI をフレーム内で読み込めませんでした。",
     "openInNewTab": "新しいタブで開く",
     "notConfigured": "{{name}} は設定されていません。"
+  },
+  "extensions": {
+    "title": "拡張機能",
+    "description": "MCPサーバーとスキルを管理して、プラットフォームの機能を拡張します",
+    "tabs": {
+      "installed": "インストール済み",
+      "market": "マーケット"
+    },
+    "status": {
+      "disabled": "無効"
+    },
+    "fields": {
+      "enabled": "有効"
+    },
+    "mcp": {
+      "title": "MCPサーバー",
+      "addButton": "MCPサーバーを追加",
+      "empty": "MCPサーバーが設定されていません。追加してエージェントの機能を拡張します。",
+      "addTitle": "MCPサーバーを追加",
+      "editTitle": "MCPサーバーを編集",
+      "confirmDelete": "MCPサーバー「{{name}}」を削除しますか？",
+      "fields": {
+        "name": "名前",
+        "type": "タイプ",
+        "command": "コマンド",
+        "args": "引数（スペース区切り）",
+        "env": "環境変数（JSON）",
+        "url": "URL",
+        "headers": "ヘッダー（JSON）"
+      },
+      "errors": {
+        "nameRequired": "名前は必須です",
+        "commandRequired": "stdioサーバーにはコマンドが必要です",
+        "urlRequired": "HTTPサーバーにはURLが必要です",
+        "envInvalid": "環境変数は有効なJSONである必要があります",
+        "headersInvalid": "ヘッダーは有効なJSONである必要があります"
+      }
+    },
+    "skills": {
+      "title": "スキル",
+      "addButton": "カスタムスキルを追加",
+      "empty": "カスタムスキルがありません。追加して再利用可能なエージェントの動作を作成します。",
+      "addTitle": "カスタムスキルを追加",
+      "editTitle": "カスタムスキルを編集",
+      "confirmDelete": "スキル「{{name}}」を削除しますか？",
+      "custom": "カスタム",
+      "builtIn": "組み込み",
+      "fields": {
+        "name": "名前",
+        "description": "説明",
+        "content": "内容（Markdown）"
+      },
+      "errors": {
+        "nameRequired": "名前は必須です",
+        "contentRequired": "内容は必須です"
+      }
+    },
+    "market": {
+      "mcpTitle": "MCPサーバー",
+      "skillsTitle": "スキル",
+      "empty": "マーケットカタログにアイテムがありません。",
+      "install": "インストール",
+      "installSuccess": "{{name}}をインストールしました",
+      "installFailed": "{{name}}のインストールに失敗しました: {{error}}"
+    }
   }
 }

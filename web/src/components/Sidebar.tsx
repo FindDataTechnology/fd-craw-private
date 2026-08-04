@@ -20,6 +20,7 @@ const NAV_BASE = [
   { to: "/chat", key: "nav.chat", testId: "nav-chat" },
   { to: "/dashboard", key: "nav.dashboard", testId: "nav-dashboard" },
   { to: "/documents", key: "nav.documents", testId: "nav-documents" },
+  { to: "/extensions", key: "nav.extensions", testId: "nav-extensions" },
   { to: "/openconnector", key: "nav.openconnector", testId: "nav-openconnector" },
 ];
 const LITELLM_NAV = { to: "/litellm", key: "nav.litellm", testId: "nav-litellm" };

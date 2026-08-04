@@ -1,8 +1,5 @@
-# skill-invocation Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-mcp-skills-model-select. Update Purpose after archive.
-## Requirements
 ### Requirement: Server loads skills from configured paths
 The server SHALL configure the pi resource loader with `additionalSkillPaths` pointing at a local skills directory so that skills are loaded into the agent's system prompt and slash-command table at startup. The server SHALL also load custom skill definitions from the SQLite database (if present) and register them alongside file-based skills.
 
@@ -62,4 +59,3 @@ The chat UI SHALL present a slash-command autocomplete popup (specified by the `
 #### Scenario: filtering skills by typed text
 - **WHEN** the user types `/gra` in the chat input
 - **THEN** the popup SHALL list only the commands (including enabled skills) whose names match `gra`
-

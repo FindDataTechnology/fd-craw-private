@@ -82,3 +82,11 @@ export async function gotoDashboard(page) {
   await page.goto("/dashboard");
   await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 15000 });
 }
+
+// Navigate to the React Extensions page.
+export async function gotoExtensions(page) {
+  await pinLocaleEn(page);
+  await page.goto("/extensions");
+  // Wait for the page to load (check for the title)
+  await expect(page.getByRole("heading", { name: /extensions/i })).toBeVisible({ timeout: 15000 });
+}

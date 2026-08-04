@@ -8,6 +8,7 @@
 
 import { useEffect, useRef } from "react";
 import { useChatStore } from "@/hooks/useChatStore";
+import { useExtensionsStore } from "@/hooks/useExtensionsStore";
 import type { ClientMessage, ServerMessage } from "@/types/ws";
 
 // In dev (Vite on :5173), Vite doesn't proxy the root WS path — connect
@@ -24,6 +25,7 @@ export function useWebSocket() {
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
   const setStatus = useChatStore((s) => s.setStatus);
   const apply = useChatStore((s) => s.apply);
+  const applyExtensions = useExtensionsStore((s) => s.applyEvent);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +48,7 @@ export function useWebSocket() {
         try {
           const msg = JSON.parse(e.data) as ServerMessage;
           apply(msg);
+          applyExtensions(msg);
         } catch (err) {
           console.error("[ws] bad JSON", err);
         }
@@ -79,7 +82,7 @@ export function useWebSocket() {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       wsRef.current?.close();
     };
-  }, [apply, setStatus]);
+  }, [apply, applyExtensions, setStatus]);
 
   return { send: (msg: ClientMessage) => sendRef.current(msg) };
 }

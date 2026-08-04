@@ -1,8 +1,5 @@
-# mcp-integration Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-mcp-skills-model-select. Update Purpose after archive.
-## Requirements
 ### Requirement: Server connects to MCP servers defined in mcp.json at startup
 The server SHALL read `mcp.json` from the project root at startup and establish a connection to each configured MCP server, supporting both stdio servers (via `command`/`args`/`env`) and HTTP/SSE servers (via `url`/`headers`). The server SHALL also load MCP server configurations from the SQLite database (if present) and merge them with `mcp.json` entries, with database configs taking precedence for servers with the same name.
 
@@ -60,4 +57,3 @@ The server SHALL tolerate MCP servers that fail to connect, crash, or time out, 
 #### Scenario: MCP tool call errors are surfaced
 - **WHEN** a connected MCP server returns an error for a `callTool` invocation or the connection drops mid-call
 - **THEN** the tool execution SHALL return an error result to the agent rather than hanging, and the error SHALL propagate through the normal tool execution event stream
-

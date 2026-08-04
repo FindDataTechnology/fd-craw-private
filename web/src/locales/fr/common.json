@@ -1,11 +1,16 @@
 {
   "common": {
-    "loading": "Chargement…"
+    "loading": "Chargement…",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "add": "Ajouter"
   },
   "nav": {
     "chat": "💬 Discussion",
     "dashboard": "📊 Tableau de bord",
     "documents": "📚 Documents",
+    "extensions": "🧩 Extensions",
     "knowledge": "📚 Knowledge",
     "openconnector": "🔌 OpenConnector",
     "litellm": "🧭 LiteLLM"
@@ -133,5 +138,70 @@
     "blockedMessage": "L'interface intégrée n'a pas pu être chargée dans un cadre.",
     "openInNewTab": "Ouvrir dans un nouvel onglet",
     "notConfigured": "{{name}} n'est pas configuré."
+  },
+  "extensions": {
+    "title": "Extensions",
+    "description": "Gérez les serveurs MCP et les compétences pour étendre les capacités de la plateforme",
+    "tabs": {
+      "installed": "Installées",
+      "market": "Marché"
+    },
+    "status": {
+      "disabled": "Désactivé"
+    },
+    "fields": {
+      "enabled": "Activé"
+    },
+    "mcp": {
+      "title": "Serveurs MCP",
+      "addButton": "Ajouter un serveur MCP",
+      "empty": "Aucun serveur MCP configuré. Ajoutez-en un pour étendre les capacités de l'agent.",
+      "addTitle": "Ajouter un serveur MCP",
+      "editTitle": "Modifier le serveur MCP",
+      "confirmDelete": "Supprimer le serveur MCP « {{name}} » ?",
+      "fields": {
+        "name": "Nom",
+        "type": "Type",
+        "command": "Commande",
+        "args": "Arguments (séparés par des espaces)",
+        "env": "Variables d'environnement (JSON)",
+        "url": "URL",
+        "headers": "En-têtes (JSON)"
+      },
+      "errors": {
+        "nameRequired": "Le nom est requis",
+        "commandRequired": "La commande est requise pour les serveurs stdio",
+        "urlRequired": "L'URL est requise pour les serveurs HTTP",
+        "envInvalid": "Les variables d'environnement doivent être un JSON valide",
+        "headersInvalid": "Les en-têtes doivent être un JSON valide"
+      }
+    },
+    "skills": {
+      "title": "Compétences",
+      "addButton": "Ajouter une compétence personnalisée",
+      "empty": "Aucune compétence personnalisée. Ajoutez-en une pour créer des comportements d'agent réutilisables.",
+      "addTitle": "Ajouter une compétence personnalisée",
+      "editTitle": "Modifier la compétence personnalisée",
+      "confirmDelete": "Supprimer la compétence « {{name}} » ?",
+      "custom": "Personnalisée",
+      "builtIn": "Intégrée",
+      "fields": {
+        "name": "Nom",
+        "description": "Description",
+        "content": "Contenu (Markdown)"
+      },
+      "errors": {
+        "nameRequired": "Le nom est requis",
+        "contentRequired": "Le contenu est requis"
+      }
+    },
+    "market": {
+      "mcpTitle": "Serveurs MCP",
+      "skillsTitle": "Compétences",
+      "empty": "Aucun article disponible dans le catalogue du marché.",
+      "install": "Installer",
+      "installSuccess": "{{name}} installé",
+      "installFailed": "Échec de l'installation de {{name}} : {{error}}"
+    }
   }
 }

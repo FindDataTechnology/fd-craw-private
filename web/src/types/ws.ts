@@ -36,7 +36,8 @@ export type ServerMessage =
   | { type: "cron_resumed"; jobId: string; success: boolean }
   | { type: "cron_run_started"; jobId: string; success: boolean }
   | { type: "dashboard_update"; state: unknown }
-  | { type: "dashboard_state"; state: unknown };
+  | { type: "dashboard_state"; state: unknown }
+  | { type: "extensions_changed"; resource: string; action: string; name: string; enabled?: boolean };
 
 export interface ModelInfo {
   id: string;

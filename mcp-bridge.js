@@ -220,3 +220,39 @@ export async function connectMcpServers(configPath) {
 export async function closeMcpClients(clients) {
   await Promise.all(clients.map(({ client }) => safeClose(client)));
 }
+
+// ── Runtime management (hot-reload) ──────────────────────────────────────────
+
+// Connect a single MCP server at runtime and return its tools + client.
+// Throws if the connection fails.
+export async function connectSingleServer(name, config) {
+  const client = await connectServer(name, config);
+  let toolList = [];
+  try {
+    const resp = await withTimeout(
+      client.listTools(),
+      CONNECT_TIMEOUT_MS,
+      new AbortController(),
+      `listTools "${name}"`
+    );
+    toolList = resp.tools || [];
+  } catch (err) {
+    await safeClose(client);
+    throw new Error(`listTools "${name}" failed: ${err.message}`);
+  }
+  const tools = toolList.map((tool) => buildToolDefinition(name, tool, client));
+  console.log(`[mcp] Connected "${name}": ${toolList.length} tool(s)`);
+  return { tools, client: { name, client } };
+}
+
+// Disconnect a single MCP server by name from the clients array.
+// Returns the updated clients array and the disconnected client (if found).
+export async function disconnectSingleServer(name, clients) {
+  const idx = clients.findIndex((c) => c.name === name);
+  if (idx === -1) return { clients, disconnected: null };
+  const disconnected = clients[idx];
+  await safeClose(disconnected.client);
+  const updatedClients = clients.filter((c) => c.name !== name);
+  console.log(`[mcp] Disconnected "${name}"`);
+  return { clients: updatedClients, disconnected };
+}

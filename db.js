@@ -91,6 +91,29 @@ const MIGRATIONS = [
       )`,
     ],
   },
+  {
+    version: 3,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS extension_configs (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        type TEXT NOT NULL,
+        config_json TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS custom_skills (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        content TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+    ],
+  },
 ];
 
 function nowIso() {
@@ -469,4 +492,164 @@ export function getAllPreferences() {
   if (!dbReady) return {};
   const rows = db.prepare("SELECT key, value FROM user_preferences").all();
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+}
+
+// ── Extension configs (MCP servers) ──────────────────────────────────────────
+
+export function listExtensionConfigs() {
+  if (!dbReady) return [];
+  return db
+    .prepare(
+      "SELECT id, name, type, config_json AS configJson, enabled, created_at AS createdAt, updated_at AS updatedAt FROM extension_configs ORDER BY name"
+    )
+    .all()
+    .map((r) => ({ ...r, config: JSON.parse(r.configJson), enabled: !!r.enabled }));
+}
+
+export function getExtensionConfig(name) {
+  if (!dbReady) return null;
+  const row = db
+    .prepare(
+      "SELECT id, name, type, config_json AS configJson, enabled, created_at AS createdAt, updated_at AS updatedAt FROM extension_configs WHERE name = ?"
+    )
+    .get(name);
+  if (!row) return null;
+  return { ...row, config: JSON.parse(row.configJson), enabled: !!row.enabled };
+}
+
+export function addExtensionConfig({ name, type, config, enabled = true }) {
+  if (!dbReady) return null;
+  const id = crypto.randomUUID();
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO extension_configs (id, name, type, config_json, enabled, created_at, updated_at)
+     VALUES (@id, @name, @type, @config_json, @enabled, @created_at, @updated_at)`
+  ).run({
+    id,
+    name,
+    type,
+    config_json: JSON.stringify(config),
+    enabled: enabled ? 1 : 0,
+    created_at: now,
+    updated_at: now,
+  });
+  return getExtensionConfig(name);
+}
+
+export function updateExtensionConfig(name, { type, config, enabled }) {
+  if (!dbReady) return null;
+  const updates = [];
+  const params = { name, updated_at: nowIso() };
+  if (type !== undefined) {
+    updates.push("type = @type");
+    params.type = type;
+  }
+  if (config !== undefined) {
+    updates.push("config_json = @config_json");
+    params.config_json = JSON.stringify(config);
+  }
+  if (enabled !== undefined) {
+    updates.push("enabled = @enabled");
+    params.enabled = enabled ? 1 : 0;
+  }
+  if (updates.length === 0) return getExtensionConfig(name);
+  updates.push("updated_at = @updated_at");
+  db.prepare(`UPDATE extension_configs SET ${updates.join(", ")} WHERE name = @name`).run(params);
+  return getExtensionConfig(name);
+}
+
+export function deleteExtensionConfig(name) {
+  if (!dbReady) return false;
+  const result = db.prepare("DELETE FROM extension_configs WHERE name = ?").run(name);
+  return result.changes > 0;
+}
+
+export function setExtensionEnabled(name, enabled) {
+  if (!dbReady) return null;
+  db.prepare("UPDATE extension_configs SET enabled = ?, updated_at = ? WHERE name = ?").run(
+    enabled ? 1 : 0,
+    nowIso(),
+    name
+  );
+  return getExtensionConfig(name);
+}
+
+// ── Custom skills ────────────────────────────────────────────────────────────
+
+export function listCustomSkills() {
+  if (!dbReady) return [];
+  return db
+    .prepare(
+      "SELECT id, name, description, content, enabled, created_at AS createdAt, updated_at AS updatedAt FROM custom_skills ORDER BY name"
+    )
+    .all()
+    .map((r) => ({ ...r, enabled: !!r.enabled }));
+}
+
+export function getCustomSkill(name) {
+  if (!dbReady) return null;
+  const row = db
+    .prepare(
+      "SELECT id, name, description, content, enabled, created_at AS createdAt, updated_at AS updatedAt FROM custom_skills WHERE name = ?"
+    )
+    .get(name);
+  if (!row) return null;
+  return { ...row, enabled: !!row.enabled };
+}
+
+export function addCustomSkill({ name, description, content, enabled = true }) {
+  if (!dbReady) return null;
+  const id = crypto.randomUUID();
+  const now = nowIso();
+  db.prepare(
+    `INSERT INTO custom_skills (id, name, description, content, enabled, created_at, updated_at)
+     VALUES (@id, @name, @description, @content, @enabled, @created_at, @updated_at)`
+  ).run({
+    id,
+    name,
+    description: description || null,
+    content,
+    enabled: enabled ? 1 : 0,
+    created_at: now,
+    updated_at: now,
+  });
+  return getCustomSkill(name);
+}
+
+export function updateCustomSkill(name, { description, content, enabled }) {
+  if (!dbReady) return null;
+  const updates = [];
+  const params = { name, updated_at: nowIso() };
+  if (description !== undefined) {
+    updates.push("description = @description");
+    params.description = description;
+  }
+  if (content !== undefined) {
+    updates.push("content = @content");
+    params.content = content;
+  }
+  if (enabled !== undefined) {
+    updates.push("enabled = @enabled");
+    params.enabled = enabled ? 1 : 0;
+  }
+  if (updates.length === 0) return getCustomSkill(name);
+  updates.push("updated_at = @updated_at");
+  db.prepare(`UPDATE custom_skills SET ${updates.join(", ")} WHERE name = @name`).run(params);
+  return getCustomSkill(name);
+}
+
+export function deleteCustomSkill(name) {
+  if (!dbReady) return false;
+  const result = db.prepare("DELETE FROM custom_skills WHERE name = ?").run(name);
+  return result.changes > 0;
+}
+
+export function setCustomSkillEnabled(name, enabled) {
+  if (!dbReady) return null;
+  db.prepare("UPDATE custom_skills SET enabled = ?, updated_at = ? WHERE name = ?").run(
+    enabled ? 1 : 0,
+    nowIso(),
+    name
+  );
+  return getCustomSkill(name);
 }

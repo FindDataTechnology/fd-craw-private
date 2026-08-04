@@ -1,11 +1,16 @@
 {
   "common": {
-    "loading": "加载中…"
+    "loading": "加载中…",
+    "cancel": "取消",
+    "save": "保存",
+    "saving": "保存中…",
+    "add": "添加"
   },
   "nav": {
     "chat": "💬 聊天",
     "dashboard": "📊 仪表盘",
     "documents": "📚 文档",
+    "extensions": "🧩 扩展",
     "knowledge": "📚 Knowledge",
     "openconnector": "🔌 OpenConnector",
     "litellm": "🧭 LiteLLM"
@@ -133,5 +138,70 @@
     "blockedMessage": "嵌入式界面无法在框架中加载。",
     "openInNewTab": "在新标签页打开",
     "notConfigured": "{{name}} 未配置。"
+  },
+  "extensions": {
+    "title": "扩展",
+    "description": "管理 MCP 服务器和技能以扩展平台功能",
+    "tabs": {
+      "installed": "已安装",
+      "market": "市场"
+    },
+    "status": {
+      "disabled": "已禁用"
+    },
+    "fields": {
+      "enabled": "启用"
+    },
+    "mcp": {
+      "title": "MCP 服务器",
+      "addButton": "添加 MCP 服务器",
+      "empty": "未配置 MCP 服务器。添加一个以扩展代理的功能。",
+      "addTitle": "添加 MCP 服务器",
+      "editTitle": "编辑 MCP 服务器",
+      "confirmDelete": "删除 MCP 服务器 \"{{name}}\"？",
+      "fields": {
+        "name": "名称",
+        "type": "类型",
+        "command": "命令",
+        "args": "参数（空格分隔）",
+        "env": "环境变量（JSON）",
+        "url": "URL",
+        "headers": "请求头（JSON）"
+      },
+      "errors": {
+        "nameRequired": "名称为必填项",
+        "commandRequired": "stdio 服务器需要命令",
+        "urlRequired": "HTTP 服务器需要 URL",
+        "envInvalid": "环境变量必须是有效的 JSON",
+        "headersInvalid": "请求头必须是有效的 JSON"
+      }
+    },
+    "skills": {
+      "title": "技能",
+      "addButton": "添加自定义技能",
+      "empty": "暂无自定义技能。添加一个以创建可重用的代理行为。",
+      "addTitle": "添加自定义技能",
+      "editTitle": "编辑自定义技能",
+      "confirmDelete": "删除技能 \"{{name}}\"？",
+      "custom": "自定义",
+      "builtIn": "内置",
+      "fields": {
+        "name": "名称",
+        "description": "描述",
+        "content": "内容（Markdown）"
+      },
+      "errors": {
+        "nameRequired": "名称为必填项",
+        "contentRequired": "内容为必填项"
+      }
+    },
+    "market": {
+      "mcpTitle": "MCP 服务器",
+      "skillsTitle": "技能",
+      "empty": "市场目录中没有可用项目。",
+      "install": "安装",
+      "installSuccess": "已安装 {{name}}",
+      "installFailed": "安装 {{name}} 失败：{{error}}"
+    }
   }
 }

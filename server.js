@@ -14,7 +14,7 @@ import { WebSocketServer } from "ws";
 import http from "http";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
-import { connectMcpServers, connectServers, closeMcpClients } from "./mcp-bridge.js";
+import { connectMcpServers, connectServers, closeMcpClients, connectSingleServer, disconnectSingleServer } from "./mcp-bridge.js";
 import multer from "multer";
 import { fetchLitellmModels } from "./litellm-models.js";
 import * as chatHistory from "./chat-history.js";
@@ -24,6 +24,7 @@ import * as collections from "./collections.js";
 import * as db from "./db.js";
 import * as migrate from "./migrate.js";
 import * as cron from "./cron.js";
+import * as extensionStore from "./extension-store.js";
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "localhost";
@@ -1117,6 +1118,245 @@ app.put("/api/preferences", (req, res) => {
   }
   db.setPreference(key, value);
   res.json({ ok: true });
+});
+
+// ── Extensions management API (MCP servers + custom skills) ──────────────────
+
+// List all MCP server configurations (from database).
+app.get("/api/extensions/mcp", (_req, res) => {
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
+  }
+  const servers = extensionStore.listMcpServers();
+  res.json({ servers });
+});
+
+// Add a new MCP server configuration.
+app.post("/api/extensions/mcp", async (req, res) => {
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
+  }
+  const { name, config, enabled } = req.body || {};
+  if (!name || !config) {
+    return res.status(400).json({ error: "Missing name or config" });
+  }
+  try {
+    const server = extensionStore.addMcpServer({ name, config, enabled });
+    // Hot-reload: connect the server if enabled.
+    if (server.enabled) {
+      try {
+        const { tools, client } = await connectSingleServer(name, config);
+        mcpClients.push(client);
+        // Update the agent's tool registry (requires session recreation for now).
+        // For simplicity, we broadcast a reload event; the UI can refresh.
+        broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
+      } catch (err) {
+        console.warn(`[extensions] Failed to connect new MCP server "${name}": ${err.message}`);
+        // Roll back the DB write.
+        extensionStore.removeMcpServer(name);
+        return res.status(500).json({ error: `Failed to connect: ${err.message}` });
+      }
+    }
+    res.json(server);
+  } catch (err) {
+    if (err.message?.includes("UNIQUE constraint")) {
+      return res.status(409).json({ error: `MCP server "${name}" already exists` });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update an MCP server configuration.
+app.put("/api/extensions/mcp/:name", async (req, res) => {
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
+  }
+  const { name } = req.params;
+  const { config, enabled } = req.body || {};
+  try {
+    const oldServer = extensionStore.getMcpServer(name);
+    if (!oldServer) {
+      return res.status(404).json({ error: `MCP server "${name}" not found` });
+    }
+    const server = extensionStore.updateMcpServer(name, { config, enabled });
+    // Hot-reload: disconnect old, connect new if config changed or enabled changed.
+    const configChanged = config && JSON.stringify(config) !== JSON.stringify(oldServer.config);
+    const enabledChanged = enabled !== undefined && enabled !== oldServer.enabled;
+    if (configChanged || enabledChanged) {
+      // Disconnect old.
+      const { clients: updatedClients } = await disconnectSingleServer(name, mcpClients);
+      mcpClients = updatedClients;
+      // Connect new if enabled.
+      if (server.enabled && config) {
+        try {
+          const { tools, client } = await connectSingleServer(name, config);
+          mcpClients.push(client);
+        } catch (err) {
+          console.warn(`[extensions] Failed to reconnect MCP server "${name}": ${err.message}`);
+          // Roll back to old config.
+          extensionStore.updateMcpServer(name, { config: oldServer.config, enabled: oldServer.enabled });
+          return res.status(500).json({ error: `Failed to reconnect: ${err.message}` });
+        }
+      }
+      broadcast({ type: "extensions_changed", resource: "mcp", action: "updated", name });
+    }
+    res.json(server);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Remove an MCP server configuration.
+app.delete("/api/extensions/mcp/:name", async (req, res) => {
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
+  }
+  const { name } = req.params;
+  const server = extensionStore.getMcpServer(name);
+  if (!server) {
+    return res.status(404).json({ error: `MCP server "${name}" not found` });
+  }
+  // Disconnect if connected.
+  const { clients: updatedClients } = await disconnectSingleServer(name, mcpClients);
+  mcpClients = updatedClients;
+  extensionStore.removeMcpServer(name);
+  broadcast({ type: "extensions_changed", resource: "mcp", action: "removed", name });
+  res.json({ ok: true });
+});
+
+// Enable or disable an MCP server.
+app.patch("/api/extensions/mcp/:name/enable", async (req, res) => {
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
+  }
+  const { name } = req.params;
+  const { enabled } = req.body || {};
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "Missing enabled (boolean)" });
+  }
+  const server = extensionStore.getMcpServer(name);
+  if (!server) {
+    return res.status(404).json({ error: `MCP server "${name}" not found` });
+  }
+  const updated = extensionStore.toggleMcpServer(name, enabled);
+  // Hot-reload: connect or disconnect.
+  if (enabled && !server.enabled) {
+    // Enabling: connect.
+    try {
+      const { tools, client } = await connectSingleServer(name, server.config);
+      mcpClients.push(client);
+    } catch (err) {
+      console.warn(`[extensions] Failed to enable MCP server "${name}": ${err.message}`);
+      extensionStore.toggleMcpServer(name, false);
+      return res.status(500).json({ error: `Failed to connect: ${err.message}` });
+    }
+  } else if (!enabled && server.enabled) {
+    // Disabling: disconnect.
+    const { clients: updatedClients } = await disconnectSingleServer(name, mcpClients);
+    mcpClients = updatedClients;
+  }
+  broadcast({ type: "extensions_changed", resource: "mcp", action: "toggled", name, enabled });
+  res.json(updated);
+});
+
+// List all skills (file-based + custom from database).
+app.get("/api/extensions/skills", async (_req, res) => {
+  const fileSkills = (loader?.getSkills().skills ?? []).map((s) => ({
+    name: s.name,
+    description: s.description,
+    source: "file",
+    enabled: true,
+  }));
+  const customSkills = db.isDbReady()
+    ? extensionStore.listCustomSkills().map((s) => ({
+        name: s.name,
+        description: s.description,
+        source: "database",
+        enabled: s.enabled,
+      }))
+    : [];
+  res.json({ skills: [...fileSkills, ...customSkills] });
+});
+
+// Add a new custom skill.
+app.post("/api/extensions/skills", (req, res) => {
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
+  }
+  const { name, description, content, enabled } = req.body || {};
+  if (!name || !content) {
+    return res.status(400).json({ error: "Missing name or content" });
+  }
+  try {
+    const skill = extensionStore.addCustomSkill({ name, description, content, enabled });
+    broadcast({ type: "extensions_changed", resource: "skill", action: "added", name });
+    res.json(skill);
+  } catch (err) {
+    if (err.message?.includes("UNIQUE constraint")) {
+      return res.status(409).json({ error: `Skill "${name}" already exists` });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update a custom skill.
+app.put("/api/extensions/skills/:name", (req, res) => {
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
+  }
+  const { name } = req.params;
+  const { description, content, enabled } = req.body || {};
+  const skill = extensionStore.getCustomSkill(name);
+  if (!skill) {
+    return res.status(404).json({ error: `Skill "${name}" not found` });
+  }
+  const updated = extensionStore.updateCustomSkill(name, { description, content, enabled });
+  broadcast({ type: "extensions_changed", resource: "skill", action: "updated", name });
+  res.json(updated);
+});
+
+// Remove a custom skill.
+app.delete("/api/extensions/skills/:name", (req, res) => {
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
+  }
+  const { name } = req.params;
+  const skill = extensionStore.getCustomSkill(name);
+  if (!skill) {
+    return res.status(404).json({ error: `Skill "${name}" not found` });
+  }
+  extensionStore.removeCustomSkill(name);
+  broadcast({ type: "extensions_changed", resource: "skill", action: "removed", name });
+  res.json({ ok: true });
+});
+
+// Enable or disable a custom skill.
+app.patch("/api/extensions/skills/:name/enable", (req, res) => {
+  if (!db.isDbReady()) {
+    return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
+  }
+  const { name } = req.params;
+  const { enabled } = req.body || {};
+  if (typeof enabled !== "boolean") {
+    return res.status(400).json({ error: "Missing enabled (boolean)" });
+  }
+  const skill = extensionStore.getCustomSkill(name);
+  if (!skill) {
+    return res.status(404).json({ error: `Skill "${name}" not found` });
+  }
+  const updated = extensionStore.toggleCustomSkill(name, enabled);
+  broadcast({ type: "extensions_changed", resource: "skill", action: "toggled", name, enabled });
+  res.json(updated);
+});
+
+// Get the market catalog (MCP servers + skills).
+app.get("/api/extensions/market", async (_req, res) => {
+  try {
+    const catalog = await extensionStore.getMarketCatalog();
+    res.json(catalog);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── Chat history endpoints ───────────────────────────────────────────────────

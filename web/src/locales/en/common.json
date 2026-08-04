@@ -1,11 +1,16 @@
 {
   "common": {
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "add": "Add"
   },
   "nav": {
     "chat": "💬 Chat",
     "dashboard": "📊 Dashboard",
     "documents": "📚 Documents",
+    "extensions": "🧩 Extensions",
     "knowledge": "📚 Knowledge",
     "openconnector": "🔌 OpenConnector",
     "litellm": "🧭 LiteLLM"
@@ -133,5 +138,70 @@
     "blockedMessage": "The embedded UI could not be loaded in a frame.",
     "openInNewTab": "Open in new tab",
     "notConfigured": "{{name}} is not configured."
+  },
+  "extensions": {
+    "title": "Extensions",
+    "description": "Manage MCP servers and skills to extend the platform's capabilities",
+    "tabs": {
+      "installed": "Installed",
+      "market": "Market"
+    },
+    "status": {
+      "disabled": "Disabled"
+    },
+    "fields": {
+      "enabled": "Enabled"
+    },
+    "mcp": {
+      "title": "MCP Servers",
+      "addButton": "Add MCP Server",
+      "empty": "No MCP servers configured. Add one to extend the agent's capabilities.",
+      "addTitle": "Add MCP Server",
+      "editTitle": "Edit MCP Server",
+      "confirmDelete": "Delete MCP server \"{{name}}\"?",
+      "fields": {
+        "name": "Name",
+        "type": "Type",
+        "command": "Command",
+        "args": "Arguments (space-separated)",
+        "env": "Environment Variables (JSON)",
+        "url": "URL",
+        "headers": "Headers (JSON)"
+      },
+      "errors": {
+        "nameRequired": "Name is required",
+        "commandRequired": "Command is required for stdio servers",
+        "urlRequired": "URL is required for HTTP servers",
+        "envInvalid": "Environment variables must be valid JSON",
+        "headersInvalid": "Headers must be valid JSON"
+      }
+    },
+    "skills": {
+      "title": "Skills",
+      "addButton": "Add Custom Skill",
+      "empty": "No custom skills. Add one to create reusable agent behaviors.",
+      "addTitle": "Add Custom Skill",
+      "editTitle": "Edit Custom Skill",
+      "confirmDelete": "Delete skill \"{{name}}\"?",
+      "custom": "Custom",
+      "builtIn": "Built-in",
+      "fields": {
+        "name": "Name",
+        "description": "Description",
+        "content": "Content (Markdown)"
+      },
+      "errors": {
+        "nameRequired": "Name is required",
+        "contentRequired": "Content is required"
+      }
+    },
+    "market": {
+      "mcpTitle": "MCP Servers",
+      "skillsTitle": "Skills",
+      "empty": "No items available in the market catalog.",
+      "install": "Install",
+      "installSuccess": "Installed {{name}}",
+      "installFailed": "Failed to install {{name}}: {{error}}"
+    }
   }
 }
