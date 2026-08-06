@@ -154,7 +154,7 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig }: Mcp
               value={name}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
               disabled={isEdit}
-              placeholder="my-mcp-server"
+              placeholder="my-mcp"
             />
           </div>
 

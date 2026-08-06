@@ -39,7 +39,7 @@ export function MarketTab() {
   return (
     <div className="p-6 space-y-8">
       {/* MCP Servers Section */}
-      <section>
+      <section data-testid="mcp-market-section">
         <h2 className="text-lg font-semibold text-foreground mb-4">{t("extensions.market.mcpTitle")}</h2>
         {mcpServers.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t("extensions.market.empty")}</p>
@@ -53,7 +53,7 @@ export function MarketTab() {
       </section>
 
       {/* Skills Section */}
-      <section>
+      <section data-testid="skills-market-section">
         <h2 className="text-lg font-semibold text-foreground mb-4">{t("extensions.market.skillsTitle")}</h2>
         {skills.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t("extensions.market.empty")}</p>

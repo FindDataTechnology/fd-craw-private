@@ -17,12 +17,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
-const [pgBinDir, dataDir, portArg] = process.argv.slice(2);
-if (!pgBinDir || !dataDir || !portArg) {
+const [pgBinDir, dataDirArg, portArg] = process.argv.slice(2);
+if (!pgBinDir || !dataDirArg || !portArg) {
   console.error("Usage: node pg-serve.js <pgBinDir> <dataDir> <port>");
   process.exit(1);
 }
 const port = Number(portArg);
+const dataDir = path.resolve(dataDirArg); // Convert to absolute path for unix_socket_directories
 const IS_WIN = process.platform === "win32";
 const ext = IS_WIN ? ".exe" : "";
 const bin = (name) => path.join(pgBinDir, name + ext);
@@ -41,9 +42,10 @@ if (!fs.existsSync(path.join(dataDir, "PG_VERSION"))) {
 // 2. start postgres on the assigned port (localhost-only; unix socket in the data
 //    dir so it doesn't collide with a system postgres socket).
 console.log(`[pg] starting on port ${port}...`);
+const absDataDir = path.resolve(dataDir);
 run(bin("pg_ctl"), [
-  "-D", dataDir, "-w", "start",
-  "-o", `-p ${port} -c listen_addresses=localhost -c unix_socket_directories=${dataDir}`,
+  "-D", absDataDir, "-w", "start",
+  "-o", `-p ${port} -c listen_addresses=localhost -c unix_socket_directories=${absDataDir}`,
 ]);
 
 // 3. (The default `postgres` database created by initdb is used by LiteLLM -

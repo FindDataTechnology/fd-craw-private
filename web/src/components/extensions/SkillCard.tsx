@@ -41,7 +41,7 @@ export function SkillCard({ skill, customSkill, onEdit }: SkillCardProps) {
   };
 
   return (
-    <div className="border border-border rounded-lg p-4 bg-card">
+    <div data-testid="skill-card" data-skill-name={skill.name} data-source={skill.source} className="border border-border rounded-lg p-4 bg-card">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">

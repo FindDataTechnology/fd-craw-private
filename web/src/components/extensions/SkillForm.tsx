@@ -106,7 +106,7 @@ export function SkillForm({ open, onOpenChange, skill, initialSkill }: SkillForm
               value={name}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
               disabled={isEdit}
-              placeholder="my-custom-skill"
+              placeholder="my-skill"
             />
           </div>
 

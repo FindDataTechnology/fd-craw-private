@@ -15,7 +15,7 @@ export function McpMarketCard({ server, onInstall }: McpMarketCardProps) {
   const { t } = useTranslation();
 
   return (
-    <div className="border border-border rounded-lg p-4 bg-card">
+    <div data-testid="mcp-market-card" data-market-name={server.name} className="border border-border rounded-lg p-4 bg-card">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">

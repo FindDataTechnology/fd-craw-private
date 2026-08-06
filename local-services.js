@@ -132,6 +132,11 @@ export async function main() {
   if (ll.mode === "local" && seeded.LITELLM_API_KEY) {
     agentEnv.LITELLM_API_KEY = seeded.LITELLM_API_KEY;
   }
+  // Inject generated LiteLLM secrets for the admin UI and DB encryption
+  if (ll.mode === "local") {
+    if (seeded.LITELLM_MASTER_KEY) agentEnv.LITELLM_MASTER_KEY = seeded.LITELLM_MASTER_KEY;
+    if (seeded.LITELLM_SALT_KEY) agentEnv.LITELLM_SALT_KEY = seeded.LITELLM_SALT_KEY;
+  }
   if (oc.mode === "local") {
     if (seeded.OPENCONNECTOR_RUNTIME_TOKEN) agentEnv.OPENCONNECTOR_RUNTIME_TOKEN = seeded.OPENCONNECTOR_RUNTIME_TOKEN;
     if (seeded.OPENCONNECTOR_ADMIN_TOKEN) agentEnv.OPENCONNECTOR_ADMIN_TOKEN = seeded.OPENCONNECTOR_ADMIN_TOKEN;

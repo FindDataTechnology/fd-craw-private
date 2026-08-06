@@ -223,7 +223,15 @@ async function initAgent() {
   // Connect MCP servers first so their tools are discovered before the session
   // is created. The tool names MUST be added to the `tools` allowlist below,
   // otherwise the SDK filters custom tools out (see agent-session _refreshToolRegistry).
-  const mcp = await connectMcpServers(path.resolve("mcp.json"));
+  //
+  // ponytail: read mcp.json once, connect via connectServers, then seed configs
+  // into the extensions DB so the UI "Installed" tab shows them.
+  let mcpJsonServers = {};
+  try {
+    const raw = await readFile(path.resolve("mcp.json"), "utf8");
+    mcpJsonServers = JSON.parse(raw).mcpServers || {};
+  } catch { /* no mcp.json or parse error — MCP disabled */ }
+  const mcp = await connectServers({ mcpServers: mcpJsonServers });
   let mcpTools = mcp.tools;
   let mcpClientList = mcp.clients;
 
@@ -246,11 +254,37 @@ async function initAgent() {
     mcpClientList = mcpClientList.concat(ocMcp.clients);
   }
 
+  // ponytail: auto-seed startup MCP configs into extensions DB so the UI
+  // "Installed" tab shows them. INSERT OR IGNORE preserves user edits.
+  if (db.isDbReady()) {
+    for (const [name, config] of Object.entries(mcpJsonServers)) {
+      extensionStore.seedMcpServer({ name, config, enabled: true });
+    }
+    if (ocMcpConfig) {
+      extensionStore.seedMcpServer({ name: "open-connector", config: ocMcpConfig, enabled: true });
+    }
+  }
+
   mcpClients = mcpClientList;
   const mcpToolNames = mcpTools.map((t) => t.name);
   mcpToolCount = mcpToolNames.length;
   if (mcpToolNames.length) {
     console.log(`[mcp] Registering ${mcpToolNames.length} MCP tool(s): ${mcpToolNames.join(", ")}`);
+  }
+
+  // ponytail: seed startup MCP configs into extensions DB so the UI can see them.
+  // INSERT OR IGNORE preserves any user edits (disable, config changes) from prior sessions.
+  if (db.isDbReady()) {
+    try {
+      const raw = await readFile(path.resolve("mcp.json"), "utf8");
+      const mcpJson = JSON.parse(raw);
+      for (const [name, cfg] of Object.entries(mcpJson.mcpServers || {})) {
+        extensionStore.seedMcpServer({ name, config: cfg, enabled: true });
+      }
+    } catch { /* no mcp.json or parse error — skip */ }
+    if (ocMcpConfig) {
+      extensionStore.seedMcpServer({ name: "open-connector", config: ocMcpConfig, enabled: true });
+    }
   }
 
   // Native Volces chat provider. Registered only when LiteLLM is NOT
@@ -1151,10 +1185,10 @@ app.post("/api/extensions/mcp", async (req, res) => {
         // For simplicity, we broadcast a reload event; the UI can refresh.
         broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
       } catch (err) {
-        console.warn(`[extensions] Failed to connect new MCP server "${name}": ${err.message}`);
-        // Roll back the DB write.
-        extensionStore.removeMcpServer(name);
-        return res.status(500).json({ error: `Failed to connect: ${err.message}` });
+        // ponytail: don't roll back on connection failure — save the config anyway.
+        // User can try to connect later via the UI. Just log a warning.
+        console.warn(`[extensions] Failed to connect new MCP server "${name}": ${err.message} (config saved, not connected)`);
+        broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
       }
     }
     res.json(server);

@@ -87,6 +87,7 @@ export function runFirstRun(opts) {
     if (!merged.LITELLM_SALT_KEY) {
       merged.LITELLM_SALT_KEY = crypto.randomBytes(32).toString("hex");
       console.log("[bootstrap] Generated new LITELLM_SALT_KEY");
+      console.warn("[bootstrap] ⚠️  LITELLM_SALT_KEY generated. DO NOT CHANGE - changing this value will prevent access to encrypted data in the database");
     }
     // LITELLM_MASTER_KEY is the env the admin UI checks for sign-in; reuse the
     // proxy master key so there's one secret to manage.

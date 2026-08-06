@@ -21,6 +21,11 @@ export function getMcpServer(name) {
   return config;
 }
 
+// ponytail: seed on startup — skip if already present (preserves user edits).
+export function seedMcpServer({ name, config, enabled = true }) {
+  return db.seedExtensionConfig({ name, type: "mcp", config, enabled });
+}
+
 export function addMcpServer({ name, config, enabled = true }) {
   return db.addExtensionConfig({ name, type: "mcp", config, enabled });
 }

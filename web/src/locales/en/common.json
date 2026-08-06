@@ -141,48 +141,49 @@
   },
   "extensions": {
     "title": "Extensions",
-    "description": "Manage MCP servers and skills to extend the platform's capabilities",
+    "description": "Manage MCP and skills to extend your agent",
     "tabs": {
-      "installed": "Installed",
-      "market": "Market"
+      "installed": "Enabled",
+      "market": "Store"
     },
     "status": {
-      "disabled": "Disabled"
+      "disabled": "Disabled",
+      "auto": "auto"
     },
     "fields": {
       "enabled": "Enabled"
     },
     "mcp": {
-      "title": "MCP Servers",
-      "addButton": "Add MCP Server",
-      "empty": "No MCP servers configured. Add one to extend the agent's capabilities.",
-      "addTitle": "Add MCP Server",
-      "editTitle": "Edit MCP Server",
-      "confirmDelete": "Delete MCP server \"{{name}}\"?",
+      "title": "MCP",
+      "addButton": "Add MCP",
+      "empty": "No MCP configured. Add one to extend your agent.",
+      "addTitle": "Add MCP",
+      "editTitle": "Edit MCP",
+      "confirmDelete": "Remove \"{{name}}\"?",
       "fields": {
         "name": "Name",
         "type": "Type",
         "command": "Command",
-        "args": "Arguments (space-separated)",
-        "env": "Environment Variables (JSON)",
+        "args": "Args (space-separated)",
+        "env": "Env vars (JSON)",
         "url": "URL",
         "headers": "Headers (JSON)"
       },
       "errors": {
         "nameRequired": "Name is required",
-        "commandRequired": "Command is required for stdio servers",
-        "urlRequired": "URL is required for HTTP servers",
+        "commandRequired": "Command is required for stdio",
+        "urlRequired": "URL is required for HTTP",
         "envInvalid": "Environment variables must be valid JSON",
         "headersInvalid": "Headers must be valid JSON"
       }
     },
     "skills": {
       "title": "Skills",
-      "addButton": "Add Custom Skill",
-      "empty": "No custom skills. Add one to create reusable agent behaviors.",
-      "addTitle": "Add Custom Skill",
-      "editTitle": "Edit Custom Skill",
-      "confirmDelete": "Delete skill \"{{name}}\"?",
+      "addButton": "Create Skill",
+      "empty": "No custom skills yet. Create one to add reusable agent behaviors.",
+      "addTitle": "Create Skill",
+      "editTitle": "Edit Skill",
+      "confirmDelete": "Remove \"{{name}}\"?",
       "custom": "Custom",
       "builtIn": "Built-in",
       "fields": {
@@ -196,9 +197,9 @@
       }
     },
     "market": {
-      "mcpTitle": "MCP Servers",
+      "mcpTitle": "MCP",
       "skillsTitle": "Skills",
-      "empty": "No items available in the market catalog.",
+      "empty": "Nothing available in the store yet.",
       "install": "Install",
       "installSuccess": "Installed {{name}}",
       "installFailed": "Failed to install {{name}}: {{error}}"

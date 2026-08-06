@@ -6,7 +6,7 @@ import type { McpServer } from "@/lib/extensions-api";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Zap } from "lucide-react";
 
 interface McpServerCardProps {
   server: McpServer;
@@ -34,19 +34,26 @@ export function McpServerCard({ server, onEdit }: McpServerCardProps) {
     }
   };
 
-  const typeLabel = server.config.command ? "stdio" : "http";
+  const typeLabel = server.config.command ? "Stdio" : "HTTP";
+  const isAuto = server.source === "startup";
 
   return (
-    <div className="border border-border rounded-lg p-4 bg-card">
+    <div data-testid="mcp-card" data-source={server.source} data-name={server.name} className="border border-border rounded-lg p-4 bg-card">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <h3 className="font-medium text-foreground truncate">{server.name}</h3>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+            <span data-testid="mcp-type-badge" className="text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
               {typeLabel}
             </span>
+            {isAuto && (
+              <span data-testid="mcp-auto-badge" className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 flex items-center gap-1">
+                <Zap className="h-3 w-3" />
+                {t("extensions.status.auto")}
+              </span>
+            )}
             {!server.enabled && (
-              <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+              <span data-testid="mcp-disabled-badge" className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                 {t("extensions.status.disabled")}
               </span>
             )}
@@ -60,13 +67,15 @@ export function McpServerCard({ server, onEdit }: McpServerCardProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Switch checked={server.enabled} onCheckedChange={handleToggle} />
-          <Button variant="ghost" size="icon" onClick={() => onEdit(server)}>
+          <Switch data-testid="mcp-toggle" checked={server.enabled} onCheckedChange={handleToggle} />
+          <Button data-testid="mcp-edit-btn" variant="ghost" size="icon" onClick={() => onEdit(server)}>
             <Pencil className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={handleDelete}>
-            <Trash2 className="h-4 w-4 text-destructive" />
-          </Button>
+          {!isAuto && (
+            <Button data-testid="mcp-delete-btn" variant="ghost" size="icon" onClick={handleDelete}>
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          )}
         </div>
       </div>
     </div>

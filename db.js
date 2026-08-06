@@ -114,6 +114,12 @@ const MIGRATIONS = [
       )`,
     ],
   },
+  {
+    version: 4,
+    statements: [
+      `ALTER TABLE extension_configs ADD COLUMN source TEXT NOT NULL DEFAULT 'user'`,
+    ],
+  },
 ];
 
 function nowIso() {
@@ -500,7 +506,7 @@ export function listExtensionConfigs() {
   if (!dbReady) return [];
   return db
     .prepare(
-      "SELECT id, name, type, config_json AS configJson, enabled, created_at AS createdAt, updated_at AS updatedAt FROM extension_configs ORDER BY name"
+      "SELECT id, name, type, config_json AS configJson, enabled, source, created_at AS createdAt, updated_at AS updatedAt FROM extension_configs ORDER BY name"
     )
     .all()
     .map((r) => ({ ...r, config: JSON.parse(r.configJson), enabled: !!r.enabled }));
@@ -510,26 +516,36 @@ export function getExtensionConfig(name) {
   if (!dbReady) return null;
   const row = db
     .prepare(
-      "SELECT id, name, type, config_json AS configJson, enabled, created_at AS createdAt, updated_at AS updatedAt FROM extension_configs WHERE name = ?"
+      "SELECT id, name, type, config_json AS configJson, enabled, source, created_at AS createdAt, updated_at AS updatedAt FROM extension_configs WHERE name = ?"
     )
     .get(name);
   if (!row) return null;
   return { ...row, config: JSON.parse(row.configJson), enabled: !!row.enabled };
 }
 
-export function addExtensionConfig({ name, type, config, enabled = true }) {
+// ponytail: INSERT OR IGNORE so startup seeding doesn't overwrite user edits.
+// Returns the existing row if it was already present, or the newly inserted row.
+export function seedExtensionConfig({ name, type, config, enabled = true, source = "startup" }) {
+  if (!dbReady) return null;
+  const existing = getExtensionConfig(name);
+  if (existing) return existing;
+  return addExtensionConfig({ name, type, config, enabled, source });
+}
+
+export function addExtensionConfig({ name, type, config, enabled = true, source = "user" }) {
   if (!dbReady) return null;
   const id = crypto.randomUUID();
   const now = nowIso();
   db.prepare(
-    `INSERT INTO extension_configs (id, name, type, config_json, enabled, created_at, updated_at)
-     VALUES (@id, @name, @type, @config_json, @enabled, @created_at, @updated_at)`
+    `INSERT INTO extension_configs (id, name, type, config_json, enabled, source, created_at, updated_at)
+     VALUES (@id, @name, @type, @config_json, @enabled, @source, @created_at, @updated_at)`
   ).run({
     id,
     name,
     type,
     config_json: JSON.stringify(config),
     enabled: enabled ? 1 : 0,
+    source,
     created_at: now,
     updated_at: now,
   });

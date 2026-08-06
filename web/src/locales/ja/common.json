@@ -141,24 +141,25 @@
   },
   "extensions": {
     "title": "拡張機能",
-    "description": "MCPサーバーとスキルを管理して、プラットフォームの機能を拡張します",
+    "description": "MCPとスキルを管理して、エージェントを拡張します",
     "tabs": {
-      "installed": "インストール済み",
-      "market": "マーケット"
+      "installed": "有効",
+      "market": "ストア"
     },
     "status": {
-      "disabled": "無効"
+      "disabled": "無効",
+      "auto": "自動"
     },
     "fields": {
       "enabled": "有効"
     },
     "mcp": {
-      "title": "MCPサーバー",
-      "addButton": "MCPサーバーを追加",
-      "empty": "MCPサーバーが設定されていません。追加してエージェントの機能を拡張します。",
-      "addTitle": "MCPサーバーを追加",
-      "editTitle": "MCPサーバーを編集",
-      "confirmDelete": "MCPサーバー「{{name}}」を削除しますか？",
+      "title": "MCP",
+      "addButton": "MCPを追加",
+      "empty": "MCPが設定されていません。追加してエージェントを拡張します。",
+      "addTitle": "MCPを追加",
+      "editTitle": "MCPを編集",
+      "confirmDelete": "「{{name}}」を削除しますか？",
       "fields": {
         "name": "名前",
         "type": "タイプ",
@@ -170,19 +171,19 @@
       },
       "errors": {
         "nameRequired": "名前は必須です",
-        "commandRequired": "stdioサーバーにはコマンドが必要です",
-        "urlRequired": "HTTPサーバーにはURLが必要です",
+        "commandRequired": "stdioにはコマンドが必要です",
+        "urlRequired": "HTTPにはURLが必要です",
         "envInvalid": "環境変数は有効なJSONである必要があります",
         "headersInvalid": "ヘッダーは有効なJSONである必要があります"
       }
     },
     "skills": {
       "title": "スキル",
-      "addButton": "カスタムスキルを追加",
-      "empty": "カスタムスキルがありません。追加して再利用可能なエージェントの動作を作成します。",
-      "addTitle": "カスタムスキルを追加",
-      "editTitle": "カスタムスキルを編集",
-      "confirmDelete": "スキル「{{name}}」を削除しますか？",
+      "addButton": "スキルを作成",
+      "empty": "カスタムスキルがありません。作成して再利用可能なエージェントの動作を追加します。",
+      "addTitle": "スキルを作成",
+      "editTitle": "スキルを編集",
+      "confirmDelete": "「{{name}}」を削除しますか？",
       "custom": "カスタム",
       "builtIn": "組み込み",
       "fields": {
@@ -196,9 +197,9 @@
       }
     },
     "market": {
-      "mcpTitle": "MCPサーバー",
+      "mcpTitle": "MCP",
       "skillsTitle": "スキル",
-      "empty": "マーケットカタログにアイテムがありません。",
+      "empty": "ストアにはまだアイテムがありません。",
       "install": "インストール",
       "installSuccess": "{{name}}をインストールしました",
       "installFailed": "{{name}}のインストールに失敗しました: {{error}}"

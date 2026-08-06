@@ -141,24 +141,25 @@
   },
   "extensions": {
     "title": "扩展",
-    "description": "管理 MCP 服务器和技能以扩展平台功能",
+    "description": "管理 MCP 和技能以扩展你的智能体",
     "tabs": {
-      "installed": "已安装",
-      "market": "市场"
+      "installed": "已启用",
+      "market": "商店"
     },
     "status": {
-      "disabled": "已禁用"
+      "disabled": "已禁用",
+      "auto": "自动"
     },
     "fields": {
       "enabled": "启用"
     },
     "mcp": {
-      "title": "MCP 服务器",
-      "addButton": "添加 MCP 服务器",
-      "empty": "未配置 MCP 服务器。添加一个以扩展代理的功能。",
-      "addTitle": "添加 MCP 服务器",
-      "editTitle": "编辑 MCP 服务器",
-      "confirmDelete": "删除 MCP 服务器 \"{{name}}\"？",
+      "title": "MCP",
+      "addButton": "添加 MCP",
+      "empty": "暂无 MCP。添加一个以扩展你的智能体。",
+      "addTitle": "添加 MCP",
+      "editTitle": "编辑 MCP",
+      "confirmDelete": "移除 \"{{name}}\"？",
       "fields": {
         "name": "名称",
         "type": "类型",
@@ -170,19 +171,19 @@
       },
       "errors": {
         "nameRequired": "名称为必填项",
-        "commandRequired": "stdio 服务器需要命令",
-        "urlRequired": "HTTP 服务器需要 URL",
+        "commandRequired": "stdio 需要命令",
+        "urlRequired": "HTTP 需要 URL",
         "envInvalid": "环境变量必须是有效的 JSON",
         "headersInvalid": "请求头必须是有效的 JSON"
       }
     },
     "skills": {
       "title": "技能",
-      "addButton": "添加自定义技能",
-      "empty": "暂无自定义技能。添加一个以创建可重用的代理行为。",
-      "addTitle": "添加自定义技能",
-      "editTitle": "编辑自定义技能",
-      "confirmDelete": "删除技能 \"{{name}}\"？",
+      "addButton": "创建技能",
+      "empty": "暂无自定义技能。创建一个以添加可重用的智能体行为。",
+      "addTitle": "创建技能",
+      "editTitle": "编辑技能",
+      "confirmDelete": "移除 \"{{name}}\"？",
       "custom": "自定义",
       "builtIn": "内置",
       "fields": {
@@ -196,9 +197,9 @@
       }
     },
     "market": {
-      "mcpTitle": "MCP 服务器",
+      "mcpTitle": "MCP",
       "skillsTitle": "技能",
-      "empty": "市场目录中没有可用项目。",
+      "empty": "商店暂无可用项目。",
       "install": "安装",
       "installSuccess": "已安装 {{name}}",
       "installFailed": "安装 {{name}} 失败：{{error}}"

@@ -15,6 +15,7 @@ export interface McpServer {
     headers?: Record<string, string>;
   };
   enabled: boolean;
+  source: "user" | "startup";
   createdAt: string;
   updatedAt: string;
 }

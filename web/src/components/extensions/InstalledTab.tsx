@@ -38,11 +38,11 @@ export function InstalledTab() {
 
   return (
     <div className="p-6 space-y-8">
-      {/* MCP Servers Section */}
-      <section>
+      {/* MCP Section */}
+      <section data-testid="mcp-section">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-foreground">{t("extensions.mcp.title")}</h2>
-          <Button size="sm" onClick={() => { setEditingMcp(null); setMcpFormOpen(true); }}>
+          <Button size="sm" data-testid="add-mcp-btn" onClick={() => { setEditingMcp(null); setMcpFormOpen(true); }}>
             <Plus className="h-4 w-4 mr-1" />
             {t("extensions.mcp.addButton")}
           </Button>
@@ -59,10 +59,10 @@ export function InstalledTab() {
       </section>
 
       {/* Skills Section */}
-      <section>
+      <section data-testid="skills-section">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-foreground">{t("extensions.skills.title")}</h2>
-          <Button size="sm" onClick={() => { setEditingSkill(null); setSkillFormOpen(true); }}>
+          <Button size="sm" data-testid="create-skill-btn" onClick={() => { setEditingSkill(null); setSkillFormOpen(true); }}>
             <Plus className="h-4 w-4 mr-1" />
             {t("extensions.skills.addButton")}
           </Button>

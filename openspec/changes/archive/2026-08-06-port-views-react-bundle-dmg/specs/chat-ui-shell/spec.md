@@ -53,6 +53,8 @@ The React app SHALL use client-side routing (`react-router-dom`) with a flat rou
 - **WHEN** `npm install` runs and `web/dist/index.html` already exists
 - **THEN** the `postinstall` script SHALL NOT re-run the frontend build
 
+## ADDED Requirements
+
 ### Requirement: The server serves the built frontend at root
 
 `server.js` SHALL serve `web/dist/` as the static root at `/` (with Vite's hashed assets under `/assets/*`). It SHALL NOT serve a separate legacy frontend. The `/oc-web` reverse proxy and `/api/*` REST routes SHALL continue to be mounted alongside the static serving. The `/` -> `/chat/` redirect SHALL be removed.

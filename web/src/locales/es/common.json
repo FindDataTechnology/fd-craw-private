@@ -141,24 +141,25 @@
   },
   "extensions": {
     "title": "Extensiones",
-    "description": "Gestiona servidores MCP y habilidades para extender las capacidades de la plataforma",
+    "description": "Gestiona MCP y habilidades para extender tu agente",
     "tabs": {
-      "installed": "Instaladas",
-      "market": "Mercado"
+      "installed": "Habilitadas",
+      "market": "Tienda"
     },
     "status": {
-      "disabled": "Deshabilitado"
+      "disabled": "Deshabilitado",
+      "auto": "auto"
     },
     "fields": {
       "enabled": "Habilitado"
     },
     "mcp": {
-      "title": "Servidores MCP",
-      "addButton": "Agregar servidor MCP",
-      "empty": "No hay servidores MCP configurados. Agrega uno para extender las capacidades del agente.",
-      "addTitle": "Agregar servidor MCP",
-      "editTitle": "Editar servidor MCP",
-      "confirmDelete": "¿Eliminar el servidor MCP \"{{name}}\"?",
+      "title": "MCP",
+      "addButton": "Agregar MCP",
+      "empty": "No hay MCP configurado. Agrega uno para extender tu agente.",
+      "addTitle": "Agregar MCP",
+      "editTitle": "Editar MCP",
+      "confirmDelete": "¿Eliminar \"{{name}}\"?",
       "fields": {
         "name": "Nombre",
         "type": "Tipo",
@@ -170,19 +171,19 @@
       },
       "errors": {
         "nameRequired": "El nombre es requerido",
-        "commandRequired": "El comando es requerido para servidores stdio",
-        "urlRequired": "La URL es requerida para servidores HTTP",
+        "commandRequired": "El comando es requerido para stdio",
+        "urlRequired": "La URL es requerida para HTTP",
         "envInvalid": "Las variables de entorno deben ser JSON válido",
         "headersInvalid": "Los encabezados deben ser JSON válido"
       }
     },
     "skills": {
       "title": "Habilidades",
-      "addButton": "Agregar habilidad personalizada",
-      "empty": "No hay habilidades personalizadas. Agrega una para crear comportamientos de agente reutilizables.",
-      "addTitle": "Agregar habilidad personalizada",
-      "editTitle": "Editar habilidad personalizada",
-      "confirmDelete": "¿Eliminar la habilidad \"{{name}}\"?",
+      "addButton": "Crear habilidad",
+      "empty": "No hay habilidades personalizadas. Crea una para agregar comportamientos de agente reutilizables.",
+      "addTitle": "Crear habilidad",
+      "editTitle": "Editar habilidad",
+      "confirmDelete": "¿Eliminar \"{{name}}\"?",
       "custom": "Personalizada",
       "builtIn": "Integrada",
       "fields": {
@@ -196,9 +197,9 @@
       }
     },
     "market": {
-      "mcpTitle": "Servidores MCP",
+      "mcpTitle": "MCP",
       "skillsTitle": "Habilidades",
-      "empty": "No hay artículos disponibles en el catálogo del mercado.",
+      "empty": "Nada disponible en la tienda todavía.",
       "install": "Instalar",
       "installSuccess": "{{name}} instalado",
       "installFailed": "Error al instalar {{name}}: {{error}}"
