@@ -97,14 +97,20 @@ for (const check of checks) {
   }
 }
 
-// A deselected component dir left over from an earlier full build would get
-// packed by a misconfigured extraResources. Fail in CI; warn in dev.
-const deselectedDirs = checks
-  .filter((c) => c.component && !sel[c.component] && c.componentDir)
-  .map((c) => c.componentDir);
-for (const dir of [...new Set(deselectedDirs)]) {
-  if (fs.existsSync(dir)) {
-    const msg = `deselected component dir exists in resources/: ${path.relative(PROJECT_ROOT, dir)} (remove it before packing a lean installer)`;
+// A deselected component's PAYLOAD left over from an earlier full build would
+// get packed by a misconfigured extraResources. Fail in CI; warn in dev.
+// Check the payload binary (the check.path each entry already computes), NOT
+// the bare dir: `resources/litellm/default-config.yaml` is tracked in git and
+// therefore always present on a fresh checkout — it's a seed file, not a leak.
+// Only the built payload (e.g. venv/bin/litellm, python/bin/python3) signals a
+// stale all-components resources/ that must not reach a lean installer.
+const deselectedPayloads = checks.filter((c) => c.component && !sel[c.component] && c.componentDir);
+// One payload per componentDir (litellm owns both resources/python and
+// resources/litellm — distinct dirs, distinct payload binaries).
+for (const check of [...new Map(deselectedPayloads.map((c) => [c.componentDir, c])).values()]) {
+  if (fs.existsSync(check.path)) {
+    const dir = path.relative(PROJECT_ROOT, check.componentDir);
+    const msg = `deselected component payload exists in resources/: ${dir} (remove it before packing a lean installer)`;
     if (process.env.CI) {
       console.error(`❌ ${msg}`);
       allGood = false;
