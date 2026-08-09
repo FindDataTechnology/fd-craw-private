@@ -103,9 +103,13 @@ jobs:
           key: resources-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'scripts/build-*.js', 'scripts/verify-bundle.js', 'platform.bundle.json') }}-${{ env.PLATFORM_BUNDLE_COMPONENTS }}
           # Same-arch only: do NOT fall back across arches (an arm64 cache
           # restored into the x64 job would skip the rebuild and ship arm64
-          # binaries in an x64 dmg).
+          # binaries in an x64 dmg). Also scoped to the component selection:
+          # a lean build must never restore an all-components cache (its
+          # resources/python + resources/litellm dirs would trip verify-bundle's
+          # deselected-dir CI guard) - the bare OS+arch prefix would do exactly
+          # that, so the selection suffix is part of the fallback prefix too.
           restore-keys: |
-            resources-${{ matrix.os }}-${{ matrix.arch }}-
+            resources-${{ matrix.os }}-${{ matrix.arch }}-${{ env.PLATFORM_BUNDLE_COMPONENTS }}-
 
       # postinstall installs web/ deps + builds web/dist AND builds the bundled
       # resources (when not cached). predist then ensures the bundled Node is
