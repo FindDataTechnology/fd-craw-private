@@ -20,7 +20,7 @@ See `CLAUDE.md` for the full architecture and configuration reference.
 
 ## Building installers / releases
 
-`npm run dist` packages the Electron desktop app via `electron-builder` (`electron-builder.yml`): `.dmg` (mac arm64 + x64) and a `Setup .exe` (win x64).
+`npm run dist` packages the Electron desktop app via `electron-builder` (`electron-builder.js` - a JS config that reads the bundle manifest, so deselected components are excluded from the installer): `.dmg` (mac arm64 + x64) and a `Setup .exe` (win x64).
 
 **CI** (`.github/workflows/release.yml`) builds three on a 3-entry matrix (`macos-latest` arm64, `macos-latest` x64 via Rosetta, + `windows-latest` x64 - the bundled LiteLLM venv is host-specific, so the `.exe` must be built on Windows):
 
@@ -28,7 +28,24 @@ See `CLAUDE.md` for the full architecture and configuration reference.
 - **On-demand build:** run the workflow via `workflow_dispatch` (Actions tab -> "Run workflow"). Installers are uploaded as workflow artifacts (no release created).
 - **Signing** is gated on Actions secrets (`CSC_LINK`/`CSC_KEY_PASSWORD` + `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID` for mac, `WIN_CSC_LINK`/`WIN_CSC_KEY_PASSWORD` for win). With no secrets set, builds are **unsigned** (still succeed; Gatekeeper/SmartScreen warnings only).
 
-`scripts/build-node.js` downloads the standalone Node matching `process.version`, so the bundled Node's ABI always matches the `npm ci` Node (required because `electron-builder.yml` sets `npmRebuild: false`).
+`scripts/build-node.js` downloads the standalone Node matching `process.version`, so the bundled Node's ABI always matches the `npm ci` Node (required because `electron-builder.js` sets `npmRebuild: false`).
+
+### Bundle manifest (`platform.bundle.json`)
+
+`platform.bundle.json` (repo root, shipped inside the packaged app) is the single source of truth for which heavyweight services get **built and bundled** and which MCP servers / skills are **pre-installed** with what permission policy. All consumers resolve it through `resolveBundle()` in `bundle-manifest.js` — nobody parses the JSON directly. The default file selects everything, so a default build is byte-equivalent to the old always-bundle-all behavior.
+
+Every key:
+
+- **`components`** — per-component `{ include }` for `litellm`, `openconnector`, `postgres`. `include` is `true` | `false` | `"auto"` (`"auto"` is only valid for `postgres` and resolves to "included iff litellm is included" — the bundled LiteLLM stores its DB in the bundled Postgres). Deselecting a component skips its build (`predist`), excludes it from the installer (`electron-builder.js` `extraResources`), and at runtime treats it as absent — the existing graceful-degradation path. External `*_BASE_URL` settings still work for deselected components (the manifest governs *bundling*, not remote access).
+- **`mcpServers`** — `{ "<name>": { command|url, args?, headers?, enabled? } }` MCP servers pre-installed on first run with `origin: "bundled"`; `enabled` seeds the extension's enable state. mcp.json wins name collisions (operator config overrides the packaged default).
+- **`skills`** — array of skill names under `skills/` marked as bundled in the API (`origin: "bundled"`). File skills are not DB rows.
+- **`permissions`** — per-extension policy keyed `"mcp:<name>"` / `"skill:<name>"`, each `{ allow?: string[], deny?: string[], locked?: boolean }`. `locked: true` makes the entry immutable via the API (DELETE / edit / disable → 400). `allow`/`deny` are stored now and enforced by a follow-up change.
+
+**Override without editing the file:** `PLATFORM_BUNDLE_COMPONENTS=all | none | "openconnector,litellm"` (comma list selects exactly those; `postgres` auto-includes with `litellm`). Useful for CI and for lean local installs (`PLATFORM_BUNDLE_COMPONENTS=openconnector npm install` builds only node + OpenConnector). `PLATFORM_BUNDLE_MANIFEST=/abs/path.json` overrides the manifest file location (tests).
+
+**Error model:** an invalid manifest (bad JSON, unknown component/key, malformed permission key) fails the **build scripts** and causes the **runtime** to log a clear error and fall back to the all-components default — a corrupt manifest never prevents the app from starting.
+
+**CI:** the release workflow's `workflow_dispatch` takes a `components` input (same syntax), exported as `PLATFORM_BUNDLE_COMPONENTS`; lean dispatch builds upload artifacts with a `-lean` suffix. See `CLAUDE.md`.
 
 ## Knowledge Platform (WeKnora)
 

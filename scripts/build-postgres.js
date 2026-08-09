@@ -19,9 +19,17 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
+import { resolveBundle } from "../bundle-manifest.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
+
+// Bundle-manifest gate: skip when postgres is deselected (platform.bundle.json
+// or PLATFORM_BUNDLE_COMPONENTS). An invalid manifest throws → the build fails.
+if (!resolveBundle().components.postgres) {
+  console.log("[bundle] postgres deselected by bundle manifest — skipping build");
+  process.exit(0);
+}
 const TARGET = path.join(PROJECT_ROOT, "resources", "postgres");
 
 const IS_WIN = process.platform === "win32";

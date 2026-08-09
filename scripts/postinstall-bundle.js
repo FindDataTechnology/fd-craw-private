@@ -9,15 +9,31 @@
 //
 // Skip with PLATFORM_SKIP_BUNDLE=1 (CI, or contributors who run `npm run predist`
 // manually). Skips automatically when the resources are already built.
+//
+// Bundle manifest: components deselected in platform.bundle.json (or via
+// PLATFORM_BUNDLE_COMPONENTS) are not built here; the individual build scripts
+// re-check the manifest and exit 0 immediately, so this script stays correct
+// even when it guesses wrong. An unreadable manifest degrades to "all selected"
+// (legacy behavior) rather than failing `npm install`.
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { resolveBundleSafe } from "../bundle-manifest.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 if (process.env.PLATFORM_SKIP_BUNDLE === "1") {
   console.log("[postinstall] PLATFORM_SKIP_BUNDLE=1, skipping resource build");
+  process.exit(0);
+}
+
+const bundle = resolveBundleSafe({ projectRoot: root });
+const selected = Object.entries(bundle.components).filter(([, v]) => v).map(([k]) => k);
+const skipped = Object.entries(bundle.components).filter(([, v]) => !v).map(([k]) => k);
+if (skipped.length) console.log(`[postinstall] bundle manifest deselects: ${skipped.join(", ")} (skipping those builds)`);
+if (!selected.length) {
+  console.log("[postinstall] bundle manifest selects no components — nothing to build");
   process.exit(0);
 }
 
@@ -27,9 +43,11 @@ const pythonBin = path.join(root, "resources", "python", isWin ? "python.exe" : 
 const litellmBin = path.join(root, "resources", "litellm", "venv", isWin ? "Scripts" : "bin", isWin ? "litellm.exe" : "litellm");
 const ocEntry = path.join(root, "resources", "openconnector", "src", "server", "index.ts");
 
-// Already built? (repeat installs don't rebuild.)
-if (existsSync(pythonBin) && existsSync(litellmBin) && existsSync(ocEntry)) {
-  console.log("[postinstall] bundled resources already present, skipping build");
+// Already built? Check only the SELECTED components (repeat installs don't rebuild).
+const litellmDone = !bundle.components.litellm || (existsSync(pythonBin) && existsSync(litellmBin));
+const ocDone = !bundle.components.openconnector || existsSync(ocEntry);
+if (litellmDone && ocDone) {
+  console.log("[postinstall] selected bundled resources already present, skipping build");
   process.exit(0);
 }
 
@@ -42,12 +60,14 @@ if (!isTarget) {
   process.exit(0);
 }
 
-console.log("[postinstall] building bundled LiteLLM + OpenConnector resources (one-time; needs network)...");
+console.log(`[postinstall] building bundled resources (${selected.join(", ")}) — one-time; needs network...`);
 function run(file) {
   const r = spawnSync(process.execPath, [path.join(root, "scripts", file)], { stdio: "inherit" });
   return r.status === 0;
 }
-const ok = run("build-openconnector.js") && run("build-python-litellm.js");
+let ok = true;
+if (bundle.components.openconnector) ok = run("build-openconnector.js") && ok;
+if (bundle.components.litellm) ok = run("build-python-litellm.js") && ok;
 if (!ok) {
   console.warn(
     "[postinstall] WARNING: bundled-resource build incomplete (network/git/curl missing?). " +

@@ -15,6 +15,20 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { resolveBundleSafe } from "../bundle-manifest.js";
+
+// Manifest selection (platform.bundle.json): a deselected component is treated
+// as NOT bundled even if its resources/ dir exists — the descriptor falls
+// through to the http-external branch (D4). Cached per projectRoot; the
+// manifest is fixed for the process lifetime. bundle-manifest.js is pure
+// fs/path (no native addons), safe to load in the Electron main process.
+const bundleCache = new Map();
+function manifestSelects(projectRoot, component) {
+  if (!bundleCache.has(projectRoot)) {
+    bundleCache.set(projectRoot, resolveBundleSafe({ projectRoot }).components);
+  }
+  return bundleCache.get(projectRoot)[component] === true;
+}
 
 // Cross-platform binary paths. python-build-standalone and Python venvs lay out
 // their executables differently on Windows vs Unix:
@@ -44,6 +58,7 @@ function getResourceRoot(projectRoot) {
 }
 
 export function hasBundledOpenConnector(projectRoot) {
+  if (!manifestSelects(projectRoot, "openconnector")) return false;
   const root = getResourceRoot(projectRoot);
   // dev-mode override from env
   if (process.env.PLATFORM_OC_BUNDLED_ROOT) {
@@ -53,6 +68,7 @@ export function hasBundledOpenConnector(projectRoot) {
 }
 
 export function hasBundledLiteLLM(projectRoot) {
+  if (!manifestSelects(projectRoot, "litellm")) return false;
   const root = getResourceRoot(projectRoot);
   // dev-mode override from env
   if (process.env.PLATFORM_LITELLM_BUNDLED_ROOT) {
@@ -64,6 +80,7 @@ export function hasBundledLiteLLM(projectRoot) {
 }
 
 export function hasBundledPostgres(projectRoot) {
+  if (!manifestSelects(projectRoot, "postgres")) return false;
   const root = getResourceRoot(projectRoot);
   if (process.env.PLATFORM_POSTGRES_BUNDLED_ROOT) {
     return fs.existsSync(path.join(process.env.PLATFORM_POSTGRES_BUNDLED_ROOT, "bin", IS_WIN ? "postgres.exe" : "postgres"));

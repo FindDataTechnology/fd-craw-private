@@ -1,0 +1,15 @@
+{
+  "components": {
+    "litellm":       { "include": true },
+    "openconnector": { "include": true },
+    "postgres":      { "include": "auto" }
+  },
+  "mcpServers": {},
+  "skills": [
+    "computer-file-system",
+    "computer-process",
+    "computer-shell",
+    "example-skill"
+  ],
+  "permissions": {}
+}

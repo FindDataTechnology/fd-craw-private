@@ -19,9 +19,17 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { execa } from "execa";
 import pjson from "../package.json" with { type: "json" };
+import { resolveBundle } from "../bundle-manifest.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
+
+// Bundle-manifest gate: skip when openconnector is deselected (platform.bundle.json
+// or PLATFORM_BUNDLE_COMPONENTS). An invalid manifest throws → the build fails.
+if (!resolveBundle().components.openconnector) {
+  console.log("[bundle] openconnector deselected by bundle manifest — skipping build");
+  process.exit(0);
+}
 const require = createRequire(import.meta.url);
 const TARGET_DIR = path.join(PROJECT_ROOT, "resources", "openconnector");
 const REPO = "https://github.com/oomol-lab/open-connector.git";

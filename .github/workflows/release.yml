@@ -14,6 +14,13 @@
 # secrets) are present the installers are signed/notarized; when absent the
 # build still succeeds unsigned (CI smoke). See openspec change
 # `ci-build-installers`.
+#
+# Component selection (openspec change `bundle-manifest`): dispatch with a
+# `components` input to build a lean installer without editing
+# platform.bundle.json. Empty input (and tag pushes) build the manifest's
+# components as-is. PLATFORM_BUNDLE_COMPONENTS is workflow-level so it reaches
+# every job's predist/dist/cache steps; LEAN_SUFFIX marks dispatch artifacts so
+# a lean build is distinguishable from a full bundle.
 
 name: release
 
@@ -22,6 +29,18 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      components:
+        description: 'Components to bundle (comma-separated litellm,openconnector,postgres, or all/none). Empty = use platform.bundle.json as-is.'
+        required: false
+        default: ''
+        type: string
+
+env:
+  # Empty on tag pushes (no inputs context) -> manifest unchanged.
+  PLATFORM_BUNDLE_COMPONENTS: ${{ inputs.components || '' }}
+  # "-lean" for dispatch builds that select a subset; "" for full builds.
+  LEAN_SUFFIX: ${{ inputs.components != '' && inputs.components != 'all' && '-lean' || '' }}
 
 permissions:
   contents: write # softprops/action-gh-release creates/edits the Release
@@ -71,14 +90,17 @@ jobs:
       # into a no-op. Keyed by OS + arch + platformBundles (package.json) AND
       # the build scripts - a build-logic change (e.g. adding the Prisma engine
       # step) busts the cache so the new artifacts are rebuilt and persisted
-      # instead of an older partial cache being reused forever. restore-keys
-      # still falls back to the OS+arch prefix so a venv from a prior key is
-      # reused (only the missing piece is regenerated).
+      # instead of an older partial cache being reused forever. ALSO keyed by
+      # platform.bundle.json + the resolved PLATFORM_BUNDLE_COMPONENTS, so a
+      # component-selection change never restores a stale all-components cache
+      # (openspec change `bundle-manifest`). restore-keys still falls back to
+      # the OS+arch prefix so a venv from a prior key is reused (only the
+      # missing piece is regenerated).
       - name: Cache resources/
         uses: actions/cache@v4
         with:
           path: resources
-          key: resources-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'scripts/build-*.js', 'scripts/verify-bundle.js') }}
+          key: resources-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'scripts/build-*.js', 'scripts/verify-bundle.js', 'platform.bundle.json') }}-${{ env.PLATFORM_BUNDLE_COMPONENTS }}
           # Same-arch only: do NOT fall back across arches (an arm64 cache
           # restored into the x64 job would skip the rebuild and ship arm64
           # binaries in an x64 dmg).
@@ -121,7 +143,11 @@ jobs:
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
-          name: platform-${{ matrix.artifact }}
+          # LEAN_SUFFIX ("-lean") marks dispatch builds that selected a subset,
+          # so lean artifacts are distinguishable from full-bundle ones.
+          # Tag-triggered (release) builds always keep the plain names the
+          # `release` job downloads.
+          name: platform-${{ matrix.artifact }}${{ env.LEAN_SUFFIX }}
           path: |
             dist/*.dmg
             dist/*.exe

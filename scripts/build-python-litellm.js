@@ -13,9 +13,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { resolveBundle } from "../bundle-manifest.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
+
+// Bundle-manifest gate: skip when litellm is deselected (platform.bundle.json or
+// PLATFORM_BUNDLE_COMPONENTS) — python/ exists only to run LiteLLM. An invalid
+// manifest throws → the build fails.
+if (!resolveBundle().components.litellm) {
+  console.log("[bundle] litellm deselected by bundle manifest — skipping python+litellm build");
+  process.exit(0);
+}
 const TARGET_PY = path.join(PROJECT_ROOT, "resources", "python");
 const TARGET_LL = path.join(PROJECT_ROOT, "resources", "litellm");
 

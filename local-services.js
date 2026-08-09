@@ -22,6 +22,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Supervisor } from "./supervisor/lifecycle.js";
 import { hasBundledLiteLLM, hasBundledOpenConnector } from "./supervisor/descriptors.js";
+import { resolveBundleSafe } from "./bundle-manifest.js";
 import { findFreePort } from "./supervisor/ports.js";
 import { runFirstRun } from "./bootstrap/first-run.js";
 
@@ -212,19 +213,32 @@ export async function main() {
     process.exit(1);
   }
 
-  // One-line per-service summary: local / external / absent.
+  // One-line per-service summary: local / external / absent / excluded.
+  // "excluded (manifest)" = the bundle manifest (or PLATFORM_BUNDLE_COMPONENTS
+  // override) deselected this component; the descriptor fell through to the
+  // http-external branch (D4). "absent" = selected but resources/ not built.
+  const bundleSel = resolveBundleSafe({ projectRoot: PROJECT_ROOT }).components;
   console.log(`\n[local-services] Platform ready: http://localhost:${supervisor.serverPort}`);
   for (const s of st) {
     if (s.id === "server-js") continue;
-    const mode = s.state === "disabled" ? "absent" : s.kind === "http-external" ? "external" : "local";
+    let mode;
+    if (s.state === "disabled" && s.kind === "http-external") {
+      mode = bundleSel[s.id] === false ? "excluded (manifest)" : "absent";
+    } else if (s.kind === "http-external") {
+      mode = "external";
+    } else {
+      mode = "local";
+    }
     const url = s.url ? ` ${s.url}` : "";
     console.log(`[local-services]   ${s.id}: ${mode} (${s.state})${url}`);
   }
   // If the user asked for local services (localhost URL) but the bundled
-  // resources aren't built, tell them how to get them.
+  // resources aren't built, tell them how to get them. Only mention components
+  // the manifest actually selects — deselected components are intentionally
+  // absent (the summary already said "excluded (manifest)").
   const missing = [];
-  if (ll.mode === "local" && !hasBundledLiteLLM(PROJECT_ROOT)) missing.push("LiteLLM");
-  if (oc.mode === "local" && !hasBundledOpenConnector(PROJECT_ROOT)) missing.push("OpenConnector");
+  if (bundleSel.litellm && ll.mode === "local" && !hasBundledLiteLLM(PROJECT_ROOT)) missing.push("LiteLLM");
+  if (bundleSel.openconnector && oc.mode === "local" && !hasBundledOpenConnector(PROJECT_ROOT)) missing.push("OpenConnector");
   if (missing.length) {
     console.warn(
       `[local-services] ⚠️  Bundled ${missing.join(" + ")} resources not found. ` +
