@@ -49,7 +49,7 @@
 - [x] 8.1 `.github/workflows/release.yml`: add `workflow_dispatch` `components` input (default empty → manifest unchanged); export `PLATFORM_BUNDLE_COMPONENTS` for predist + dist steps on all matrix jobs
 - [x] 8.2 Add `hashFiles('platform.bundle.json')` + the resolved `PLATFORM_BUNDLE_COMPONENTS` value to the resources cache key
 - [x] 8.3 Make artifact names distinguish the component set for dispatch builds (e.g. suffix `-lean` when selection ≠ all)
-- [ ] 8.4 Trigger a `workflow_dispatch` run with `components=openconnector` and verify the artifacts exclude python/litellm/postgres and the app launches
+- [x] 8.4 Trigger a `workflow_dispatch` run with `components=openconnector` and verify the artifacts exclude python/litellm/postgres and the app launches
 
 ## 9. Docs + cleanup
 
