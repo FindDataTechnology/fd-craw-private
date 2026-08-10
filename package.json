@@ -11,7 +11,7 @@
     "start": "node scripts/start.js",
     "start:electron": "electron .",
     "predist": "node scripts/build-openconnector.js && node scripts/build-node.js && node scripts/build-python-litellm.js && node scripts/build-postgres.js && node scripts/verify-bundle.js",
-    "dist": "npm run web:build && electron-builder --publish never",
+    "dist": "npm run web:build && node node_modules/electron-builder/cli.js --publish never",
     "clean:bundle": "rm -rf resources/openconnector resources/python resources/litellm/venv",
     "test:e2e": "playwright test --project=fast",
     "test:e2e:smoke": "playwright test",
