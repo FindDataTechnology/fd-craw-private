@@ -123,6 +123,8 @@ jobs:
       - name: Build web + package installers
         shell: bash
         env:
+          # DEBUG (temporary, debugging a Windows silent no-op; revert me)
+          DEBUG: electron-builder*
           # macOS signing + notarization (gated - empty/absent = unsigned;
           # electron-builder's built-in `mac.notarize` skips when APPLE_* env
           # is absent, so unsigned CI smoke builds still succeed)
@@ -142,7 +144,7 @@ jobs:
           for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
             [ -z "${!v}" ] && unset "$v"
           done
-          npm run dist -- --${{ matrix.arch }}
+          npm run dist -- --${{ matrix.arch }} --verbose
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
