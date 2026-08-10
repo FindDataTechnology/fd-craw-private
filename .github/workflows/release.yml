@@ -123,7 +123,7 @@ jobs:
       - name: Build web + package installers
         shell: bash
         env:
-          # DEBUG (temporary, debugging a Windows silent no-op; revert me)
+          # DEBUG (temporary, diagnosing a Windows silent no-op; revert me)
           DEBUG: electron-builder*
           # macOS signing + notarization (gated - empty/absent = unsigned;
           # electron-builder's built-in `mac.notarize` skips when APPLE_* env
@@ -144,7 +144,12 @@ jobs:
           for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID WIN_CSC_LINK WIN_CSC_KEY_PASSWORD; do
             [ -z "${!v}" ] && unset "$v"
           done
-          npm run dist -- --${{ matrix.arch }} --verbose
+          npm run web:build
+          # DIAGNOSTIC (temporary): invoke electron-builder directly via node,
+          # bypassing npm's bin shim / cmd layer, to isolate the Windows silent
+          # no-op. Revert to `npm run dist -- --${{ matrix.arch }}`.
+          node -e "console.log('DIAG NODE=' + process.version); console.log('DIAG EB=' + require('electron-builder/package.json').version + ' cli=' + require.resolve('electron-builder/cli.js'))"
+          node node_modules/electron-builder/cli.js --publish never --${{ matrix.arch }}
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
