@@ -1,8 +1,8 @@
 # Namespace for the Platform deployment. Created explicitly (with labels) so
 # ArgoCD manages it; syncOptions.CreateNamespace=true in the Application is a
-# fallback. The in-cluster containerd mirror (registries.yaml) already auths
-# harbor.local, so NO imagePullSecret is needed for in-cluster pulls of
-# harbor.local/* images.
+# fallback. In-cluster pulls of harbor.local/* images need a per-namespace
+# `harbor-pull` imagePullSecret (referenced in deployment.yaml) — see the note
+# there for why the registries.yaml `auth` block alone is insufficient.
 #
 # NOTE: k8s namespace names must be RFC 1123 labels — lowercase alphanumeric
 # or '-', no underscores. So `platform-private`, not `platform_private`.

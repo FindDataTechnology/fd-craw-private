@@ -10,9 +10,17 @@
 # detects the manifest change and rolls out). Until CI runs, :latest is the
 # fallback for first deploy / local testing.
 #
-# In-cluster pulls of harbor.local/* are authed by the k3s containerd mirror
-# (registries.yaml on the k3s node: harbor.local → localhost:30880), so NO
-# imagePullSecret is required.
+# In-cluster pulls of harbor.local/* go through the k3s containerd mirror
+# (registries.yaml: harbor.local → http://localhost:30880, insecure_skip_verify).
+# HOWEVER, containerd does not honor the registries.yaml `auth` block for mirrored
+# endpoints (it keys auth by endpoint host, not mirror name), so a 401 Unauthorized
+# results unless a per-pod imagePullSecret supplies the credentials. Every other
+# harbor.local deployment in this cluster (lawcraw, law-bench, review-agent)
+# references a `harbor-pull` secret — we follow the same pattern. Create it once:
+#   kubectl -n platform-private create secret docker-registry harbor-pull \
+#     --docker-server=harbor.local \
+#     --docker-username=<robot-or-admin> \
+#     --docker-password=<secret>
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,6 +41,14 @@ spec:
       labels:
         app.kubernetes.io/name: platform
     spec:
+      imagePullSecrets:
+        # Every harbor.local/* deployment in this cluster (lawcraw, law-bench,
+        # review-agent) references a per-namespace `harbor-pull` secret. The k3s
+        # registries.yaml mirror resolves harbor.local → localhost:30880, but
+        # containerd keys mirror auth by endpoint host (localhost:30880), not
+        # mirror name — so the registries.yaml `auth` block is never sent and
+        # pulls 401 without this per-pod secret. Create it once (see top comment).
+        - name: harbor-pull
       containers:
         - name: platform
           # Image tag is updated automatically by CI (commit-back GitOps).
@@ -99,6 +115,8 @@ spec:
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
+      imagePullSecrets:
+        - name: harbor-pull
       volumes:
         - name: data
           persistentVolumeClaim:

@@ -23,7 +23,7 @@ GitHub push ──► docker-deploy.yml ──► build image ──► push to 
 | `.github/workflows/docker-deploy.yml` | CI | Builds + pushes to Harbor (insecure HTTP), then commit-backs the new `sha-<short>` tag into `k8s/deployment.yaml` (GitOps). |
 | `Makefile` | repo root | `make build/run/logs/k8s-apply/k8s-deploy/argocd-sync` shortcuts. |
 
-**Why no `imagePullSecret`?** The k3s containerd mirror (`/etc/rancher/k3s/registries.yaml` on the node) already auths `harbor.local` → `localhost:30880` (`insecure_skip_verify: true`). Pods pull `harbor.local/*` images with no per-namespace secret. CI pushes to the external `23.144.68.246:30880` address — same registry, two names.
+**Why a `harbor-pull` imagePullSecret?** The k3s containerd mirror (`/etc/rancher/k3s/registries.yaml` on the node) resolves `harbor.local` → `http://localhost:30880` (`insecure_skip_verify: true`) and *does* carry an `auth` block. **However, containerd does not honor the `auth` block for mirrored endpoints** — it keys credentials by endpoint host (`localhost:30880`), not the mirror name (`harbor.local`), so the auth is never sent and pulls return `401 Unauthorized`. Every other `harbor.local` deployment in this cluster (lawcraw, law-bench, review-agent) works around this with a per-namespace `kubernetes.io/dockerconfigjson` secret named `harbor-pull`. We follow the same pattern. CI pushes to the external `23.144.68.246:30880` address — same registry, two names.
 
 ---
 
