@@ -54,7 +54,7 @@ spec:
           # Image tag is updated automatically by CI (commit-back GitOps).
           # To deploy a specific build locally, edit this tag or run
           # `make k8s-deploy TAG=sha-<short>` (see Makefile).
-          image: harbor.local/paas_private/platform:latest
+          image: harbor.local/paas_private/platform:sha-073c76c
           imagePullPolicy: Always
           ports:
             - name: http
