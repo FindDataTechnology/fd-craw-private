@@ -29,9 +29,11 @@ GitHub push ──► docker-deploy.yml ──► build image ──► push to 
 
 ## Prerequisites (one-time)
 
-### 1. Harbor robot account (for CI push)
+### 1. Harbor project + robot account (for CI push)
 
-Create a robot account in the `paas_private` Harbor project with **push** permission:
+The `paas_private` Harbor project must exist first — Harbor returns **401 Unauthorized** for unknown projects, which masquerades as an auth failure (this was the actual root cause of the first `ImagePullBackOff`). Create it via the UI (`http://23.144.68.246:30880` → New Project) or the admin API. *(Created during this setup.)*
+
+Then create a robot account in `paas_private` with **push** permission for CI:
 
 ```bash
 # Harbor UI: http://23.144.68.246:30880 → paas_private → Robot Accounts → New
@@ -39,7 +41,24 @@ Create a robot account in the `paas_private` Harbor project with **push** permis
 # → note the username (robot$paas_private+github-actions) + generated secret
 ```
 
-### 2. GitHub Secrets
+> The `harbor-pull` secrets already in the cluster use the Harbor `admin` account, so reusing those same credentials as `HARBOR_USER`/`HARBOR_PASS` for CI push is the path of least resistance (the smoke test during setup pushed with them). A dedicated robot account scoped to `paas_private` push is cleaner if you prefer least-privilege.
+
+### 2. `harbor-pull` imagePullSecret (in-cluster pulls)
+
+The k3s containerd mirror does **not** honor the `registries.yaml` `auth` block for mirrored endpoints (see the architecture note above), so pods need a per-namespace `kubernetes.io/dockerconfigjson` secret to pull `harbor.local/*` images. Every other namespace in this cluster (lawcraw, law-bench, review-agent) uses one named `harbor-pull`. Create it in `platform-private` (or copy law-bench's):
+
+```bash
+kubectl -n platform-private create secret docker-registry harbor-pull \
+  --docker-server=harbor.local \
+  --docker-username=<robot-or-admin> \
+  --docker-password=<secret>
+# or copy an existing one: kubectl -n law-bench get secret harbor-pull -o yaml \
+#   | sed 's/namespace: law-bench/namespace: platform-private/' | kubectl apply -f -
+```
+
+The Deployment already references it via `imagePullSecrets` (commit `149f449`).
+
+### 3. GitHub Secrets
 
 Repo → Settings → Secrets and variables → Actions:
 
@@ -50,7 +69,7 @@ Repo → Settings → Secrets and variables → Actions:
 | `HARBOR_USER` | `robot$paas_private+github-actions` |
 | `HARBOR_PASS` | `<robot account secret>` |
 
-### 3. ArgoCD registers the app (once)
+### 4. ArgoCD registers the app (once)
 
 ```bash
 kubectl apply -f argocd/application.yaml -n argocd
@@ -171,7 +190,7 @@ Tune to node capacity. The startup window is generous (`startupProbe` 300s) beca
 
 | Symptom | Cause / fix |
 |---|---|
-| `ImagePullBackOff` | CI hasn't pushed yet, or Harbor robot lacks push. Run `make k8s-logs`; check `docker pull harbor.local/paas_private/platform:latest` works on the node. |
+| `ImagePullBackOff` (401 Unauthorized) | Two root causes, both one-time: (1) the `paas_private` Harbor project doesn't exist yet — Harbor returns **401** for unknown projects, which looks like an auth failure but isn't (create it in the Harbor UI or via admin API); (2) the `harbor-pull` imagePullSecret is missing in `platform-private` — the k3s containerd mirror does NOT honor the `registries.yaml` `auth` block for mirrored endpoints (see architecture note). Run `make k8s-logs` and check the pod events; a `401 Unauthorized` from `localhost:30880` means one of these. |
 | Pod restarts (OOMKilled) | Raise `limits.memory` in `k8s/deployment.yaml`. 4GB is the floor for all four services. |
 | `startupProbe` fails → `CrashLoopBackOff` | `make k8s-logs`; look for the supervisor's per-service log dump. Most common: first-run `prisma db push` needs `DATABASE_URL` (the supervisor injects it from the seeded Postgres). |
 | ArgoCD shows `OutOfSync` on `Namespace` | Harmless — `CreateNamespace=true` created it; ArgoCD will self-heal. Or `make argocd-sync`. |
