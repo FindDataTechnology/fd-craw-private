@@ -15,8 +15,8 @@
 #   HARBOR_USER      e.g. robot$paas_private+github-actions
 #   HARBOR_PASS      <robot account secret>
 #
-# In-cluster, k3s containerd mirrors harbor.local → localhost:30880 (registries.yaml,
-# admin/REDACTED, insecure_skip_verify), so pods pull harbor.local/* images with
+# In-cluster, k3s containerd mirrors harbor.local → localhost:30880 (registries.yaml
+# on the k3s node, insecure_skip_verify), so pods pull harbor.local/* images with
 # NO imagePullSecret. CI pushes to the external 23.144.68.246:30880 address; the
 # manifest references the in-cluster harbor.local alias — same registry, two names.
 

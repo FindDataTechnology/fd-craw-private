@@ -11,7 +11,7 @@
 # fallback for first deploy / local testing.
 #
 # In-cluster pulls of harbor.local/* are authed by the k3s containerd mirror
-# (registries.yaml: harbor.local → localhost:30880, admin/REDACTED), so NO
+# (registries.yaml on the k3s node: harbor.local → localhost:30880), so NO
 # imagePullSecret is required.
 apiVersion: apps/v1
 kind: Deployment
@@ -54,7 +54,7 @@ spec:
             - name: PLATFORM_DATA_DIR
               value: /data
             # VOLCES_API_KEY is optional: server.js has a fallback key baked in.
-            # Create the secret to override: kubectl -n platform_private create
+            # Create the secret to override: kubectl -n platform-private create
             # secret generic platform-secrets --from-literal=volces-api-key=...
             - name: VOLCES_API_KEY
               valueFrom:

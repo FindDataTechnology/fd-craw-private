@@ -20,7 +20,7 @@
 IMAGE      ?= platform:dev
 HARBOR     ?= harbor.local/paas_private/platform
 DATA_VOLUME ?= platform-data-dev
-KUBE_NS    ?= platform_private
+KUBE_NS    ?= platform-private
 ARGOCD_APP ?= platform
 # kubectl context: set KUBECONFIG or use the SSH-reachable k3s. For local
 # `kubectl` against the remote cluster, export KUBECONFIG to your k3s kubeconfig.

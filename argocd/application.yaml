@@ -10,6 +10,10 @@
 # repoURL uses HTTPS to reuse the law-ai-official org repo credential already
 # configured in ArgoCD (law-bench, lawai-web use the same). targetRevision is
 # the working branch; switch to `main` once the branch is merged.
+#
+# Namespace is platform-private (hyphen, not underscore) — k8s RFC 1123 labels
+# forbid underscores. The Harbor PROJECT stays paas_private (Harbor allows
+# underscores) — they are two different names.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -25,7 +29,7 @@ spec:
     path: k8s
   destination:
     server: https://kubernetes.default.svc
-    namespace: platform_private
+    namespace: platform-private
   syncPolicy:
     automated:
       prune: true

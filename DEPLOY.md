@@ -23,7 +23,7 @@ GitHub push ──► docker-deploy.yml ──► build image ──► push to 
 | `.github/workflows/docker-deploy.yml` | CI | Builds + pushes to Harbor (insecure HTTP), then commit-backs the new `sha-<short>` tag into `k8s/deployment.yaml` (GitOps). |
 | `Makefile` | repo root | `make build/run/logs/k8s-apply/k8s-deploy/argocd-sync` shortcuts. |
 
-**Why no `imagePullSecret`?** The k3s containerd mirror (`/etc/rancher/k3s/registries.yaml`) already auths `harbor.local` → `localhost:30880` with `admin/REDACTED` (`insecure_skip_verify: true`). Pods pull `harbor.local/*` images with no per-namespace secret. CI pushes to the external `23.144.68.246:30880` address — same registry, two names.
+**Why no `imagePullSecret`?** The k3s containerd mirror (`/etc/rancher/k3s/registries.yaml` on the node) already auths `harbor.local` → `localhost:30880` (`insecure_skip_verify: true`). Pods pull `harbor.local/*` images with no per-namespace secret. CI pushes to the external `23.144.68.246:30880` address — same registry, two names.
 
 ---
 
@@ -129,7 +129,7 @@ Every push to `main` or `embed-litellm-openconnector` (that touches source) trig
 ```bash
 make k8s-status        # pods, svc, rollout
 make k8s-logs          # tail the platform pod
-kubectl -n platform_private describe pod -l app.kubernetes.io/name=platform
+kubectl -n platform-private describe pod -l app.kubernetes.io/name=platform
 ```
 
 Reach it: **http://23.144.68.246:30950**
@@ -137,7 +137,7 @@ Reach it: **http://23.144.68.246:30950**
 ### Override the Volces key in-cluster (optional)
 
 ```bash
-kubectl -n platform_private create secret generic platform-secrets \
+kubectl -n platform-private create secret generic platform-secrets \
   --from-literal=volces-api-key=your-key
 # ArgoCD self-heal keeps the secret; the Deployment reads it via optional secretKeyRef.
 ```
@@ -187,7 +187,7 @@ Dockerfile                          # multi-stage full-stack image build
 .dockerignore                       # excludes built resource payloads + secrets
 Makefile                            # build/run/k8s/argocd shortcuts
 k8s/
-  namespace.yaml                    # platform_private (ArgoCD-managed)
+  namespace.yaml                    # platform-private (ArgoCD-managed)
   pvc.yaml                          # 10Gi local-path RWO → /data
   service.yaml                      # NodePort 30950 → :3000
   deployment.yaml                   # 1 replica, Recreate, image tag set by CI
