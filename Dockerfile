@@ -32,14 +32,17 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# Install root + web deps first (cacheable layer). Skip the postinstall web +
-# resource builds here (PLATFORM_SKIP_*); we run them explicitly below so a
-# failure FAILS the docker build — postinstall-bundle.js is best-effort only
-# and never fails `npm install`, which would hide a broken resource build.
+# Install root + web deps first (cacheable layer). --ignore-scripts skips the
+# package.json postinstall hook (node scripts/postinstall-web.js && …postinstall-bundle.js):
+# at this layer only package*.json is copied, so scripts/ doesn't exist yet and the hook
+# would throw "Cannot find module" before the PLATFORM_SKIP_* env guard can exit 0. We run
+# the web build + resource builds explicitly below, so the postinstall is redundant here —
+# AND making it best-effort (postinstall-bundle.js never fails `npm install`) would mask a
+# broken resource build that should fail the docker build.
 COPY package*.json ./
 COPY web/package*.json ./web/
-RUN PLATFORM_SKIP_BUNDLE=1 PLATFORM_SKIP_WEB_BUILD=1 npm ci \
-    && npm --prefix web ci
+RUN npm ci --ignore-scripts \
+    && npm --prefix web ci --ignore-scripts
 
 # Copy the rest of the source. Built resource payload dirs are .dockerignored so
 # a host's mac/win binaries never leak in — resources are built fresh for Linux.
