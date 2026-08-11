@@ -1,0 +1,12 @@
+# Namespace for the Platform deployment. Created explicitly (with labels) so
+# ArgoCD manages it; syncOptions.CreateNamespace=true in the Application is a
+# fallback. The in-cluster containerd mirror (registries.yaml) already auths
+# harbor.local with admin/REDACTED, so NO imagePullSecret is needed for
+# in-cluster pulls of harbor.local/* images.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform_private
+  labels:
+    app.kubernetes.io/name: platform
+    app.kubernetes.io/part-of: platform

@@ -1,0 +1,105 @@
+# ── Platform single-container Deployment ───────────────────────────────────────
+#
+# One pod = one process tree: scripts/start.js → supervisor spawns server.js +
+# LiteLLM + OpenConnector + Postgres as localhost child processes (exactly like
+# `npm start`). replicas: 1 + Recreate because the PVC is RWO and the in-process
+# agent session is stateful and not horizontally scalable.
+#
+# Image tag: CI (.github/workflows/docker-deploy.yml) builds, pushes to Harbor,
+# then commits the new sha tag back into THIS file (GitOps — ArgoCD auto-sync
+# detects the manifest change and rolls out). Until CI runs, :latest is the
+# fallback for first deploy / local testing.
+#
+# In-cluster pulls of harbor.local/* are authed by the k3s containerd mirror
+# (registries.yaml: harbor.local → localhost:30880, admin/REDACTED), so NO
+# imagePullSecret is required.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform
+  labels:
+    app.kubernetes.io/name: platform
+spec:
+  replicas: 1
+  strategy:
+    # Stateful singleton: kill the old pod before starting the new one so the
+    # RWO PVC + the single agent session are never double-mounted.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: platform
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: platform
+    spec:
+      containers:
+        - name: platform
+          # Image tag is updated automatically by CI (commit-back GitOps).
+          # To deploy a specific build locally, edit this tag or run
+          # `make k8s-deploy TAG=sha-<short>` (see Makefile).
+          image: harbor.local/paas_private/platform:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "3000"
+            - name: PLATFORM_DATA_DIR
+              value: /data
+            # VOLCES_API_KEY is optional: server.js has a fallback key baked in.
+            # Create the secret to override: kubectl -n platform_private create
+            # secret generic platform-secrets --from-literal=volces-api-key=...
+            - name: VOLCES_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: volces-api-key
+                  optional: true
+          resources:
+            # Heavy single container: Node server + LiteLLM (Python venv) +
+            # Postgres + OpenConnector all in one pod. Tune to node capacity.
+            requests:
+              cpu: 1000m
+              memory: 1500Mi
+            limits:
+              cpu: 3000m
+              memory: 4Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          # startupProbe gates liveness/readiness until server.js (and its
+          # sidecars) finish cold-start: first-run Postgres initdb + LiteLLM
+          # prisma db push + OpenConnector warmup can take 1-3 min. The
+          # supervisor's own START_TIMEOUT is 120s; give k8s a 300s window.
+          startupProbe:
+            httpGet:
+              path: /api/config
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /api/config
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/config
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: platform-data

@@ -100,7 +100,10 @@ export function getDescriptors({
 }) {
   const childEnv = {
     PORT: String(serverPort),
-    HOST: "localhost",
+    // Respect HOST from the environment so the backend can bind 0.0.0.0 in a
+    // container (k8s probes + docker port-forward reach it). Defaults to
+    // localhost for local dev (the Vite dev proxy + WS client expect it).
+    HOST: process.env.HOST || "localhost",
     ...(dataDir ? { PLATFORM_DATA_DIR: dataDir } : {}),
     ...agentEnv,
   };

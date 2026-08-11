@@ -1,0 +1,135 @@
+# ── CI/CD: build the full-stack image, push to Harbor, GitOps-deploy via ArgoCD ─
+#
+# Separate from release.yml (Electron .dmg/.exe installers). This workflow builds
+# the single-container Docker image (server + LiteLLM + OpenConnector + Postgres),
+# pushes it to Harbor, then writes the new image tag back into k8s/deployment.yaml
+# (commit-back GitOps). ArgoCD auto-sync detects the manifest diff and rolls out.
+#
+# Harbor serves plain HTTP on NodePort 30880 (no TLS), so the runner's docker
+# daemon + buildkit are configured for an insecure registry — mirrors the
+# PAAS_Server ci.yml pattern.
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   HARBOR_HOST      e.g. 23.144.68.246:30880   (external Harbor address for CI)
+#   HARBOR_PROJECT   e.g. paas_private
+#   HARBOR_USER      e.g. robot$paas_private+github-actions
+#   HARBOR_PASS      <robot account secret>
+#
+# In-cluster, k3s containerd mirrors harbor.local → localhost:30880 (registries.yaml,
+# admin/REDACTED, insecure_skip_verify), so pods pull harbor.local/* images with
+# NO imagePullSecret. CI pushes to the external 23.144.68.246:30880 address; the
+# manifest references the in-cluster harbor.local alias — same registry, two names.
+
+name: docker-deploy
+
+on:
+  push:
+    branches: [main, embed-litellm-openconnector]
+    paths:
+      # Source the image is built from. k8s/* is deliberately EXCLUDED so the
+      # commit-back below (which only touches k8s/deployment.yaml) cannot loop.
+      - 'server.js'
+      - '*.js'
+      - 'web/**'
+      - 'scripts/**'
+      - 'supervisor/**'
+      - 'bootstrap/**'
+      - 'skills/**'
+      - 'package*.json'
+      - 'web/package*.json'
+      - 'platform.bundle.json'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/docker-deploy.yml'
+  workflow_dispatch:
+    # Manual trigger — use this for the first build or to force a redeploy.
+    inputs:
+      skip_commit_back:
+        description: 'Push image only, do NOT commit tag back to k8s/'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # commit-back the new image tag into k8s/deployment.yaml
+
+concurrency:
+  group: docker-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HARBOR_HOST: ${{ secrets.HARBOR_HOST }}
+  HARBOR_PROJECT: ${{ secrets.HARBOR_PROJECT }}
+  IMAGE: ${{ secrets.HARBOR_HOST }}/${{ secrets.HARBOR_PROJECT }}/platform
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Check out the BRANCH (not detached HEAD) so the commit-back step can
+          # `git push` back to it. github.ref is refs/heads/<branch> for both push
+          # and workflow_dispatch (this workflow has no pull_request trigger).
+          ref: ${{ github.ref }}
+          persist-credentials: true # (default) GITHUB_TOKEN (contents:write) can push
+
+      - name: Allow insecure (HTTP) Harbor registry
+        run: |
+          echo '{"insecure-registries":["${{ env.HARBOR_HOST }}"]}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-config-inline: |
+            [registry."${{ env.HARBOR_HOST }}"]
+              http = true
+              insecure = true
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.HARBOR_HOST }}
+          username: ${{ secrets.HARBOR_USER }}
+          password: ${{ secrets.HARBOR_PASS }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build & push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # GitOps commit-back: stamp the new sha tag into k8s/deployment.yaml and
+      # push. ArgoCD (auto-sync + selfHeal) sees the diff and rolls out. [skip ci]
+      # + the paths filter above (k8s/ excluded) both prevent a re-trigger loop.
+      - name: Commit new image tag (GitOps)
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_commit_back }}
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          TAG="sha-${SHORT_SHA}"
+          sed -i "s|image: harbor.local/${{ env.HARBOR_PROJECT }}/platform:.*|image: harbor.local/${{ env.HARBOR_PROJECT }}/platform:${TAG}|" k8s/deployment.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add k8s/deployment.yaml
+          if git diff --cached --quiet; then
+            echo "No image tag change — nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore(k8s): deploy platform:${TAG} [skip ci]"
+          git push

@@ -1,0 +1,20 @@
+# NodePort exposing the single Platform container. The bundled supervisor
+# listens on containerPort 3000 (server.js, HOST=0.0.0.0). 30950 was free at
+# authoring time (k3s NodePort range 30000-32767); reach it at
+# http://23.144.68.246:30950 from outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform
+  labels:
+    app.kubernetes.io/name: platform
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: platform
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30950
+      protocol: TCP

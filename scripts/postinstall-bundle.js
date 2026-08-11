@@ -51,10 +51,11 @@ if (litellmDone && ocDone) {
   process.exit(0);
 }
 
-// Only mac arm64 + win x64 have resource build support; skip silently elsewhere.
+// mac arm64/x64 + win x64 + linux x64 have resource build support; skip elsewhere.
 const isTarget =
-  (process.platform === "darwin" && process.arch === "arm64") ||
-  (process.platform === "win32" && process.arch === "x64");
+  (process.platform === "darwin" && (process.arch === "arm64" || process.arch === "x64")) ||
+  (process.platform === "win32" && process.arch === "x64") ||
+  (process.platform === "linux" && process.arch === "x64");
 if (!isTarget) {
   console.log(`[postinstall] no bundled-resource build for ${process.platform}/${process.arch}; skipping`);
   process.exit(0);

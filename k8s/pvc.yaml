@@ -1,0 +1,18 @@
+# Persistent state for the single-container Platform: SQLite, sessions,
+# chat-history, cron, postgres-data, litellm.yaml, dev-settings.json. The
+# container writes everything under /data (PLATFORM_DATA_DIR=/data). RWO +
+# Recreate strategy (single replica) — the in-process agent session is not
+# horizontally scalable, so only one pod may mount this at a time.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: platform-data
+  labels:
+    app.kubernetes.io/name: platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi

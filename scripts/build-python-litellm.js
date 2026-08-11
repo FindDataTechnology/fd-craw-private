@@ -5,9 +5,9 @@
 // creates a venv, and installs litellm[proxy] at the pinned version. Runs during
 // `npm run dist` (via predist). Skips if already built (cached).
 //
-// Replaces the macOS-only build-python-litellm.sh. Supports macOS arm64 and
-// Windows x64 (the two electron-builder targets). Uses `curl` + `tar` (both
-// shipped on Windows 10+ and macOS) for download/extract so no bash is required.
+// Replaces the macOS-only build-python-litellm.sh. Supports macOS arm64/x64,
+// Linux x64 (Docker image build), and Windows x64. Uses `curl` + `tar` (both
+// shipped on Windows 10+, macOS, and Linux) for download/extract so no bash.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -37,19 +37,22 @@ const IS_WIN = process.platform === "win32";
 // python-build-standalone install_only asset per platform + arch.
 const PB_ASSET = IS_WIN
   ? `cpython-${PY_VER}+${PB_TAG}-x86_64-pc-windows-msvc-shared-install_only.tar.gz`
-  : `cpython-${PY_VER}+${PB_TAG}-${process.arch === "arm64" ? "aarch64" : "x86_64"}-apple-darwin-install_only.tar.gz`;
+  : process.platform === "linux"
+    ? `cpython-${PY_VER}+${PB_TAG}-x86_64-unknown-linux-gnu-install_only.tar.gz`
+    : `cpython-${PY_VER}+${PB_TAG}-${process.arch === "arm64" ? "aarch64" : "x86_64"}-apple-darwin-install_only.tar.gz`;
 // python + venv executable layout per platform (mirror supervisor/descriptors.js).
 const PYTHON_BIN_PARTS = IS_WIN ? ["python.exe"] : ["bin", "python3"];
 const VENV_BIN_DIR = IS_WIN ? "Scripts" : "bin";
 const PIP_NAME = IS_WIN ? "pip.exe" : "pip";
 const LITELLM_NAME = IS_WIN ? "litellm.exe" : "litellm";
 
-// Only mac arm64/x64 (x64 via Rosetta on an arm64 host) and win x64 are supported.
+// mac arm64/x64 (x64 via Rosetta on an arm64 host) + linux x64 (Docker) + win x64 are supported.
 const IS_TARGET =
   (process.platform === "darwin" && (process.arch === "arm64" || process.arch === "x64")) ||
+  (process.platform === "linux" && process.arch === "x64") ||
   (process.platform === "win32" && process.arch === "x64");
 if (!IS_TARGET) {
-  console.warn(`⚠️  Skipping Python/LiteLLM build: only mac arm64/x64 / win x64 supported. Got ${process.platform}/${process.arch}`);
+  console.warn(`⚠️  Skipping Python/LiteLLM build: only mac arm64/x64 / linux x64 / win x64 supported. Got ${process.platform}/${process.arch}`);
   process.exit(0);
 }
 

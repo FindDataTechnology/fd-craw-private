@@ -33,20 +33,22 @@ if (!resolveBundle().components.postgres) {
 const TARGET = path.join(PROJECT_ROOT, "resources", "postgres");
 
 const IS_WIN = process.platform === "win32";
-// mac arm64/x64 (universal tarball) + win x64 are build targets.
+// mac arm64/x64 (universal tarball) + linux x64 (Docker) + win x64 are build targets.
 const IS_TARGET =
   (process.platform === "darwin" && (process.arch === "arm64" || process.arch === "x64")) ||
+  (process.platform === "linux" && process.arch === "x64") ||
   (process.platform === "win32" && process.arch === "x64");
 if (!IS_TARGET) {
-  console.warn(`⚠️  Skipping Postgres build: only mac arm64/x64 / win x64 supported. Got ${process.platform}/${process.arch}`);
+  console.warn(`⚠️  Skipping Postgres build: only mac arm64/x64 / linux x64 / win x64 supported. Got ${process.platform}/${process.arch}`);
   process.exit(0);
 }
 
 const pkg = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, "package.json"), "utf8"));
 const PG_VERSION = pkg.platformBundles.postgresVersion;
 // mac binaries are universal - the darwin-arm64 tarball covers x64 too.
-const PKG_NAME = IS_WIN ? "@embedded-postgres/windows-x64" : "@embedded-postgres/darwin-arm64";
-const TARBALL_NAME = IS_WIN ? "windows-x64" : "darwin-arm64";
+// linux x64 has its own @embedded-postgres/linux-x64 package.
+const PKG_NAME = IS_WIN ? "@embedded-postgres/windows-x64" : process.platform === "linux" ? "@embedded-postgres/linux-x64" : "@embedded-postgres/darwin-arm64";
+const TARBALL_NAME = IS_WIN ? "windows-x64" : process.platform === "linux" ? "linux-x64" : "darwin-arm64";
 const TARBALL = `${TARBALL_NAME}-${PG_VERSION}.tgz`;
 const TARBALL_URL = `https://registry.npmjs.org/${PKG_NAME}/-/${TARBALL}`;
 
@@ -128,8 +130,9 @@ fs.rmSync(metaPath, { force: true });
 // 5.5 Create the major-version + versionless dylib symlinks the binaries link
 // against (mac only - the @embedded-postgres tarball ships only the full-version
 // dylibs like libicuuc.68.2.dylib; the binaries reference libicuuc.68.dylib and
-// libicuuc.dylib). Idempotent (skip if the link already exists).
-if (!IS_WIN) {
+// libicuuc.dylib). Linux ships .so files with the right soname already, so this
+// is darwin-only. Idempotent (skip if the link already exists).
+if (process.platform === "darwin") {
   const libDir = path.join(TARGET, "lib");
   if (fs.existsSync(libDir)) {
     for (const f of fs.readdirSync(libDir)) {
