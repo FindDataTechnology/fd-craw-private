@@ -4,7 +4,9 @@
     "cancel": "Annuler",
     "save": "Enregistrer",
     "saving": "Enregistrement…",
-    "add": "Ajouter"
+    "add": "Ajouter",
+    "edit": "Modifier",
+    "delete": "Supprimer"
   },
   "nav": {
     "chat": "💬 Discussion",
@@ -202,7 +204,15 @@
       "empty": "Rien de disponible dans la boutique pour le moment.",
       "install": "Installer",
       "installSuccess": "{{name}} installé",
-      "installFailed": "Échec de l'installation de {{name}} : {{error}}"
+      "installFailed": "Échec de l'installation de {{name}} : {{error}}",
+      "readyToUse": "Prêt à l'emploi",
+      "needsConfig": "Configuration requise"
     }
+  },
+  "workdir": {
+    "label": "Répertoire de travail",
+    "change": "Changer",
+    "notSet": "Non défini",
+    "desktopOnly": "Le sélecteur de dossier n'est disponible que dans l'application de bureau"
   }
 }

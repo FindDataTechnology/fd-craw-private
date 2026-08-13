@@ -565,7 +565,7 @@ export function getExtensionConfig(name) {
   return serializeExtensionConfig(row);
 }
 
-// ponytail: INSERT OR IGNORE so startup seeding doesn't overwrite user edits.
+// INSERT OR IGNORE so startup seeding doesn't overwrite user edits.
 // Returns the existing row if it was already present, or the newly inserted row.
 export function seedExtensionConfig({ name, type, config, enabled = true, source = "startup", origin = "user", locked = false, permissions = null }) {
   if (!dbReady) return null;

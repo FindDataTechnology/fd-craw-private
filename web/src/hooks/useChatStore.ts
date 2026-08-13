@@ -50,6 +50,7 @@ interface State {
   currentSessionId: string | null;
   turns: Turn[];
   isStreaming: boolean;
+  currentWorkdir: string | null;
   // Setters used by the WS hook.
   setStatus: (s: ConnStatus) => void;
   apply: (m: ServerMessage) => void;
@@ -58,6 +59,7 @@ interface State {
   clearView: () => void;
   toggleAllThinking: () => void;
   toggleBlock: (turnId: string, index: number) => void;
+  setWorkdir: (path: string | null) => void;
 }
 
 let uid = 0;
@@ -106,6 +108,7 @@ export const useChatStore = create<State>((set) => ({
   currentSessionId: null,
   turns: [],
   isStreaming: false,
+  currentWorkdir: null,
 
   setStatus: (s) => set({ status: s }),
 
@@ -231,9 +234,15 @@ export const useChatStore = create<State>((set) => ({
                   },
             ),
             isStreaming: false,
+            currentWorkdir: m.workdir ?? null,
           };
 
-        // Non-chat channels. Ignored for now — vanilla views own them.
+        case "workdir":
+          return { currentWorkdir: m.path ?? null };
+
+        // Non-chat channels. Ignored for now — the owning views/stores
+        // subscribe to these themselves (e.g. useExtensionsStore.applyEvent
+        // handles extensions_changed).
         case "cron_jobs":
         case "cron_status":
         case "cron_removed":
@@ -245,6 +254,16 @@ export const useChatStore = create<State>((set) => ({
         case "cron_run_started":
         case "dashboard_update":
         case "dashboard_state":
+        case "documents_status":
+        case "extensions_changed":
+          return {};
+
+        default:
+          // CRITICAL: never fall through returning undefined. Zustand treats a
+          // non-object partial as a FULL state replacement, so an unhandled
+          // message type would blank the whole store and crash every
+          // subscriber on the next render ("Cannot read properties of
+          // undefined"). Ignore unknown types instead.
           return {};
       }
     }),
@@ -253,6 +272,8 @@ export const useChatStore = create<State>((set) => ({
     set((state) => ({ turns: [...state.turns, { id: nextId(), role: "user", text }] })),
 
   clearView: () => set({ turns: [], isStreaming: false }),
+
+  setWorkdir: (path) => set({ currentWorkdir: path }),
 
   toggleAllThinking: () =>
     set((state) => {
@@ -291,9 +312,10 @@ export const useChatStore = create<State>((set) => ({
 }));
 
 // Test hook: expose the store on window so Playwright can drive events
-// without a real WebSocket. Harmless in production (nothing sensitive on the
-// store; users could reach the same handlers by sending fake WS messages).
-// ponytail: E2E hook, not gated by NODE_ENV to avoid a build-mode split.
+// without a real WebSocket (used by e2e/thinking-blocks.spec.js). Harmless in
+// production (nothing sensitive on the store; users could reach the same
+// handlers by sending fake WS messages). Deliberately not gated by NODE_ENV —
+// e2e runs against the production build (web/dist).
 if (typeof window !== "undefined") {
   (window as unknown as { __chatStore?: typeof useChatStore }).__chatStore = useChatStore;
 }

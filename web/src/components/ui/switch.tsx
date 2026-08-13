@@ -9,10 +9,16 @@ export interface SwitchProps extends Omit<React.InputHTMLAttributes<HTMLInputEle
 const Switch = React.forwardRef<HTMLInputElement, SwitchProps>(
   ({ className, checked, onCheckedChange, ...props }, ref) => {
     return (
-      <label className="inline-flex items-center cursor-pointer">
+      <label className="relative inline-flex items-center cursor-pointer">
+        {/* The input IS the interactive surface: it spans the whole track
+            (transparent, on top) so clicks land on it directly. A sr-only
+            input covered by the visual track only toggles via label
+            activation, which synthetic click tools (Playwright) refuse to
+            do — the track intercepts pointer events over the 1px input. */}
         <input
           type="checkbox"
-          className="sr-only peer"
+          role="switch"
+          className="peer absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
           checked={checked}
           onChange={(e) => onCheckedChange?.(e.target.checked)}
           ref={ref}

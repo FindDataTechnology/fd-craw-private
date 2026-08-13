@@ -15,6 +15,8 @@
     "clean:bundle": "rm -rf resources/openconnector resources/python resources/litellm/venv",
     "test:e2e": "playwright test --project=fast",
     "test:e2e:smoke": "playwright test",
+    "test:e2e:live": "PW_LIVE=1 playwright test --project=live",
+    "test:e2e:live:smoke": "PW_LIVE=1 LIVE_SMOKE=1 playwright test --project=live",
     "check:locales": "node scripts/check-locales.js",
     "web:install": "npm --prefix web install",
     "web:build": "npm run check:locales && npm --prefix web run build",

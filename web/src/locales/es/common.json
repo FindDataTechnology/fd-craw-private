@@ -4,7 +4,9 @@
     "cancel": "Cancelar",
     "save": "Guardar",
     "saving": "Guardando…",
-    "add": "Agregar"
+    "add": "Agregar",
+    "edit": "Editar",
+    "delete": "Eliminar"
   },
   "nav": {
     "chat": "💬 Chat",
@@ -202,7 +204,15 @@
       "empty": "Nada disponible en la tienda todavía.",
       "install": "Instalar",
       "installSuccess": "{{name}} instalado",
-      "installFailed": "Error al instalar {{name}}: {{error}}"
+      "installFailed": "Error al instalar {{name}}: {{error}}",
+      "readyToUse": "Listo para usar",
+      "needsConfig": "Requiere configuración"
     }
+  },
+  "workdir": {
+    "label": "Directorio de trabajo",
+    "change": "Cambiar",
+    "notSet": "Sin establecer",
+    "desktopOnly": "El selector de carpetas solo está disponible en la aplicación de escritorio"
   }
 }

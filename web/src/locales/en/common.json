@@ -4,7 +4,9 @@
     "cancel": "Cancel",
     "save": "Save",
     "saving": "Saving…",
-    "add": "Add"
+    "add": "Add",
+    "edit": "Edit",
+    "delete": "Delete"
   },
   "nav": {
     "chat": "💬 Chat",
@@ -202,7 +204,15 @@
       "empty": "Nothing available in the store yet.",
       "install": "Install",
       "installSuccess": "Installed {{name}}",
-      "installFailed": "Failed to install {{name}}: {{error}}"
+      "installFailed": "Failed to install {{name}}: {{error}}",
+      "readyToUse": "Ready to use",
+      "needsConfig": "Needs config"
     }
+  },
+  "workdir": {
+    "label": "Working Directory",
+    "change": "Change",
+    "notSet": "Not set",
+    "desktopOnly": "Folder picker is only available in the desktop app"
   }
 }

@@ -1,9 +1,14 @@
 // McpServerForm.tsx
 // Modal form for adding/editing MCP server configurations.
+// Three modes:
+//   - edit:      raw form prefilled from an existing server
+//   - setup:     data-driven form generated from a MarketMcpServer configTemplate
+//                (one field per env key + one field per placeholder arg)
+//   - manual add: raw form (command/args/env-JSON/url/headers-JSON)
 
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import type { McpServer } from "@/lib/extensions-api";
+import type { McpServer, MarketMcpServer } from "@/lib/extensions-api";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,18 +23,31 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+// Same placeholder rule as extension-store.js isPlaceholderArg.
+// Duplicated client-side so the setup form needs no extra round-trip; the rule
+// is tiny and stable. If they drift, the e2e badge/field split assertion catches it.
+function isPlaceholderArg(arg: string): boolean {
+  return /\/path\//.test(arg) || /^your_/.test(arg) || /^<.*>$/.test(arg);
+}
+
 interface McpServerFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   server?: McpServer | null;
   initialConfig?: McpServer["config"] | null;
+  setupServer?: MarketMcpServer | null;
+  // Fired after a successful add (setup or manual). Lets the caller (Market tab)
+  // switch to the Installed tab so the new card is visible.
+  onInstalled?: () => void;
 }
 
-export function McpServerForm({ open, onOpenChange, server, initialConfig }: McpServerFormProps) {
+export function McpServerForm({ open, onOpenChange, server, initialConfig, setupServer, onInstalled }: McpServerFormProps) {
   const { t } = useTranslation();
   const { addMcpServer, updateMcpServer } = useExtensionsStore();
 
   const isEdit = !!server;
+  const isSetup = !!setupServer && !isEdit;
+
   const [name, setName] = useState("");
   const [type, setType] = useState<"stdio" | "http">("stdio");
   const [command, setCommand] = useState("");
@@ -41,6 +59,10 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig }: Mcp
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Setup-mode field values: env key -> filled value, arg index -> filled value.
+  const [setupEnv, setSetupEnv] = useState<Record<string, string>>({});
+  const [setupArgs, setSetupArgs] = useState<Record<number, string>>({});
+
   useEffect(() => {
     if (server) {
       setName(server.name);
@@ -51,6 +73,24 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig }: Mcp
       setUrl(server.config.url || "");
       setHeaders(JSON.stringify(server.config.headers || {}, null, 2));
       setEnabled(server.enabled);
+    } else if (setupServer) {
+      const tmpl = setupServer.configTemplate;
+      setName(setupServer.name);
+      setType(tmpl.command ? "stdio" : "http");
+      setCommand(tmpl.command || "");
+      setUrl(tmpl.url || "");
+      // Initialize fillable fields empty per template key / placeholder index.
+      const envKeys = Object.keys(tmpl.env || {});
+      const initEnv: Record<string, string> = {};
+      envKeys.forEach((k) => (initEnv[k] = ""));
+      setSetupEnv(initEnv);
+      const argList = tmpl.args || [];
+      const initArgs: Record<number, string> = {};
+      argList.forEach((a, i) => {
+        if (isPlaceholderArg(a)) initArgs[i] = "";
+      });
+      setSetupArgs(initArgs);
+      setEnabled(true);
     } else if (initialConfig) {
       setName("");
       setType(initialConfig.command ? "stdio" : "http");
@@ -71,7 +111,43 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig }: Mcp
       setEnabled(true);
     }
     setError("");
-  }, [server, initialConfig, open]);
+  }, [server, initialConfig, setupServer, open]);
+
+  // Setup form is valid when every placeholder field is non-empty.
+  const setupValid =
+    Object.values(setupEnv).every((v) => v.trim().length > 0) &&
+    Object.values(setupArgs).every((v) => v.trim().length > 0);
+
+  const handleSetupSubmit = async () => {
+    setError("");
+    if (!name.trim()) {
+      setError(t("extensions.mcp.errors.nameRequired"));
+      return;
+    }
+    const tmpl = setupServer!.configTemplate;
+    const config: McpServer["config"] = {
+      command: tmpl.command,
+      args: (tmpl.args || []).map((a, i) =>
+        isPlaceholderArg(a) ? (setupArgs[i] || "").trim() : a
+      ),
+    };
+    const envObj: Record<string, string> = {};
+    Object.keys(tmpl.env || {}).forEach((k) => {
+      envObj[k] = (setupEnv[k] || "").trim();
+    });
+    if (Object.keys(envObj).length > 0) config.env = envObj;
+
+    setLoading(true);
+    try {
+      await addMcpServer(name.trim(), config, enabled);
+      onInstalled?.();
+      onOpenChange(false);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setError("");
@@ -122,6 +198,7 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig }: Mcp
         await updateMcpServer(server!.name, config, enabled);
       } else {
         await addMcpServer(name.trim(), config, enabled);
+        onInstalled?.();
       }
       onOpenChange(false);
     } catch (err) {
@@ -130,6 +207,10 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig }: Mcp
       setLoading(false);
     }
   };
+
+  // Which args in the template are fillable vs literal.
+  const tmplArgs = setupServer?.configTemplate.args || [];
+  const tmplEnvKeys = Object.keys(setupServer?.configTemplate.env || {});
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -147,6 +228,7 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig }: Mcp
             </div>
           )}
 
+          {/* Name field — shared by all modes. Editable in setup (test clears + refills). */}
           <div className="space-y-2">
             <Label htmlFor="name">{t("extensions.mcp.fields.name")}</Label>
             <Input
@@ -158,84 +240,136 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig }: Mcp
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>{t("extensions.mcp.fields.type")}</Label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  checked={type === "stdio"}
-                  onChange={() => setType("stdio")}
-                  disabled={isEdit}
-                />
-                <span className="text-sm">stdio</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  checked={type === "http"}
-                  onChange={() => setType("http")}
-                  disabled={isEdit}
-                />
-                <span className="text-sm">http</span>
-              </label>
-            </div>
-          </div>
-
-          {type === "stdio" ? (
+          {isSetup ? (
             <>
-              <div className="space-y-2">
-                <Label htmlFor="command">{t("extensions.mcp.fields.command")}</Label>
-                <Input
-                  id="command"
-                  value={command}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCommand(e.target.value)}
-                  placeholder="npx"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="args">{t("extensions.mcp.fields.args")}</Label>
-                <Input
-                  id="args"
-                  value={args}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setArgs(e.target.value)}
-                  placeholder="-y @modelcontextprotocol/server-memory"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="env">{t("extensions.mcp.fields.env")}</Label>
-                <Textarea
-                  id="env"
-                  value={env}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEnv(e.target.value)}
-                  rows={4}
-                  className="font-mono text-xs"
-                  placeholder='{"API_KEY": "value"}'
-                />
-              </div>
+              {/* Help block from the catalog's install instructions. */}
+              {setupServer!.installInstructions && (
+                <div className="bg-muted/50 text-muted-foreground px-3 py-2 rounded-md text-sm">
+                  {setupServer!.installInstructions}
+                </div>
+              )}
+
+              {/* Placeholder args: one labeled field per fillable arg, literals read-only. */}
+              {tmplArgs.map((a, i) =>
+                isPlaceholderArg(a) ? (
+                  <div key={`arg-${i}`} className="space-y-2">
+                    <Label htmlFor={`arg-${i}`}>{a}</Label>
+                    <Input
+                      id={`arg-${i}`}
+                      value={setupArgs[i] || ""}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        setSetupArgs((prev) => ({ ...prev, [i]: e.target.value }))
+                      }
+                      placeholder={a}
+                    />
+                  </div>
+                ) : (
+                  <div key={`arg-${i}`} className="space-y-2">
+                    <Label>{t("extensions.mcp.fields.args")}</Label>
+                    <div className="text-xs font-mono px-3 py-2 rounded-md bg-muted text-muted-foreground">
+                      {a}
+                    </div>
+                  </div>
+                )
+              )}
+
+              {/* Env keys: one labeled field per key, placeholder = template value. */}
+              {tmplEnvKeys.map((k) => (
+                <div key={`env-${k}`} className="space-y-2">
+                  <Label htmlFor={`env-${k}`}>{k}</Label>
+                  <Input
+                    id={`env-${k}`}
+                    value={setupEnv[k] || ""}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setSetupEnv((prev) => ({ ...prev, [k]: e.target.value }))
+                    }
+                    placeholder={setupServer!.configTemplate.env?.[k] || ""}
+                  />
+                </div>
+              ))}
             </>
           ) : (
             <>
               <div className="space-y-2">
-                <Label htmlFor="url">{t("extensions.mcp.fields.url")}</Label>
-                <Input
-                  id="url"
-                  value={url}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrl(e.target.value)}
-                  placeholder="https://example.com/mcp"
-                />
+                <Label>{t("extensions.mcp.fields.type")}</Label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      checked={type === "stdio"}
+                      onChange={() => setType("stdio")}
+                      disabled={isEdit}
+                    />
+                    <span className="text-sm">stdio</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      checked={type === "http"}
+                      onChange={() => setType("http")}
+                      disabled={isEdit}
+                    />
+                    <span className="text-sm">http</span>
+                  </label>
+                </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="headers">{t("extensions.mcp.fields.headers")}</Label>
-                <Textarea
-                  id="headers"
-                  value={headers}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setHeaders(e.target.value)}
-                  rows={4}
-                  className="font-mono text-xs"
-                  placeholder='{"Authorization": "Bearer token"}'
-                />
-              </div>
+
+              {type === "stdio" ? (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="command">{t("extensions.mcp.fields.command")}</Label>
+                    <Input
+                      id="command"
+                      value={command}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCommand(e.target.value)}
+                      placeholder="npx"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="args">{t("extensions.mcp.fields.args")}</Label>
+                    <Input
+                      id="args"
+                      value={args}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setArgs(e.target.value)}
+                      placeholder="-y @modelcontextprotocol/server-memory"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="env">{t("extensions.mcp.fields.env")}</Label>
+                    <Textarea
+                      id="env"
+                      value={env}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEnv(e.target.value)}
+                      rows={4}
+                      className="font-mono text-xs"
+                      placeholder='{"API_KEY": "value"}'
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="url">{t("extensions.mcp.fields.url")}</Label>
+                    <Input
+                      id="url"
+                      value={url}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrl(e.target.value)}
+                      placeholder="https://example.com/mcp"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="headers">{t("extensions.mcp.fields.headers")}</Label>
+                    <Textarea
+                      id="headers"
+                      value={headers}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setHeaders(e.target.value)}
+                      rows={4}
+                      className="font-mono text-xs"
+                      placeholder='{"Authorization": "Bearer token"}'
+                    />
+                  </div>
+                </>
+              )}
             </>
           )}
 
@@ -249,7 +383,10 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig }: Mcp
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={handleSubmit} disabled={loading}>
+          <Button
+            onClick={isSetup ? handleSetupSubmit : handleSubmit}
+            disabled={loading || (isSetup && !setupValid)}
+          >
             {loading ? t("common.saving") : isEdit ? t("common.save") : t("common.add")}
           </Button>
         </DialogFooter>

@@ -131,7 +131,7 @@ test.describe("Extensions Page - Store Tab", () => {
     await expect(skillCards.first()).toBeVisible();
   });
 
-  test.skip("clicking Install on MCP opens pre-filled form", async ({ page }) => {
+  test("clicking Install on MCP opens pre-filled form", async ({ page }) => {
     await gotoExtensions(page);
 
     // Switch to Store tab
@@ -147,6 +147,8 @@ test.describe("Extensions Page - Store Tab", () => {
     // Form should be pre-filled (name field should have a value from catalog)
     const nameInput = page.getByLabel(/name/i);
     await expect(nameInput).toBeVisible();
+    // Wait for the useEffect to set the value
+    await expect(nameInput).toHaveValue(/.+/);
     // The name should be pre-filled from the catalog template
     const nameValue = await nameInput.inputValue();
     expect(nameValue.length).toBeGreaterThan(0);
@@ -158,7 +160,7 @@ test.describe("Extensions Page - Store Tab", () => {
 });
 
 test.describe("Extensions Page - MCP Interaction Flow", () => {
-  test.skip("add MCP server via form → appears in Enabled → delete", async ({ page }) => {
+  test("add MCP server via form → appears in Enabled → delete", async ({ page }) => {
     const testName = uniqueName("test-mcp");
     await gotoExtensions(page);
 
@@ -197,7 +199,7 @@ test.describe("Extensions Page - MCP Interaction Flow", () => {
     await expect(newCard).not.toBeVisible({ timeout: 5000 });
   });
 
-  test.skip("toggle MCP server enable/disable", async ({ page }) => {
+  test("toggle MCP server enable/disable", async ({ page }) => {
     const testName = uniqueName("test-toggle");
     await gotoExtensions(page);
 
@@ -232,7 +234,7 @@ test.describe("Extensions Page - MCP Interaction Flow", () => {
     await newCard.getByTestId("mcp-delete-btn").click();
   });
 
-  test.skip("install MCP from Store → appears in Enabled", async ({ page }) => {
+  test("install MCP from Store → appears in Enabled", async ({ page }) => {
     await gotoExtensions(page);
 
     // Switch to Store tab
@@ -271,7 +273,7 @@ test.describe("Extensions Page - MCP Interaction Flow", () => {
 });
 
 test.describe("Extensions Page - Skill Interaction Flow", () => {
-  test.skip("add custom skill via form → appears in Enabled → delete", async ({ page }) => {
+  test("add custom skill via form → appears in Enabled → delete", async ({ page }) => {
     const testName = uniqueName("test-skill");
     await gotoExtensions(page);
 
@@ -308,7 +310,7 @@ test.describe("Extensions Page - Skill Interaction Flow", () => {
     await expect(newCard).not.toBeVisible({ timeout: 5000 });
   });
 
-  test.skip("toggle custom skill enable/disable", async ({ page }) => {
+  test("toggle custom skill enable/disable", async ({ page }) => {
     const testName = uniqueName("test-skill-toggle");
     await gotoExtensions(page);
 

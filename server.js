@@ -25,14 +25,21 @@ import * as db from "./db.js";
 import * as migrate from "./migrate.js";
 import * as cron from "./cron.js";
 import * as extensionStore from "./extension-store.js";
+import * as workdirStore from "./workdir-store.js";
+import { resolveBundleSafe } from "./bundle-manifest.js";
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "localhost";
 
 // ── Custom provider config (Volces / 火山引擎) ────────────────────────────────
 
-const VOLCES_API_KEY = process.env.VOLCES_API_KEY || "REDACTED_VOLCES_API_KEY";
+// Volces (火山引擎) chat provider is optional: an unset VOLCES_API_KEY means the
+// provider is not registered and the server starts with no chat provider (chat
+// non-functional, logged), mirroring the LiteLLM graceful-degrade convention.
+// The documents RAG reads VOLCES_API_KEY separately via initStore().
+const VOLCES_API_KEY = process.env.VOLCES_API_KEY?.trim();
 const VOLCES_BASE_URL = process.env.VOLCES_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3";
+const volcesEnabled = Boolean(VOLCES_API_KEY);
 
 // Default chat model. When set, the agent session starts on this model id.
 // Otherwise the server prefers the first LiteLLM model (when LiteLLM is configured)
@@ -42,12 +49,30 @@ const DEFAULT_MODEL = process.env.DEFAULT_MODEL || "";
 // ── LiteLLM proxy config (consumed by pi-provider-litellm) ───────────────────
 // The extension reads LITELLM_BASE_URL / LITELLM_API_KEY from the environment
 // (loaded from .env by dotenv/config above). When either is missing, the
-// litellm provider is skipped so the server still starts Volces-only.
+// litellm provider is skipped so the server falls back to Volces (when
+// VOLCES_API_KEY is set) or starts with no chat provider (logged).
 const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL?.trim();
 const LITELLM_API_KEY = process.env.LITELLM_API_KEY?.trim();
 const litellmEnabled = Boolean(LITELLM_BASE_URL && LITELLM_API_KEY);
 if (!litellmEnabled) {
   console.warn("[litellm] LITELLM_BASE_URL or LITELLM_API_KEY not set; skipping litellm provider");
+}
+
+// ── Bundle manifest (packaged component selection + pre-installed extensions) ─
+// Resolved once at startup. In the packaged app platform.bundle.json sits next
+// to this file (Resources/app/); in dev it is the repo root. resolveBundleSafe
+// never throws — a corrupt manifest falls back to all-components defaults.
+const bundle = resolveBundleSafe();
+
+// Split a manifest permissions policy ("mcp:<name>"/"skill:<name>" →
+// { allow?, deny?, locked? }) into the extensions-DB columns: the locked flag
+// plus the stored permissions JSON ({ allow?, deny? } — locked has its own column).
+function splitPolicy(policy) {
+  if (!policy) return { locked: false, permissions: null };
+  const { allow, deny } = policy;
+  const permissions =
+    allow || deny ? { ...(allow ? { allow } : {}), ...(deny ? { deny } : {}) } : null;
+  return { locked: policy.locked === true, permissions };
 }
 
 // Returns true if a model is LiteLLM-routed: it has configured auth and is not
@@ -90,6 +115,13 @@ let mcpToolCount = 0;
 // The model the agent session starts on (set during async init; read by the
 // /api/supervisor/status route).
 let defaultModel = null;
+// Agent-building primitives cached by initAgent once and reused whenever the
+// session is rebuilt for a different working directory (SDK fixes cwd at
+// session creation, so switching folders means recreating the session).
+let agentAuthStorage = null;
+let agentMcpTools = [];
+let agentMcpToolNames = [];
+let agentProviderFactory = null;
 
 // Models eligible for the selector/default/switching: those with configured
 // auth. Because exactly one chat provider is registered (LiteLLM extension OR
@@ -216,22 +248,36 @@ async function expandSkillContent(skill, args) {
 // ── Agent session ────────────────────────────────────────────────────────────
 
 async function initAgent() {
-  const authStorage = AuthStorage.create();
-  authStorage.setRuntimeApiKey("volces", VOLCES_API_KEY);
-  modelRegistry = ModelRegistry.create(authStorage);
+  agentAuthStorage = AuthStorage.create();
+  agentAuthStorage.setRuntimeApiKey("volces", VOLCES_API_KEY);
+  modelRegistry = ModelRegistry.create(agentAuthStorage);
 
   // Connect MCP servers first so their tools are discovered before the session
   // is created. The tool names MUST be added to the `tools` allowlist below,
   // otherwise the SDK filters custom tools out (see agent-session _refreshToolRegistry).
   //
-  // ponytail: read mcp.json once, connect via connectServers, then seed configs
+  // read mcp.json once, connect via connectServers, then seed configs
   // into the extensions DB so the UI "Installed" tab shows them.
   let mcpJsonServers = {};
   try {
     const raw = await readFile(path.resolve("mcp.json"), "utf8");
     mcpJsonServers = JSON.parse(raw).mcpServers || {};
   } catch { /* no mcp.json or parse error — MCP disabled */ }
-  const mcp = await connectServers({ mcpServers: mcpJsonServers });
+
+  // Bundle-manifest mcpServers are the packager's pre-installed MCPs: connect
+  // the enabled ones here (before session creation, so their tools join the
+  // session allowlist) and seed them below. `enabled` is seed metadata, not
+  // part of the MCP client config — strip it. mcp.json wins name collisions
+  // (operator config overrides the packaged default).
+  const manifestServers = Object.fromEntries(
+    Object.entries(bundle.mcpServers)
+      .filter(([, entry]) => entry.enabled !== false)
+      .map(([name, entry]) => {
+        const { enabled, ...config } = entry;
+        return [name, config];
+      })
+  );
+  const mcp = await connectServers({ mcpServers: { ...manifestServers, ...mcpJsonServers } });
   let mcpTools = mcp.tools;
   let mcpClientList = mcp.clients;
 
@@ -254,44 +300,54 @@ async function initAgent() {
     mcpClientList = mcpClientList.concat(ocMcp.clients);
   }
 
-  // ponytail: auto-seed startup MCP configs into extensions DB so the UI
+  // auto-seed startup MCP configs into extensions DB so the UI
   // "Installed" tab shows them. INSERT OR IGNORE preserves user edits.
+  // Origins: mcp.json entries stay "user" (operator config); OpenConnector and
+  // manifest mcpServers entries are pre-installed by the package ("bundled").
+  // Manifest entries take locked/permissions from the permissions map
+  // ("mcp:<name>" → { allow, deny, locked }). Seeding lives here (not in
+  // bootstrap/first-run.js) because better-sqlite3 only loads under the Node
+  // that runs server.js — the Electron main process has a different ABI.
   if (db.isDbReady()) {
     for (const [name, config] of Object.entries(mcpJsonServers)) {
       extensionStore.seedMcpServer({ name, config, enabled: true });
     }
     if (ocMcpConfig) {
-      extensionStore.seedMcpServer({ name: "open-connector", config: ocMcpConfig, enabled: true });
+      const policy = splitPolicy(bundle.permissions["mcp:open-connector"]);
+      extensionStore.seedMcpServer({
+        name: "open-connector",
+        config: ocMcpConfig,
+        enabled: true,
+        origin: bundle.components.openconnector ? "bundled" : "user",
+        ...policy,
+      });
+    }
+    for (const [name, entry] of Object.entries(bundle.mcpServers)) {
+      const { enabled = true, ...config } = entry;
+      extensionStore.seedMcpServer({
+        name,
+        config,
+        enabled,
+        origin: "bundled",
+        ...splitPolicy(bundle.permissions[`mcp:${name}`]),
+      });
     }
   }
 
   mcpClients = mcpClientList;
-  const mcpToolNames = mcpTools.map((t) => t.name);
-  mcpToolCount = mcpToolNames.length;
-  if (mcpToolNames.length) {
-    console.log(`[mcp] Registering ${mcpToolNames.length} MCP tool(s): ${mcpToolNames.join(", ")}`);
+  agentMcpTools = mcpTools;
+  agentMcpToolNames = mcpTools.map((t) => t.name);
+  mcpToolCount = agentMcpToolNames.length;
+  if (agentMcpToolNames.length) {
+    console.log(`[mcp] Registering ${agentMcpToolNames.length} MCP tool(s): ${agentMcpToolNames.join(", ")}`);
   }
 
-  // ponytail: seed startup MCP configs into extensions DB so the UI can see them.
-  // INSERT OR IGNORE preserves any user edits (disable, config changes) from prior sessions.
-  if (db.isDbReady()) {
-    try {
-      const raw = await readFile(path.resolve("mcp.json"), "utf8");
-      const mcpJson = JSON.parse(raw);
-      for (const [name, cfg] of Object.entries(mcpJson.mcpServers || {})) {
-        extensionStore.seedMcpServer({ name, config: cfg, enabled: true });
-      }
-    } catch { /* no mcp.json or parse error — skip */ }
-    if (ocMcpConfig) {
-      extensionStore.seedMcpServer({ name: "open-connector", config: ocMcpConfig, enabled: true });
-    }
-  }
-
-  // Native Volces chat provider. Registered only when LiteLLM is NOT
-  // configured (see extensionFactories) so the agent stays LiteLLM-only when
-  // LiteLLM is available. The documents RAG uses Volces directly via
+  // Native Volces chat provider. Built only when VOLCES_API_KEY is set AND
+  // LiteLLM is NOT configured (see extensionFactories), so the agent stays
+  // LiteLLM-only when LiteLLM is available and degrades to no chat provider
+  // when neither is configured. The documents RAG uses Volces directly via
   // initStore() and does NOT depend on this provider being registered.
-  const volcesProviderFactory = (pi) => {
+  agentProviderFactory = volcesEnabled ? (pi) => {
     pi.registerProvider("volces", {
       name: "Volces Coding",
       baseUrl: VOLCES_BASE_URL,
@@ -327,18 +383,30 @@ async function initAgent() {
         },
       ],
     });
-  };
+  } : null;
 
+  // Build the initial session bound to the server's CWD (no workdir picked yet).
+  await buildAndBindSession(process.cwd());
+}
+
+// Build a fresh agent session bound to `cwd` and wire up event subscription.
+// The SDK fixes the working directory at session creation (cwd is private with
+// no setter), so switching folders means rebuilding the session. One-time
+// primitives (auth, MCP tools, provider factory) are cached by initAgent and
+// reused across rebuilds; only the loader + session are recreated.
+async function buildAndBindSession(cwd) {
   loader = new DefaultResourceLoader({
-    cwd: process.cwd(),
+    cwd,
     agentDir: getAgentDir(),
     additionalSkillPaths: [path.resolve("skills")],
-    // Register exactly one chat provider so the agent is single-sourced:
+    // Register at most one chat provider so the agent is single-sourced:
     //   - LiteLLM configured  -> LiteLLM extension only (LiteLLM-only by
     //     construction; native Volces chat models can never leak into the
     //     selector, the startup default, or runtime switching).
-    //   - LiteLLM not configured -> Volces provider only (graceful fallback).
-    extensionFactories: litellmEnabled ? [litellmExtension] : [volcesProviderFactory],
+    //   - LiteLLM not configured, Volces key set -> Volces provider only.
+    //   - Neither configured -> no chat provider (server starts; chat logged
+    //     as non-functional until a key is provisioned).
+    extensionFactories: litellmEnabled ? [litellmExtension] : (volcesEnabled ? [agentProviderFactory] : []),
     systemPromptOverride: () => "You are a helpful coding assistant. Be concise.",
   });
   await loader.reload();
@@ -354,26 +422,29 @@ async function initAgent() {
     }
   }
 
-  defaultModel = resolveDefaultModel();
-  if (defaultModel) {
-    console.log(`[model] Default chat model: ${defaultModel.provider}/${defaultModel.id}`);
-  } else {
-    console.warn("[model] No default model resolved; falling back to SDK default");
+  if (!defaultModel) {
+    defaultModel = resolveDefaultModel();
+    if (defaultModel) {
+      console.log(`[model] Default chat model: ${defaultModel.provider}/${defaultModel.id}`);
+    } else {
+      console.warn("[model] No default model resolved; falling back to SDK default");
+    }
   }
 
   // Use the SDK's persistent SessionManager (JSONL sessions under the sessions
   // store dir) instead of inMemory(), so conversations are auto-persisted and can
   // be resumed/switched. The store dir is owned by chat-history.js (overridable via
-  // SESSIONS_STORE_DIR for E2E isolation).
+  // SESSIONS_STORE_DIR for E2E isolation). The cwd binds the agent's bash/file
+  // operations to the selected working directory.
   const result = await createAgentSession({
     thinkingLevel: "off",
-    authStorage,
+    authStorage: agentAuthStorage,
     modelRegistry,
     model: defaultModel,
     resourceLoader: loader,
-    tools: ["read", "bash", "grep", "find", "ls", ...mcpToolNames],
-    customTools: mcpTools,
-    sessionManager: SessionManager.create(process.cwd(), chatHistory.getSessionsDir()),
+    tools: ["read", "bash", "grep", "find", "ls", ...agentMcpToolNames],
+    customTools: agentMcpTools,
+    sessionManager: SessionManager.create(cwd, chatHistory.getSessionsDir()),
     settingsManager: SettingsManager.inMemory(),
   });
 
@@ -445,6 +516,9 @@ async function initAgent() {
         });
         break;
       case "agent_start":
+        // Idempotent: isStreaming is now set synchronously at prompt dispatch
+        // (see the prompt handler) so a concurrent prompt observes it and
+        // steers instead of racing a second turn on the shared session.
         isStreaming = true;
         streamedTextThisTurn = false;
         break;
@@ -487,6 +561,32 @@ async function initAgent() {
 }
 
 // ── Chat session switching (mutates the live agent) ──────────────────────────
+
+// Rebuild the agent session bound to a new working directory. The SDK fixes cwd
+// at session creation (no runtime setter), so switching the workdir requires
+// recreating the session. The current conversation is preserved by repointing
+// the new SessionManager at the existing session file and reloading messages.
+// Rejected while streaming to avoid rebuilding mid-turn.
+async function rebuildAgentForWorkdir(workdir) {
+  if (isStreaming) throw new Error("Cannot change working directory while the agent is responding");
+  if (!workdir) throw new Error("No working directory provided");
+  const prevSessionFile = session?.sessionManager?.getSessionFile?.() ?? null;
+
+  await buildAndBindSession(workdir);
+
+  // Repoint the fresh session manager at the previous conversation (if any) so
+  // the user keeps their history; otherwise it stays on the brand-new session.
+  if (prevSessionFile) {
+    try {
+      session.sessionManager.setSessionFile(prevSessionFile);
+      session.agent.state.messages = session.sessionManager.buildSessionContext().messages;
+    } catch (err) {
+      console.warn("[workdir] could not restore previous session:", err.message);
+    }
+  }
+  console.log(`[workdir] Agent rebuilt with cwd: ${workdir}`);
+  return workdir;
+}
 
 // Start a new chat session: create a fresh SDK session and reset the agent's
 // in-memory messages. Rejected while streaming to avoid switching mid-turn.
@@ -662,7 +762,7 @@ async function handleModelCommand(args, ws) {
 async function startNewSession() {
   const id = await createNewSession();
   broadcast({ type: "session_changed", id });
-  broadcast({ type: "session_loaded", id, title: "New chat", messages: [] });
+  broadcast({ type: "session_loaded", id, title: "New chat", messages: [], workdir: null });
   const sessions = await chatHistory.listSessions();
   broadcast({ type: "sessions", sessions, current: id });
   return id;
@@ -704,6 +804,13 @@ wss.on("connection", (ws) => {
         )
       )
       .catch((e) => console.error("[chat-history] list on connect failed:", e.message));
+    // Send the current session's workdir so the sidebar shows it on connect.
+    const curId = chatHistory.currentSessionId();
+    if (curId) {
+      workdirStore.getWorkdir(curId).then((wd) => {
+        if (wd) ws.send(JSON.stringify({ type: "workdir", path: wd }));
+      }).catch((e) => console.error("[workdir] getWorkdir on connect failed:", e.message));
+    }
   }
   // Send initial dashboard state on connect
   ws.send(JSON.stringify({ type: "dashboard_update", state: cron.getDashboardState() }));
@@ -750,6 +857,11 @@ wss.on("connection", (ws) => {
             if (isStreaming) {
               await session.prompt(promptText, { streamingBehavior: "steer" });
             } else {
+              // Set in-flight synchronously (before the first await) so a
+              // concurrent prompt observes it and steers instead of racing a
+              // second turn on the shared session. agent_start sets it again
+              // later (idempotent).
+              isStreaming = true;
               await session.prompt(promptText);
             }
           } catch (err) {
@@ -777,6 +889,11 @@ wss.on("connection", (ws) => {
             if (isStreaming) {
               await session.prompt(text, { streamingBehavior: "steer" });
             } else {
+              // Set in-flight synchronously (before the first await) so a
+              // concurrent prompt observes it and steers instead of racing a
+              // second turn on the shared session. agent_start sets it again
+              // later (idempotent).
+              isStreaming = true;
               await session.prompt(text);
             }
           } catch (err) {
@@ -829,20 +946,32 @@ wss.on("connection", (ws) => {
       }
 
       case "cron_remove": {
-        const removed = await cron.removeJob(data.jobId);
-        ws.send(JSON.stringify({ type: "cron_removed", jobId: data.jobId, success: removed }));
+        try {
+          const removed = await cron.removeJob(data.jobId);
+          ws.send(JSON.stringify({ type: "cron_removed", jobId: data.jobId, success: removed }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: "error", message: err.message }));
+        }
         break;
       }
 
       case "cron_pause": {
-        const paused = await cron.pauseJob(data.jobId);
-        ws.send(JSON.stringify({ type: "cron_paused", jobId: data.jobId, success: paused }));
+        try {
+          const paused = await cron.pauseJob(data.jobId);
+          ws.send(JSON.stringify({ type: "cron_paused", jobId: data.jobId, success: paused }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: "error", message: err.message }));
+        }
         break;
       }
 
       case "cron_resume": {
-        const resumed = await cron.resumeJob(data.jobId);
-        ws.send(JSON.stringify({ type: "cron_resumed", jobId: data.jobId, success: resumed }));
+        try {
+          const resumed = await cron.resumeJob(data.jobId);
+          ws.send(JSON.stringify({ type: "cron_resumed", jobId: data.jobId, success: resumed }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: "error", message: err.message }));
+        }
         break;
       }
 
@@ -852,8 +981,12 @@ wss.on("connection", (ws) => {
       }
 
       case "cron_run": {
-        const ran = await cron.runJobNow(data.jobId);
-        ws.send(JSON.stringify({ type: "cron_run_started", jobId: data.jobId, success: ran }));
+        try {
+          const ran = await cron.runJobNow(data.jobId);
+          ws.send(JSON.stringify({ type: "cron_run_started", jobId: data.jobId, success: ran }));
+        } catch (err) {
+          ws.send(JSON.stringify({ type: "error", message: err.message }));
+        }
         break;
       }
 
@@ -881,16 +1014,49 @@ wss.on("connection", (ws) => {
 
       case "switch_session": {
         try {
+          // If the target session has a different workdir than the current agent
+          // cwd, rebuild the agent bound to that workdir first (the SDK fixes cwd
+          // at session creation). Otherwise just repoint the session manager.
+          const targetWorkdir = await workdirStore.getWorkdir(data.id);
+          const currentCwd = session?.sessionManager?.getCwd?.() ?? process.cwd();
+          if (targetWorkdir && targetWorkdir !== currentCwd) {
+            await rebuildAgentForWorkdir(targetWorkdir);
+          }
           const result = await switchToSession(data.id);
+          const workdir = targetWorkdir ?? null;
           broadcast({
             type: "session_loaded",
             id: result.id,
             title: result.title,
             messages: result.messages,
+            workdir,
           });
           broadcast({ type: "session_changed", id: result.id });
+          if (workdir) broadcast({ type: "workdir", path: workdir });
           const sessions = await chatHistory.listSessions();
           broadcast({ type: "sessions", sessions, current: result.id });
+        } catch (err) {
+          ws.send(JSON.stringify({ type: "error", message: err.message }));
+        }
+        break;
+      }
+
+      case "set_workdir": {
+        try {
+          const workdir = data.path;
+          if (!workdir) throw new Error("No working directory provided");
+          // Rebuild the agent bound to the new cwd, then persist the workdir for
+          // the current session so it is restored on switch-back.
+          await rebuildAgentForWorkdir(workdir);
+          const sessionId = chatHistory.currentSessionId();
+          if (sessionId) await workdirStore.setWorkdir(sessionId, workdir);
+          broadcast({ type: "workdir", path: workdir });
+          broadcast({
+            type: "command_use",
+            name: "workdir",
+            args: workdir,
+            message: `Working directory set to ${workdir}`,
+          });
         } catch (err) {
           ws.send(JSON.stringify({ type: "error", message: err.message }));
         }
@@ -1176,22 +1342,20 @@ app.post("/api/extensions/mcp", async (req, res) => {
   }
   try {
     const server = extensionStore.addMcpServer({ name, config, enabled });
-    // Hot-reload: connect the server if enabled.
-    if (server.enabled) {
-      try {
-        const { tools, client } = await connectSingleServer(name, config);
-        mcpClients.push(client);
-        // Update the agent's tool registry (requires session recreation for now).
-        // For simplicity, we broadcast a reload event; the UI can refresh.
-        broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
-      } catch (err) {
-        // ponytail: don't roll back on connection failure — save the config anyway.
-        // User can try to connect later via the UI. Just log a warning.
-        console.warn(`[extensions] Failed to connect new MCP server "${name}": ${err.message} (config saved, not connected)`);
-        broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
-      }
-    }
+    // broadcast immediately so the UI refreshes right away, then
+    // connect in the background. The connection attempt can take up to 10s
+    // (timeout); we don't want to block the UI on it. The config is already
+    // saved; the connection is best-effort.
+    broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
     res.json(server);
+    if (server.enabled) {
+      connectSingleServer(name, config).then(({ tools, client }) => {
+        mcpClients.push(client);
+        broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
+      }).catch((err) => {
+        console.warn(`[extensions] Failed to connect new MCP server "${name}": ${err.message} (config saved, not connected)`);
+      });
+    }
   } catch (err) {
     if (err.message?.includes("UNIQUE constraint")) {
       return res.status(409).json({ error: `MCP server "${name}" already exists` });
@@ -1211,6 +1375,9 @@ app.put("/api/extensions/mcp/:name", async (req, res) => {
     const oldServer = extensionStore.getMcpServer(name);
     if (!oldServer) {
       return res.status(404).json({ error: `MCP server "${name}" not found` });
+    }
+    if (oldServer.locked) {
+      return res.status(400).json({ error: `MCP server "${name}" is locked (bundled) and cannot be updated` });
     }
     const server = extensionStore.updateMcpServer(name, { config, enabled });
     // Hot-reload: disconnect old, connect new if config changed or enabled changed.
@@ -1250,6 +1417,9 @@ app.delete("/api/extensions/mcp/:name", async (req, res) => {
   if (!server) {
     return res.status(404).json({ error: `MCP server "${name}" not found` });
   }
+  if (server.locked) {
+    return res.status(400).json({ error: `MCP server "${name}" is locked (bundled) and cannot be removed` });
+  }
   // Disconnect if connected.
   const { clients: updatedClients } = await disconnectSingleServer(name, mcpClients);
   mcpClients = updatedClients;
@@ -1272,41 +1442,59 @@ app.patch("/api/extensions/mcp/:name/enable", async (req, res) => {
   if (!server) {
     return res.status(404).json({ error: `MCP server "${name}" not found` });
   }
-  const updated = extensionStore.toggleMcpServer(name, enabled);
-  // Hot-reload: connect or disconnect.
-  if (enabled && !server.enabled) {
-    // Enabling: connect.
-    try {
-      const { tools, client } = await connectSingleServer(name, server.config);
-      mcpClients.push(client);
-    } catch (err) {
-      console.warn(`[extensions] Failed to enable MCP server "${name}": ${err.message}`);
-      extensionStore.toggleMcpServer(name, false);
-      return res.status(500).json({ error: `Failed to connect: ${err.message}` });
-    }
-  } else if (!enabled && server.enabled) {
-    // Disabling: disconnect.
-    const { clients: updatedClients } = await disconnectSingleServer(name, mcpClients);
-    mcpClients = updatedClients;
+  if (server.locked) {
+    return res.status(400).json({ error: `MCP server "${name}" is locked (bundled) and cannot be disabled` });
   }
+  const updated = extensionStore.toggleMcpServer(name, enabled);
+  // broadcast + respond immediately; connect/disconnect in background.
   broadcast({ type: "extensions_changed", resource: "mcp", action: "toggled", name, enabled });
   res.json(updated);
+  if (enabled && !server.enabled) {
+    // Enabling: connect in background.
+    connectSingleServer(name, server.config).then(({ tools, client }) => {
+      mcpClients.push(client);
+    }).catch((err) => {
+      console.warn(`[extensions] Failed to enable MCP server "${name}": ${err.message}`);
+    });
+  } else if (!enabled && server.enabled) {
+    // Disabling: disconnect in background.
+    disconnectSingleServer(name, mcpClients).then(({ clients: updatedClients }) => {
+      mcpClients = updatedClients;
+    }).catch((err) => {
+      console.warn(`[extensions] Failed to disable MCP server "${name}": ${err.message}`);
+    });
+  } else {
+    broadcast({ type: "extensions_changed", resource: "mcp", action: "toggled", name, enabled });
+  }
 });
 
 // List all skills (file-based + custom from database).
+// File skills are not DB rows; their extension metadata is derived from the
+// bundle manifest: names in manifest `skills` are "bundled" and take
+// locked/permissions from the manifest's permissions map ("skill:<name>").
 app.get("/api/extensions/skills", async (_req, res) => {
-  const fileSkills = (loader?.getSkills().skills ?? []).map((s) => ({
-    name: s.name,
-    description: s.description,
-    source: "file",
-    enabled: true,
-  }));
+  const fileSkills = (loader?.getSkills().skills ?? []).map((s) => {
+    const bundled = bundle.skills.includes(s.name);
+    const policy = bundled ? splitPolicy(bundle.permissions[`skill:${s.name}`]) : { locked: false, permissions: null };
+    return {
+      name: s.name,
+      description: s.description,
+      source: "file",
+      enabled: true,
+      origin: bundled ? "bundled" : "file",
+      locked: policy.locked,
+      permissions: policy.permissions,
+    };
+  });
   const customSkills = db.isDbReady()
     ? extensionStore.listCustomSkills().map((s) => ({
         name: s.name,
         description: s.description,
         source: "database",
         enabled: s.enabled,
+        origin: "user",
+        locked: false,
+        permissions: null,
       }))
     : [];
   res.json({ skills: [...fileSkills, ...customSkills] });
@@ -1340,6 +1528,14 @@ app.put("/api/extensions/skills/:name", (req, res) => {
   }
   const { name } = req.params;
   const { description, content, enabled } = req.body || {};
+  // Locked bundled skills are immutable (D6) — the manifest lock wins over
+  // any DB row sharing the name.
+  const updatePolicy = bundle.skills.includes(name)
+    ? splitPolicy(bundle.permissions[`skill:${name}`])
+    : { locked: false };
+  if (updatePolicy.locked) {
+    return res.status(400).json({ error: `Skill "${name}" is locked (bundled) and cannot be modified` });
+  }
   const skill = extensionStore.getCustomSkill(name);
   if (!skill) {
     return res.status(404).json({ error: `Skill "${name}" not found` });
@@ -1355,6 +1551,14 @@ app.delete("/api/extensions/skills/:name", (req, res) => {
     return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
   }
   const { name } = req.params;
+  // A name listed in the bundle manifest's skills is bundled; its lock policy
+  // wins over any DB row with the same name (locked ⇒ immutable, D6).
+  const deletePolicy = bundle.skills.includes(name)
+    ? splitPolicy(bundle.permissions[`skill:${name}`])
+    : { locked: false };
+  if (deletePolicy.locked) {
+    return res.status(400).json({ error: `Skill "${name}" is locked (bundled) and cannot be removed` });
+  }
   const skill = extensionStore.getCustomSkill(name);
   if (!skill) {
     return res.status(404).json({ error: `Skill "${name}" not found` });
@@ -1373,6 +1577,14 @@ app.patch("/api/extensions/skills/:name/enable", (req, res) => {
   const { enabled } = req.body || {};
   if (typeof enabled !== "boolean") {
     return res.status(400).json({ error: "Missing enabled (boolean)" });
+  }
+  // Locked bundled skills cannot be disabled (D6). Lock state comes from the
+  // manifest, not the DB — file skills are never custom_skills rows.
+  const togglePolicy = bundle.skills.includes(name)
+    ? splitPolicy(bundle.permissions[`skill:${name}`])
+    : { locked: false };
+  if (togglePolicy.locked) {
+    return res.status(400).json({ error: `Skill "${name}" is locked (bundled) and cannot be disabled` });
   }
   const skill = extensionStore.getCustomSkill(name);
   if (!skill) {
@@ -1537,7 +1749,12 @@ function createWebProxy({ prefix, getBase, getToken, label = "Upstream" }) {
     // content-encoding/content-length are intentionally NOT forwarded: Node's
     // fetch decompresses the body, so forwarding them would corrupt it. express
     // recomputes content-length from the bytes sent.
-    const buf = Buffer.from(await upstreamRes.arrayBuffer());
+    let buf;
+    try {
+      buf = Buffer.from(await upstreamRes.arrayBuffer());
+    } catch (err) {
+      return res.status(502).send(`${label} response read failed: ${err.message}`);
+    }
 
     // Inject a <base> tag into HTML so the UI's relative assets resolve under
     // <prefix> (mitigates absolute asset paths missing the proxy prefix).
@@ -1681,7 +1898,11 @@ async function proxyLitellmUi(req, res) {
     try { const u = new URL(loc, LITELLM_BASE_URL); res.setHeader("location", u.pathname + u.search); }
     catch { res.setHeader("location", loc); }
   }
-  res.send(Buffer.from(await upstreamRes.arrayBuffer()));
+  try {
+    res.send(Buffer.from(await upstreamRes.arrayBuffer()));
+  } catch (err) {
+    res.status(502).send(`LiteLLM UI response read failed: ${err.message}`);
+  }
 }
 
 if (openConnector.openConnectorEnabled) {
@@ -1807,12 +2028,16 @@ openConnector.initOpenConnector();
 // initChatHistory must run before initAgent so the sessions store dir is resolved
 // before the persistent SessionManager reads it via chatHistory.getSessionsDir().
 await chatHistory.initChatHistory();
+await workdirStore.initWorkdirStore();
 // Open the SQLite project database (chat, documents, index, preferences) before
 // feature init. Degrades gracefully: if it cannot open, dbReady stays false and
 // the server continues (chat in-memory, documents disabled).
 await db.initDb();
 // Initialize document store (PageIndex indexing, LlamaIndex framework)
 if (db.isDbReady()) {
+  if (!VOLCES_API_KEY) {
+    console.warn("[documents] VOLCES_API_KEY not set; documents RAG indexing/query calls will fail at call time");
+  }
   await documents.initStore({
     baseUrl: VOLCES_BASE_URL,
     apiKey: VOLCES_API_KEY,
@@ -1850,7 +2075,11 @@ server.listen(PORT, HOST, () => {
 
 async function shutdown() {
   cron.shutdown();
-  await closeMcpClients(mcpClients);
+  try {
+    await closeMcpClients(mcpClients);
+  } catch (err) {
+    console.error("[shutdown] closeMcpClients failed:", err.message);
+  }
   process.exit(0);
 }
 process.on("SIGINT", shutdown);

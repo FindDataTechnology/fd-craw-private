@@ -7,7 +7,7 @@
 //
 // Run in dev with:  npm start:electron   (npm run dist builds a distributable)
 
-import { app, BrowserWindow, Menu, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import "dotenv/config"; // read .env for LITELLM_BASE_URL / OPENCONNECTOR_BASE_URL (dev)
@@ -68,7 +68,8 @@ async function boot() {
   // Idempotent: only seeds missing files/tokens
   const baseEnv = resolveEnv();
   let defaultVolcesKey = {};
-  // If VOLCES_API_KEY not set in settings/env, use the baked fallback from server.js
+  // Placeholder so the preferences UI shows a value; NOT a working key. server.js
+  // ships no baked fallback — provision a real Volces key via settings.json.
   if (!baseEnv.VOLCES_API_KEY) {
     defaultVolcesKey = { VOLCES_API_KEY: "sk-xxx-baked-fallback" };
   }
@@ -89,6 +90,15 @@ async function boot() {
   setSupervisor(supervisor);
   registerStatusIpc(supervisor);
   registerPreferencesIpc(supervisor);
+
+  // Folder picker for the chat working directory (main window).
+  ipcMain.handle("workdir:pick", async () => {
+    const { filePaths } = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openDirectory"],
+      message: "Select a working directory",
+    });
+    return filePaths?.[0] ?? null;
+  });
 
   // Build application menu with Preferences shortcut
   const menu = Menu.buildFromTemplate([
@@ -135,6 +145,7 @@ function openWindow(url) {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, "main-preload.js"),
     },
   });
   mainWindow.loadURL(url);

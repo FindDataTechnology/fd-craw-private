@@ -199,6 +199,65 @@ Tune to node capacity. The startup window is generous (`startupProbe` 300s) beca
 
 ---
 
+## Live service testing
+
+The repo ships a Playwright suite that runs **read-only** checks against the
+deployed k3s NodePort - so you can verify a deploy actually serves a working app
+with one command, instead of opening the URL and clicking around.
+
+```bash
+make test-live                 # read-only suite against http://23.144.68.246:30950
+# or, equivalently:
+npm run test:e2e:live
+```
+
+The `live` Playwright project connects to an already-running external URL
+(`LIVE_SERVICE_URL`, default `http://23.144.68.246:30950`); it **never** launches
+a local `node server.js` and **never** creates temp store dirs. Point it at a
+different deploy by overriding the URL:
+
+```bash
+make test-live LIVE_SERVICE_URL=http://staging-host:30950
+# or
+LIVE_SERVICE_URL=http://staging-host:30950 npm run test:e2e:live
+```
+
+### What the read-only `@live` tests check
+
+- `/api/config` responds 2xx with JSON (backend booted).
+- `/` serves the SPA and routes to `/chat`.
+- The chat shell renders (sidebar + composer + session list) and the **WebSocket
+  connects** (`status-text` becomes `Connected`).
+- A `list_models` WS round-trip returns a `models` response (the deployed agent
+  session is live) - no tokens spent.
+- The sidebar shows all nav entries; `/dashboard` resolves via the SPA fallback.
+- If OpenConnector / LiteLLM are enabled in the deployed config, their embedded
+  iframe panels mount (same-origin `/oc-web` / `/litellm-web`).
+
+The read-only suite **never** writes chat history, uploads documents, switches
+models, or spends LLM tokens.
+
+### Opt-in LLM round-trip (`@live-smoke`)
+
+To verify the full server -> LiteLLM -> Volces path with one real chat turn
+(which **does** spend one LLM token and writes one chat session to the deployed
+PVC), run the smoke variant - gated behind `LIVE_SMOKE=1` so it never runs by
+default:
+
+```bash
+make test-live-smoke           # sets LIVE_SMOKE=1
+# or
+npm run test:e2e:live:smoke
+```
+
+> **Note:** live tests target a NodePort on a private IP, so they are a
+> dev-machine / self-hosted-runner concern - not run from `ubuntu-latest` CI
+> (which has no route to `23.144.68.246:30950`). The local `fast`/`smoke`
+> suites (`npm run test:e2e`) are unaffected and still launch their own local
+> `node server.js`.
+
+---
+
 ## File map
 
 ```

@@ -64,11 +64,11 @@ export function SkillCard({ skill, customSkill, onEdit }: SkillCardProps) {
             <>
               <Switch checked={skill.enabled} onCheckedChange={handleToggle} />
               {canEdit && (
-                <Button variant="ghost" size="icon" onClick={() => onEdit(customSkill!)}>
+                <Button variant="ghost" size="icon" aria-label={t("common.edit")} onClick={() => onEdit(customSkill!)}>
                   <Pencil className="h-4 w-4" />
                 </Button>
               )}
-              <Button variant="ghost" size="icon" onClick={handleDelete}>
+              <Button variant="ghost" size="icon" aria-label={t("common.delete")} onClick={handleDelete}>
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             </>

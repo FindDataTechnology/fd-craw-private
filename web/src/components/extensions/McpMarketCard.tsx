@@ -23,6 +23,18 @@ export function McpMarketCard({ server, onInstall }: McpMarketCardProps) {
             <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
               {server.category}
             </span>
+            <span
+              data-testid="mcp-config-badge"
+              className={`text-xs px-2 py-0.5 rounded-full ${
+                server.requiresConfig
+                  ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                  : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+              }`}
+            >
+              {server.requiresConfig
+                ? t("extensions.market.needsConfig")
+                : t("extensions.market.readyToUse")}
+            </span>
           </div>
           <p className="text-sm text-muted-foreground line-clamp-2 mb-2">{server.description}</p>
           <p className="text-xs text-muted-foreground italic">{server.installInstructions}</p>

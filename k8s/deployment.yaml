@@ -115,8 +115,6 @@ spec:
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
-      imagePullSecrets:
-        - name: harbor-pull
       volumes:
         - name: data
           persistentVolumeClaim:

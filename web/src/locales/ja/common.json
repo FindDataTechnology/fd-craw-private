@@ -4,7 +4,9 @@
     "cancel": "キャンセル",
     "save": "保存",
     "saving": "保存中…",
-    "add": "追加"
+    "add": "追加",
+    "edit": "編集",
+    "delete": "削除"
   },
   "nav": {
     "chat": "💬 チャット",
@@ -202,7 +204,15 @@
       "empty": "ストアにはまだアイテムがありません。",
       "install": "インストール",
       "installSuccess": "{{name}}をインストールしました",
-      "installFailed": "{{name}}のインストールに失敗しました: {{error}}"
+      "installFailed": "{{name}}のインストールに失敗しました: {{error}}",
+      "readyToUse": "すぐに使える",
+      "needsConfig": "設定が必要"
     }
+  },
+  "workdir": {
+    "label": "作業ディレクトリ",
+    "change": "変更",
+    "notSet": "未設定",
+    "desktopOnly": "フォルダ選択はデスクトップアプリでのみ利用できます"
   }
 }

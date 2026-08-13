@@ -9,6 +9,22 @@ import * as db from "./db.js";
 const MARKET_CATALOG_PATH = path.resolve("market-catalog.json");
 const MARKET_CATALOG_SKILLS_PATH = path.resolve("market-catalog-skills.json");
 
+// shared predicate for "this arg needs user input".
+// Matches /path/..., your_..., and <...> placeholders.
+// Used by both requiresConfig derivation (server) and setup-form field generation (client re-implements the same rule).
+export function isPlaceholderArg(arg) {
+  return /\/path\//.test(arg) || /^your_/.test(arg) || /^<.*>$/.test(arg);
+}
+
+// Derive whether a catalog entry needs user-supplied config.
+function requiresConfig(template) {
+  if (!template) return false;
+  const env = template.env || {};
+  if (Object.keys(env).length > 0) return true;
+  const args = template.args || [];
+  return args.some(isPlaceholderArg);
+}
+
 // ── MCP Server Configs ───────────────────────────────────────────────────────
 
 export function listMcpServers() {
@@ -21,9 +37,11 @@ export function getMcpServer(name) {
   return config;
 }
 
-// ponytail: seed on startup — skip if already present (preserves user edits).
-export function seedMcpServer({ name, config, enabled = true }) {
-  return db.seedExtensionConfig({ name, type: "mcp", config, enabled });
+// seed on startup — skip if already present (preserves user edits).
+// origin/locked/permissions come from the bundle manifest for packaged seeds
+// ("bundled", locked, tool allow/deny lists); default to a plain user row.
+export function seedMcpServer({ name, config, enabled = true, origin = "user", locked = false, permissions = null }) {
+  return db.seedExtensionConfig({ name, type: "mcp", config, enabled, origin, locked, permissions });
 }
 
 export function addMcpServer({ name, config, enabled = true }) {
@@ -122,7 +140,16 @@ export async function getMarketCatalog() {
     loadMarketCatalog(),
     loadMarketCatalogSkills(),
   ]);
-  return { mcpServers: mcpServers.mcpServers || [], skills: skills.skills || [] };
+  const servers = (mcpServers.mcpServers || []).map((s) => ({
+    ...s,
+    requiresConfig: requiresConfig(s.configTemplate),
+  }));
+  // sort ready-to-use first, then alphabetical. The JSON file order is a hint, this is the source of truth.
+  servers.sort((a, b) => {
+    if (a.requiresConfig !== b.requiresConfig) return a.requiresConfig ? 1 : -1;
+    return a.name.localeCompare(b.name);
+  });
+  return { mcpServers: servers, skills: skills.skills || [] };
 }
 
 // Clear caches (for testing or when catalog files change)

@@ -23,9 +23,12 @@ interface SkillFormProps {
   onOpenChange: (open: boolean) => void;
   skill?: CustomSkill | null;
   initialSkill?: { name: string; description: string; content: string } | null;
+  // Fired after a successful install; the parent switches to the Installed tab
+  // so the newly-added card is visible.
+  onInstalled?: () => void;
 }
 
-export function SkillForm({ open, onOpenChange, skill, initialSkill }: SkillFormProps) {
+export function SkillForm({ open, onOpenChange, skill, initialSkill, onInstalled }: SkillFormProps) {
   const { t } = useTranslation();
   const { addCustomSkill, updateCustomSkill } = useExtensionsStore();
 
@@ -74,6 +77,7 @@ export function SkillForm({ open, onOpenChange, skill, initialSkill }: SkillForm
         await updateCustomSkill(skill!.name, description, content, enabled);
       } else {
         await addCustomSkill(name.trim(), description, content, enabled);
+        onInstalled?.();
       }
       onOpenChange(false);
     } catch (err) {

@@ -30,6 +30,22 @@ export function useWebSocket() {
   useEffect(() => {
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    const MAX_ATTEMPTS = 20;
+
+    // Exponential backoff (capped at 30s) + ±25% jitter. Stops after
+    // MAX_ATTEMPTS so a dead server isn't hammered forever; resets to 0 on a
+    // successful open and on the `online` event (network restored).
+    const scheduleReconnect = () => {
+      if (cancelled || attempt >= MAX_ATTEMPTS) return;
+      const base = Math.min(30000, 1000 * 2 ** attempt);
+      const delay = base * (0.75 + Math.random() * 0.5);
+      attempt++;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, delay);
+    };
 
     const connect = () => {
       if (cancelled) return;
@@ -38,6 +54,7 @@ export function useWebSocket() {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        attempt = 0;
         setStatus("connected");
         ws.send(JSON.stringify({ type: "list_models" } satisfies ClientMessage));
         ws.send(JSON.stringify({ type: "list_skills" } satisfies ClientMessage));
@@ -57,12 +74,7 @@ export function useWebSocket() {
       ws.onclose = () => {
         setStatus("disconnected");
         if (cancelled) return;
-        if (!reconnectTimer) {
-          reconnectTimer = setTimeout(() => {
-            reconnectTimer = null;
-            connect();
-          }, 2000);
-        }
+        if (!reconnectTimer) scheduleReconnect();
       };
 
       ws.onerror = () => {
@@ -75,11 +87,22 @@ export function useWebSocket() {
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
     };
 
+    // Reconnect immediately when the network comes back (e.g. laptop wake),
+    // bypassing the backoff timer and resetting the retry budget.
+    const onOnline = () => {
+      if (cancelled) return;
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      attempt = 0;
+      connect();
+    };
+    window.addEventListener("online", onOnline);
+
     connect();
 
     return () => {
       cancelled = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      window.removeEventListener("online", onOnline);
       wsRef.current?.close();
     };
   }, [apply, applyExtensions, setStatus]);

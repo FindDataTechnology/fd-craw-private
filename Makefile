@@ -25,7 +25,11 @@ ARGOCD_APP ?= platform
 # kubectl context: set KUBECONFIG or use the SSH-reachable k3s. For local
 # `kubectl` against the remote cluster, export KUBECONFIG to your k3s kubeconfig.
 
-.PHONY: build run logs stop shell k8s-apply k8s-deploy k8s-status k8s-logs argocd-sync clean
+# Live service under test (deployed k3s NodePort). Override on the command line:
+#   make test-live LIVE_SERVICE_URL=http://other-host:30950
+LIVE_SERVICE_URL ?= http://23.144.68.246:30950
+
+.PHONY: build run logs stop shell k8s-apply k8s-deploy k8s-status k8s-logs argocd-sync clean test-live test-live-smoke
 
 # ── Local Docker ──────────────────────────────────────────────────────────────
 build:
@@ -86,3 +90,20 @@ argocd-sync:
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 clean: stop
 	docker volume rm $(DATA_VOLUME) || true
+
+# ── Live service testing ──────────────────────────────────────────────────────
+# Read-only Playwright suite against the deployed k3s NodePort. Verifies the
+# deployed container serves a working app (SPA boots, routes resolve, WS
+# connects, embedded panels mount, /api/config responds) WITHOUT writing chat
+# history, uploading documents, or spending LLM tokens.
+#
+#   make test-live                              # read-only @live tests
+#   make test-live LIVE_SERVICE_URL=http://...  # point at a different deploy
+#   make test-live-smoke                        # + one real LLM chat-turn (LIVE_SMOKE=1)
+test-live:
+	LIVE_SERVICE_URL="$(LIVE_SERVICE_URL)" PW_LIVE=1 npx playwright test --project=live
+
+# The smoke variant spends one LLM token and writes one chat session to the
+# deployed PVC. Run on demand to verify the full server -> LiteLLM -> Volces path.
+test-live-smoke:
+	LIVE_SERVICE_URL="$(LIVE_SERVICE_URL)" PW_LIVE=1 LIVE_SMOKE=1 npx playwright test --project=live

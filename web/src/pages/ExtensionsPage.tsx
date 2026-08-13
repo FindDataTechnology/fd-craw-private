@@ -66,7 +66,9 @@ export function ExtensionsPage() {
           </div>
         )}
         {!loading && !error && activeTab === "installed" && <InstalledTab />}
-        {!loading && !error && activeTab === "market" && <MarketTab />}
+        {!loading && !error && activeTab === "market" && (
+          <MarketTab onInstalled={() => setActiveTab("installed")} />
+        )}
       </div>
     </div>
   );

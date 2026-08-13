@@ -47,6 +47,8 @@ Every key:
 
 **CI:** the release workflow's `workflow_dispatch` takes a `components` input (same syntax), exported as `PLATFORM_BUNDLE_COMPONENTS`; lean dispatch builds upload artifacts with a `-lean` suffix. See `CLAUDE.md`.
 
+**How to package MCP servers and skills:** step-by-step guide with worked examples in [`docs/packaging-extensions.md`](docs/packaging-extensions.md).
+
 ## Knowledge Platform (WeKnora)
 
 The Knowledge panel embeds [WeKnora](https://github.com/Tencent/WeKnora) — an open-source knowledge platform from Tencent with RAG, agents, and auto-wiki capabilities. WeKnora is deployed separately (typically via Docker) and connected to Platform via a reverse proxy.

@@ -148,9 +148,9 @@ export function Composer({ send }: Props) {
       try {
         const r = await fetch("/api/documents", { method: "POST", body: fd });
         if (!r.ok) throw new Error(await r.text());
-        showToast(`Uploaded ${f.name}`);
+        showToast(t("composer.uploaded", { name: f.name }));
       } catch (err) {
-        showToast(`Upload failed: ${(err as Error).message.slice(0, 80)}`);
+        showToast(t("composer.uploadFailed", { message: (err as Error).message.slice(0, 80) }));
       }
     }
   };

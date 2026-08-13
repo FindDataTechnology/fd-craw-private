@@ -4,7 +4,9 @@
     "cancel": "取消",
     "save": "保存",
     "saving": "保存中…",
-    "add": "添加"
+    "add": "添加",
+    "edit": "编辑",
+    "delete": "删除"
   },
   "nav": {
     "chat": "💬 聊天",
@@ -202,7 +204,15 @@
       "empty": "商店暂无可用项目。",
       "install": "安装",
       "installSuccess": "已安装 {{name}}",
-      "installFailed": "安装 {{name}} 失败：{{error}}"
+      "installFailed": "安装 {{name}} 失败：{{error}}",
+      "readyToUse": "可直接使用",
+      "needsConfig": "需要配置"
     }
+  },
+  "workdir": {
+    "label": "工作目录",
+    "change": "更改",
+    "notSet": "未设置",
+    "desktopOnly": "文件夹选择仅在桌面应用中可用"
   }
 }

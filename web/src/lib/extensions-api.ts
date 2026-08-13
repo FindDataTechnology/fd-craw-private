@@ -45,6 +45,7 @@ export interface MarketMcpServer {
   icon: string;
   configTemplate: McpServer["config"];
   installInstructions: string;
+  requiresConfig?: boolean;
 }
 
 export interface MarketSkill {

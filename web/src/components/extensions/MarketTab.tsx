@@ -10,7 +10,11 @@ import { McpServerForm } from "./McpServerForm";
 import { SkillForm } from "./SkillForm";
 import type { MarketMcpServer, MarketSkill } from "@/lib/extensions-api";
 
-export function MarketTab() {
+interface MarketTabProps {
+  onInstalled?: () => void;
+}
+
+export function MarketTab({ onInstalled }: MarketTabProps = {}) {
   const { t } = useTranslation();
   const { marketCatalog, refreshMarketCatalog } = useExtensionsStore();
 
@@ -70,7 +74,8 @@ export function MarketTab() {
       <McpServerForm
         open={mcpFormOpen}
         onOpenChange={setMcpFormOpen}
-        initialConfig={selectedMcp?.configTemplate || null}
+        setupServer={selectedMcp || null}
+        onInstalled={onInstalled}
       />
       <SkillForm
         open={skillFormOpen}
@@ -80,6 +85,7 @@ export function MarketTab() {
           description: selectedSkill.description,
           content: selectedSkill.skillTemplate.content,
         } : null}
+        onInstalled={onInstalled}
       />
     </div>
   );

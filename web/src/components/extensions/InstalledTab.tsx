@@ -14,7 +14,8 @@ import type { McpServer, CustomSkill } from "@/lib/extensions-api";
 
 export function InstalledTab() {
   const { t } = useTranslation();
-  const { mcpServers, skills } = useExtensionsStore();
+  const mcpServers = useExtensionsStore((s) => s.mcpServers);
+  const skills = useExtensionsStore((s) => s.skills);
 
   const [mcpFormOpen, setMcpFormOpen] = useState(false);
   const [editingMcp, setEditingMcp] = useState<McpServer | null>(null);

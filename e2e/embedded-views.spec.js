@@ -35,10 +35,11 @@ test.describe("embedded service views", () => {
       litellmEnabled: true,
       litellmManagementUrl: "http://litellm.example:4000/ui",
     });
-    await stubLitellmCredentials(page);
     await page.goto("/litellm");
     await expect(page.getByTestId("litellm-iframe")).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId("litellm-master-key-bar")).toBeVisible();
+    // The proxy auto-logs the iframe in (openspec litellm-web spec: "The UI
+    // SHALL NOT render a master-key bar"), so no credential bar may appear.
+    await expect(page.getByTestId("litellm-master-key-bar")).toHaveCount(0);
   });
 
   test("clicking LiteLLM button in sidebar navigates to LiteLLM web UI", async ({ page }) => {
