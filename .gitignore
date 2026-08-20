@@ -1,6 +1,7 @@
 node_modules/
 .DS_Store
 mcp.json
+agents.json
 knowledge-store/
 data/
 .env

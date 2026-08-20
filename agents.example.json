@@ -1,0 +1,39 @@
+{
+  "agents": [
+    {
+      "id": "junior",
+      "type": "agent-remote",
+      "mode": "chat",
+      "name": "Junior Dev",
+      "baseUrl": "https://newapi.example.com/v1",
+      "model": "gpt-5",
+      "apiKeyEnv": "JUNIOR_API_KEY"
+    },
+    {
+      "id": "openclaw",
+      "type": "agent-remote",
+      "mode": "link",
+      "name": "OpenClaw",
+      "url": "https://claw.example.com",
+      "roles": ["admin"]
+    }
+  ],
+  "apps": [
+    {
+      "id": "newapi",
+      "type": "app",
+      "kind": "link",
+      "name": "New API",
+      "url": "https://newapi.example.com"
+    },
+    {
+      "id": "connect",
+      "type": "app",
+      "kind": "nango-connect",
+      "name": "Bound Apps",
+      "nangoUrl": "http://localhost:3003",
+      "connectUiUrl": "https://connect.example.com",
+      "apiUrl": "https://nango.example.com"
+    }
+  ]
+}

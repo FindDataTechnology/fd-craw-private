@@ -15,7 +15,16 @@
     "extensions": "🧩 Extensiones",
     "knowledge": "📚 Knowledge",
     "openconnector": "🔌 OpenConnector",
-    "litellm": "🧭 LiteLLM"
+    "litellm": "🧭 LiteLLM",
+    "agents": "🤖 Agentes"
+  },
+  "agentsPage": {
+    "title": "Agentes y aplicaciones",
+    "agents": "Agentes",
+    "apps": "Aplicaciones",
+    "connect": "Conectar",
+    "connecting": "Conectando…",
+    "loadFailed": "Error al cargar el catálogo: {{error}}"
   },
   "sidebar": {
     "brand": "Platform",

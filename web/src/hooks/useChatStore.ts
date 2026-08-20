@@ -11,6 +11,7 @@
 
 import { create } from "zustand";
 import type {
+  AgentInfo,
   ChatMessage,
   ModelInfo,
   ServerMessage,
@@ -45,6 +46,10 @@ interface State {
   status: ConnStatus;
   models: ModelInfo[];
   currentModel: string | null;
+  agents: AgentInfo[];
+  currentAgent: string | null;
+  // Bumped on every `catalog_changed` so catalog-viewing pages refetch.
+  catalogVersion: number;
   skills: SkillInfo[];
   sessions: SessionMeta[];
   currentSessionId: string | null;
@@ -103,6 +108,9 @@ export const useChatStore = create<State>((set) => ({
   status: "connecting",
   models: [],
   currentModel: null,
+  agents: [],
+  currentAgent: null,
+  catalogVersion: 0,
   skills: [],
   sessions: [],
   currentSessionId: null,
@@ -207,6 +215,16 @@ export const useChatStore = create<State>((set) => ({
 
         case "models":
           return { models: m.models };
+
+        case "current_agent":
+        case "agent_changed":
+          return { currentAgent: m.id };
+
+        case "agents":
+          return { agents: m.agents };
+
+        case "catalog_changed":
+          return { catalogVersion: state.catalogVersion + 1 };
 
         case "skills":
           return { skills: m.skills };

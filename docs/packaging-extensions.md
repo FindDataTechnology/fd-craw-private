@@ -1,8 +1,199 @@
+# 把 MCP 服务器和技能打包进应用
+
+构建安装包（`npm run dist`）或打包应用时，你可以**预装** MCP 服务器、**随包分发**技能，让最终用户首次运行即获得——无需配置、无需编辑 `.env` 或 `mcp.json`。这由仓库根目录的打包清单 `platform.bundle.json` 驱动，它是"一次构建包含什么"的唯一事实来源，并随打包应用一起分发（见 `electron-builder.js` 的 `files:`）。
+
+清单有四个键。本文覆盖其中两个扩展相关键——`mcpServers` 与 `skills`——外加控制它们的 `permissions`。（`components` 用于选择重量级服务；见 [README 的 Bundle manifest 章节](../README.md)。）
+
+```json
+{
+  "components": { "litellm": { "include": true }, "openconnector": { "include": true }, "postgres": { "include": "auto" } },
+  "mcpServers": {},
+  "skills": ["computer-file-system", "computer-process", "computer-shell", "example-skill"],
+  "permissions": {}
+}
+```
+
+> **所有消费方都经 `bundle-manifest.js` 里的 `resolveBundle()` 读取此文件**——没人直接解析 JSON。无效清单（坏 JSON、未知键、错误权限键）会让构建脚本失败，运行时记错误日志并回退默认（全组件、无打包扩展）。
+
+---
+
+## 1. 打包一个 MCP 服务器
+
+在 `mcpServers` 下加一项。每项是 name → config 映射，带可选 `enabled` 标志：
+
+```json
+{
+  "mcpServers": {
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "enabled": true
+    },
+    "my-http-server": {
+      "url": "https://example.com/mcp",
+      "headers": { "Authorization": "Bearer secret" },
+      "enabled": false
+    }
+  }
+}
+```
+
+每项是以下之一：
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `command` | string | **stdio** server —— 要拉起的二进制（配可选 `args`）。`command` 或 `url` 二选一必填。 |
+| `url` | string | **http/SSE** server —— MCP 端点。 |
+| `args` | string[] | `command`（stdio）server 的 CLI 参数。 |
+| `headers` | object | `url` server 的 HTTP 头（如鉴权）。 |
+| `enabled` | boolean | 扩展的播种状态。`false` 以**禁用**状态分发——在 Installed 标签可见，用户手动开启前不生效。默认 `true`。 |
+
+### 首次运行时发生了什么
+
+1. `server.js` 在创建 agent 会话**之前**连接每个启用的清单 server，使其工具加入会话工具白名单（连接失败的 MCP 工具被跳过——绝不致命）。
+2. 每项以 `origin: "bundled"` 与其 `enabled` 状态播种进扩展数据库，像任何已安装扩展一样出现在 **Extensions → Installed** 标签。
+3. 播种是 INSERT-OR-IGNORE：若用户已编辑或禁用该 server，**用户的改动优先**，跨重启与应用升级保留。
+
+### 规则与坑
+
+- **`mcp.json` 同名优先。** `mcp.json` 是运维的本地配置（已 gitignore）；若同名同时存在，用 `mcp.json` 的配置，打包那份被跳过。
+- **锁定与工具作用域** 放在 `permissions` 映射里——见 [第 3 节](#3-权限与锁定)。
+- **⚠️ 离线安装：优先用 `url` server 或打包二进制。** 基于 `command` 的 stdio server 按名字拉起，`npx` 包会在**最终用户**首次连接时从 npm registry 下载；真离线环境无 registry 可用。要自包含打包，要么 (a) 用 `url`/http server，要么 (b) 把 server 的 JS 构建进 `resources/` 并让 `command` 指向随应用一起分发的二进制。默认清单尚未打包任何 stdio MCP——这是需要留意的已知限制。
+
+---
+
+## 2. 打包技能
+
+技能是 `skills/<name>/` 下纯 `SKILL.md` 文件（YAML frontmatter `name`/`description` + 正文）。**`skills/` 下每个目录都会自动随安装包分发**（`skills/**` 在 `electron-builder.js` 的 `files:` 里）——清单条目只是把技能标记为 *bundled*，让它在 API 里获得锁定/权限语义。
+
+### 添加新技能
+
+1. 创建 `skills/<my-skill>/SKILL.md`：
+
+```markdown
+---
+name: my-skill
+description: 这个技能做什么、何时使用。一两句话。
+---
+
+# My Skill
+
+正文：以 `/skill:my-skill <args>` 调用时 agent 展开并执行的指令。
+```
+
+2. 把名字加进清单的 `skills` 数组：
+
+```json
+{ "skills": ["computer-file-system", "computer-process", "computer-shell", "example-skill", "my-skill"] }
+```
+
+### 清单 `skills` 条目的作用
+
+文件技能**不是**数据库行——没有可播种的东西。相反，`GET /api/extensions/skills` 从清单派生扩展元数据：
+
+- `skills` 里的名字报告为 `origin: "bundled"`（对比其他本地技能的 `"file"`），
+- 它们的 `locked` / `permissions` 来自 `permissions["skill:<name>"]`，
+- **不在**清单里的技能照样工作并分发——只是普通可编辑的文件技能。
+
+---
+
+## 3. 权限与锁定
+
+`permissions` 以 `mcp:<name>` / `skill:<name>` 为键，各带 `{ allow?, deny?, locked? }`：
+
+```json
+{
+  "permissions": {
+    "mcp:memory":        { "locked": true },
+    "mcp:my-http-server": { "allow": ["fetch*"], "deny": ["fetch:https://internal*"] },
+    "skill:my-skill":    { "locked": true }
+  }
+}
+```
+
+| 键 | 类型 | 含义 |
+|---|---|---|
+| `locked` | boolean | 使条目**经 API 不可变** —— DELETE / 编辑 / 启用开关返回 400。用于保护打包默认不被移除。 |
+| `allow` | string[] | 扩展可调用的工具名 glob。已存储；由后续的 extension-tool-permissions 工作强制执行。 |
+| `deny` | string[] | 扩展不可调用的工具名 glob。执行状态同上。 |
+
+---
+
+## 4. 完整示例
+
+分发一个"禁用但可见"的 http MCP、一个锁定的 stdio MCP，以及两个新技能：
+
+```json
+{
+  "components": { "litellm": { "include": true }, "openconnector": { "include": true }, "postgres": { "include": "auto" } },
+  "mcpServers": {
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "enabled": true
+    },
+    "corp-gateway": {
+      "url": "https://gateway.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${CORP_TOKEN}" },
+      "enabled": false
+    }
+  },
+  "skills": ["computer-file-system", "computer-process", "computer-shell", "example-skill", "my-skill", "team-skill"],
+  "permissions": {
+    "mcp:memory":   { "locked": true },
+    "skill:team-skill": { "locked": true }
+  }
+}
+```
+
+首次运行结果：`memory` MCP 被连接、播种并锁定；`corp-gateway` 在 Installed 里以禁用状态出现（在 UI 里开启即可，但注意 header 值是清单里的静态字符串——只留在服务端，不进浏览器）；`my-skill` 与 `team-skill` 作为打包技能分发。
+
+> 注意：`${CORP_TOKEN}` **不会**被清单做 env 插值——它就是个字面字符串。把真实 token 放进 `mcp.json`（运维配置）或 secret 注入代理，而不是放进随应用发给每个用户的清单里。优先让 `url` server 指向无需每用户 secret 的端点，或明确说明 `headers` 是写死的。
+
+---
+
+## 5. 构建与验证
+
+```bash
+npm run predist   # 按解析出的组件集构建内置资源
+npm run dist      # electron-builder → 安装包（mac .dmg / win .exe）
+```
+
+清单相关开关：
+
+- `PLATFORM_BUNDLE_COMPONENTS=all|none|"openconnector,litellm"` —— 无需编辑文件即可覆盖组件选择（CI 精简构建、本地测试）。只要选了 `litellm`，`postgres` 就自动包含。
+- `PLATFORM_BUNDLE_MANIFEST=/abs/path.json` —— 让运行时指向不同的清单文件。用它来**在发布前测试你的扩展清单**：
+
+```bash
+# 用一次性清单构建精简本地运行，观察 Installed 标签如何播种它
+PLATFORM_BUNDLE_MANIFEST=/tmp/test-bundle.json PLATFORM_BUNDLE_COMPONENTS=openconnector npm start
+```
+
+- CI：release 工作流的 `workflow_dispatch` 接受 `components` 输入（语法同 `PLATFORM_BUNDLE_COMPONENTS`）；精简 dispatch 构建的上传产物带 `-lean` 后缀。
+
+---
+
+## 6. 运行时参考
+
+| 位置 | 作用 |
+|---|---|
+| `platform.bundle.json` | 清单（开发时在仓库根，打包后在 `Resources/app/`）。 |
+| `bundle-manifest.js` | `resolveBundle()` / `resolveBundleSafe()` —— 唯一解析器；校验、覆盖、postgres 自动解析。 |
+| `server.js` `initAgent()` | 会话创建前连接启用的清单 `mcpServers`；把每项播种进扩展 DB（`origin: "bundled"`，INSERT-OR-IGNORE）。 |
+| `server.js` `/api/extensions/*` | 扩展管理 API —— 列表/增/改/删 MCP 配置与自定义技能。锁定的打包条目变更返回 400。 |
+| `extension-store.js` | DB 层（`seedMcpServer`、`seedExtensionConfig`）；`origin` / `locked` / `permissions` 列。 |
+| `electron-builder.js` | 分发 `platform.bundle.json` + `skills/**`；内置组件的 `extraResources`。 |
+| 规范 | `openspec/specs/bundle-manifest/spec.md`（正式需求 + 场景）。 |
+
+---
+
+# English
+
 # Packaging MCP servers and skills into the app
 
-When you build an installer (`npm run dist`) or bundle the app, you can **pre-install** MCP servers and **ship** skills so end users get them on first run — no setup, no editing `.env` or `mcp.json`. This is driven by the bundle manifest `platform.bundle.json` at the repo root, which is the single source of truth for what a build contains and is shipped inside the packaged app (see `electron-builder.js` `files:`).
+When you build an installer (`npm run dist`) or bundle the app, you can **pre-install** MCP servers and **ship** skills so end users get them on first run — no setup, no editing `.env` or `mcp.json`. This is driven by the bundle manifest `platform.bundle.json` at the repo root, the single source of truth for what a build contains, shipped inside the packaged app (see `electron-builder.js` `files:`).
 
-The manifest has four keys. This doc covers the two for extensions — `mcpServers` and `skills` — plus the `permissions` that control them. (`components` selects heavyweight services; see the [Bundle manifest section in README](../README.md)).
+The manifest has four keys. This doc covers the two for extensions — `mcpServers` and `skills` — plus the `permissions` that control them. (`components` selects heavyweight services; see the [Bundle manifest section in README](../README.md).)
 
 ```json
 {
@@ -58,7 +249,7 @@ Each entry is one of:
 
 - **`mcp.json` wins name collisions.** `mcp.json` is the operator's local config (gitignored); if a name exists in both, the `mcp.json` config is used and the bundled one is skipped.
 - **Locking and tool scoping** go in the `permissions` map — see [section 3](#3-permissions-and-locking).
-- **⚠️ Offline installs: prefer `url` servers or bundle the binary.** A `command`-based stdio server is spawned by name and, for `npx` packages, must download from the npm registry on the *end user's* first connect. A truly offline install has no registry access. For self-contained packaging either (a) use an `url`/http server, or (b) build the server's JS into `resources/` and point `command` at a binary that ships with the app. Nothing in the default manifest bundles a stdio MCP yet — this is the known limitation to watch.
+- **⚠️ Offline installs: prefer `url` servers or bundle the binary.** A `command`-based stdio server is spawned by name and, for `npx` packages, must download from the npm registry on the *end user's* first connect. A truly offline install has no registry access. For self-contained packaging either (a) use a `url`/http server, or (b) build the server's JS into `resources/` and point `command` at a binary that ships with the app. Nothing in the default manifest bundles a stdio MCP yet — this is the known limitation to watch.
 
 ---
 

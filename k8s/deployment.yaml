@@ -69,14 +69,14 @@ spec:
               value: "3000"
             - name: PLATFORM_DATA_DIR
               value: /data
-            # VOLCES_API_KEY is optional: server.js has a fallback key baked in.
+            # LLM_API_KEY is optional: server.js has a fallback key baked in.
             # Create the secret to override: kubectl -n platform-private create
-            # secret generic platform-secrets --from-literal=volces-api-key=...
-            - name: VOLCES_API_KEY
+            # secret generic platform-secrets --from-literal=llm-api-key=...
+            - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: platform-secrets
-                  key: volces-api-key
+                  key: llm-api-key
                   optional: true
           resources:
             # Heavy single container: Node server + LiteLLM (Python venv) +

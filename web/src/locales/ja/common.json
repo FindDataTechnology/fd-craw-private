@@ -15,7 +15,16 @@
     "extensions": "🧩 拡張機能",
     "knowledge": "📚 Knowledge",
     "openconnector": "🔌 OpenConnector",
-    "litellm": "🧭 LiteLLM"
+    "litellm": "🧭 LiteLLM",
+    "agents": "🤖 エージェント"
+  },
+  "agentsPage": {
+    "title": "エージェントとアプリ",
+    "agents": "エージェント",
+    "apps": "アプリ",
+    "connect": "接続",
+    "connecting": "接続中…",
+    "loadFailed": "カタログの読み込みに失敗しました: {{error}}"
   },
   "sidebar": {
     "brand": "Platform",

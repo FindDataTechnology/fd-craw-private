@@ -5,7 +5,7 @@ import { gotoDashboard } from "./helpers.js";
 // /api/supervisor/status response must never contain secrets.
 
 const SECRET_KEYS = [
-  "VOLCES_API_KEY",
+  "LLM_API_KEY",
   "LITELLM_API_KEY",
   "OPENCONNECTOR_RUNTIME_TOKEN",
   "OPENCONNECTOR_ADMIN_TOKEN",

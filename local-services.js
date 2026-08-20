@@ -39,8 +39,11 @@ const PROJECT_ROOT = __dirname;
 // electron/config/settings.js - the supervisor's descriptors read these to
 // decide bundled-vs-external and to wire the litellm/OC child env. Keep in sync.
 const SETTING_KEYS = [
-  "VOLCES_API_KEY",
-  "VOLCES_BASE_URL",
+  "LLM_API_KEY",
+  "LLM_BASE_URL",
+  "LLM_UPSTREAM_BASE_URL",
+  "LLM_UPSTREAM_KEY_1",
+  "LLM_UPSTREAM_KEY_2",
   "VOLCES_PLAN_BASE_URL",
   "VOLCES_PLAN_KEY_1",
   "VOLCES_PLAN_KEY_2",

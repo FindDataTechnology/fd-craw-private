@@ -70,8 +70,8 @@ async function boot() {
   let defaultVolcesKey = {};
   // Placeholder so the preferences UI shows a value; NOT a working key. server.js
   // ships no baked fallback — provision a real Volces key via settings.json.
-  if (!baseEnv.VOLCES_API_KEY) {
-    defaultVolcesKey = { VOLCES_API_KEY: "sk-xxx-baked-fallback" };
+  if (!baseEnv.LLM_API_KEY) {
+    defaultVolcesKey = { LLM_API_KEY: "sk-xxx-baked-fallback" };
   }
   const boostedSettings = runFirstRun({
     userDataDir: dataDir,

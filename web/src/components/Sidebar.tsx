@@ -22,6 +22,7 @@ const NAV_BASE = [
   { to: "/documents", key: "nav.documents", testId: "nav-documents" },
   { to: "/extensions", key: "nav.extensions", testId: "nav-extensions" },
   { to: "/openconnector", key: "nav.openconnector", testId: "nav-openconnector" },
+  { to: "/agents", key: "nav.agents", testId: "nav-agents" },
 ];
 const LITELLM_NAV = { to: "/litellm", key: "nav.litellm", testId: "nav-litellm" };
 
@@ -37,7 +38,16 @@ export function Sidebar({ send }: Props) {
   const clearView = useChatStore((s) => s.clearView);
   const currentWorkdir = useChatStore((s) => s.currentWorkdir);
   const setWorkdir = useChatStore((s) => s.setWorkdir);
+  const agents = useChatStore((s) => s.agents);
+  const currentAgent = useChatStore((s) => s.currentAgent);
+  const catalogVersion = useChatStore((s) => s.catalogVersion);
   const navigate = useNavigate();
+
+  // The server bumps catalogVersion via `catalog_changed`; refetch the
+  // switchable agent list so catalog/role edits appear live.
+  useEffect(() => {
+    if (catalogVersion > 0) send({ type: "list_agents" });
+  }, [catalogVersion, send]);
 
   // Gate the LiteLLM link on server config. Hidden until /api/config resolves
   // (matches how the legacy vanilla nav skips the link when unconfigured).
@@ -153,8 +163,26 @@ export function Sidebar({ send }: Props) {
         </div>
       </div>
 
-      {/* Footer: model select, status, clear */}
+      {/* Footer: agent + model select, status, clear */}
       <div className="flex flex-col gap-2 border-t border-border p-3">
+        <select
+          value={currentAgent ?? "local"}
+          disabled={isStreaming || agents.length === 0}
+          onChange={(e) => send({ type: "set_agent", id: e.target.value })}
+          data-testid="agent-select"
+          className={cn(
+            "w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs text-foreground",
+            "focus:border-primary focus:outline-none",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+          )}
+        >
+          {agents.length === 0 && <option>{t("common.loading")}</option>}
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name || a.id}
+            </option>
+          ))}
+        </select>
         <select
           value={currentModel ?? ""}
           disabled={isStreaming || models.length === 0}

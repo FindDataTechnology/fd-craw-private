@@ -14,11 +14,11 @@ document.querySelectorAll('.tab').forEach(tab => {
 let currentSettings = {};
 async function loadInitial() {
   currentSettings = await window.platform.getVisibleSettings();
-  if (currentSettings.VOLCES_API_KEY !== undefined) {
-    document.getElementById('volcesApiKey').value = currentSettings.VOLCES_API_KEY || '';
+  if (currentSettings.LLM_API_KEY !== undefined) {
+    document.getElementById('llmApiKey').value = currentSettings.LLM_API_KEY || '';
   }
-  if (currentSettings.VOLCES_BASE_URL !== undefined) {
-    document.getElementById('volcesBaseUrl').value = currentSettings.VOLCES_BASE_URL || '';
+  if (currentSettings.LLM_BASE_URL !== undefined) {
+    document.getElementById('llmBaseUrl').value = currentSettings.LLM_BASE_URL || '';
   }
   if (currentSettings.DEFAULT_MODEL !== undefined) {
     document.getElementById('defaultModel').value = currentSettings.DEFAULT_MODEL || '';
@@ -38,15 +38,15 @@ loadInitial();
 // General save
 document.getElementById('saveGeneral').addEventListener('click', async () => {
   const statusEl = document.getElementById('generalStatus');
-  const key = document.getElementById('volcesApiKey').value;
-  const baseUrl = document.getElementById('volcesBaseUrl').value;
+  const key = document.getElementById('llmApiKey').value;
+  const baseUrl = document.getElementById('llmBaseUrl').value;
   const defaultModel = document.getElementById('defaultModel').value;
 
   if (key.trim()) {
-    await window.platform.setSettingField('VOLCES_API_KEY', key.trim());
+    await window.platform.setSettingField('LLM_API_KEY', key.trim());
   }
   if (baseUrl.trim() || baseUrl === '') {
-    await window.platform.setSettingField('VOLCES_BASE_URL', baseUrl.trim());
+    await window.platform.setSettingField('LLM_BASE_URL', baseUrl.trim());
   }
   if (defaultModel.trim() || defaultModel === '') {
     await window.platform.setSettingField('DEFAULT_MODEL', defaultModel.trim());

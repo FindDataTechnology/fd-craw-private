@@ -1,51 +1,51 @@
 # Default bundled LiteLLM configuration (macOS arm64)
-# Volces is configured by default - add more models below as needed.
+# An OpenAI-compatible upstream is configured by default - add more models below as needed.
 # This file is seeded once on first run; edit it via Preferences → LiteLLM.
 
 model_list:
   - model_name: doubao-seed-2-0-pro
     litellm_params:
       model: openai/doubao-seed-2-0-pro
-      api_base: os.environ/VOLCES_PLAN_BASE_URL
-      api_key: os.environ/VOLCES_PLAN_KEY_1
+      api_base: os.environ/LLM_UPSTREAM_BASE_URL
+      api_key: os.environ/LLM_UPSTREAM_KEY_1
   - model_name: doubao-seed-2-0-pro
     litellm_params:
       model: openai/doubao-seed-2-0-pro
-      api_base: os.environ/VOLCES_PLAN_BASE_URL
-      api_key: os.environ/VOLCES_PLAN_KEY_2
+      api_base: os.environ/LLM_UPSTREAM_BASE_URL
+      api_key: os.environ/LLM_UPSTREAM_KEY_2
 
   - model_name: deepseek-v4-flash
     litellm_params:
       model: openai/deepseek-v4-flash
-      api_base: os.environ/VOLCES_PLAN_BASE_URL
-      api_key: os.environ/VOLCES_PLAN_KEY_1
+      api_base: os.environ/LLM_UPSTREAM_BASE_URL
+      api_key: os.environ/LLM_UPSTREAM_KEY_1
   - model_name: deepseek-v4-flash
     litellm_params:
       model: openai/deepseek-v4-flash
-      api_base: os.environ/VOLCES_PLAN_BASE_URL
-      api_key: os.environ/VOLCES_PLAN_KEY_2
+      api_base: os.environ/LLM_UPSTREAM_BASE_URL
+      api_key: os.environ/LLM_UPSTREAM_KEY_2
 
   - model_name: deepseek-v4-pro
     litellm_params:
       model: openai/deepseek-v4-pro
-      api_base: os.environ/VOLCES_PLAN_BASE_URL
-      api_key: os.environ/VOLCES_PLAN_KEY_1
+      api_base: os.environ/LLM_UPSTREAM_BASE_URL
+      api_key: os.environ/LLM_UPSTREAM_KEY_1
   - model_name: deepseek-v4-pro
     litellm_params:
       model: openai/deepseek-v4-pro
-      api_base: os.environ/VOLCES_PLAN_BASE_URL
-      api_key: os.environ/VOLCES_PLAN_KEY_2
+      api_base: os.environ/LLM_UPSTREAM_BASE_URL
+      api_key: os.environ/LLM_UPSTREAM_KEY_2
 
   - model_name: glm-5.2
     litellm_params:
       model: openai/glm-5.2
-      api_base: os.environ/VOLCES_PLAN_BASE_URL
-      api_key: os.environ/VOLCES_PLAN_KEY_1
+      api_base: os.environ/LLM_UPSTREAM_BASE_URL
+      api_key: os.environ/LLM_UPSTREAM_KEY_1
   - model_name: glm-5.2
     litellm_params:
       model: openai/glm-5.2
-      api_base: os.environ/VOLCES_PLAN_BASE_URL
-      api_key: os.environ/VOLCES_PLAN_KEY_2
+      api_base: os.environ/LLM_UPSTREAM_BASE_URL
+      api_key: os.environ/LLM_UPSTREAM_KEY_2
 
 # Master key for accessing this LiteLLM proxy from the app
 master_key: os.environ/LITELLM_API_KEY

@@ -227,15 +227,22 @@ export function getDescriptors({
         args: [...(bypassShebang ? [litellmBin] : []), "--port", String(litellmPort), "--config", path.join(dataDir || projectRoot, "litellm.yaml")],
         cwd: llmRoot,
         env: {
-          VOLCES_API_KEY: agentEnv.VOLCES_API_KEY || "",
-          VOLCES_BASE_URL: agentEnv.VOLCES_BASE_URL || "https://aquasearch.volces.com",
+          LLM_API_KEY: agentEnv.LLM_API_KEY || "",
+          LLM_BASE_URL: agentEnv.LLM_BASE_URL || "https://aquasearch.volces.com",
           LITELLM_API_KEY: agentEnv.LITELLM_API_KEY || "",
-          // Volces plan/v3 upstream for the Agent-harness alias + plan models (litellm.yaml
-          // references these via os.environ/). Two keys for rotation.
+          // LLM upstream endpoint + credentials for the Agent-harness alias + plan models
+          // (litellm.yaml references these via os.environ/). Two keys for rotation.
+          // New provider-neutral names win; legacy VOLCES_PLAN_* names resolve as a
+          // fallback so existing .env / settings.json keep working. Both are injected
+          // so a custom litellm.yaml referencing either name still resolves.
+          LLM_UPSTREAM_BASE_URL:
+            agentEnv.LLM_UPSTREAM_BASE_URL || agentEnv.VOLCES_PLAN_BASE_URL || "https://ark.cn-beijing.volces.com/api/plan/v3",
+          LLM_UPSTREAM_KEY_1: agentEnv.LLM_UPSTREAM_KEY_1 || agentEnv.VOLCES_PLAN_KEY_1 || "",
+          LLM_UPSTREAM_KEY_2: agentEnv.LLM_UPSTREAM_KEY_2 || agentEnv.VOLCES_PLAN_KEY_2 || "",
           VOLCES_PLAN_BASE_URL:
-            agentEnv.VOLCES_PLAN_BASE_URL || "https://ark.cn-beijing.volces.com/api/plan/v3",
-          VOLCES_PLAN_KEY_1: agentEnv.VOLCES_PLAN_KEY_1 || "",
-          VOLCES_PLAN_KEY_2: agentEnv.VOLCES_PLAN_KEY_2 || "",
+            agentEnv.LLM_UPSTREAM_BASE_URL || agentEnv.VOLCES_PLAN_BASE_URL || "https://ark.cn-beijing.volces.com/api/plan/v3",
+          VOLCES_PLAN_KEY_1: agentEnv.LLM_UPSTREAM_KEY_1 || agentEnv.VOLCES_PLAN_KEY_1 || "",
+          VOLCES_PLAN_KEY_2: agentEnv.LLM_UPSTREAM_KEY_2 || agentEnv.VOLCES_PLAN_KEY_2 || "",
           // Postgres DB for the admin UI (Prisma). litellm shells out to `prisma` +
           // `node` at startup (`prisma db push`), so PATH must include the venv bin
           // (where `prisma` lives) + the bundled node bin (where `node` lives), and

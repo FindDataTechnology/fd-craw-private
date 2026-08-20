@@ -26,20 +26,39 @@ import * as migrate from "./migrate.js";
 import * as cron from "./cron.js";
 import * as extensionStore from "./extension-store.js";
 import * as workdirStore from "./workdir-store.js";
+import * as catalog from "./catalog.js";
 import { resolveBundleSafe } from "./bundle-manifest.js";
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "localhost";
 
+// ── Optional forward-auth (AUTH_MODE=forward_auth) ───────────────────────────
+// Identity = proxy-injected X-Forwarded-Email / X-Forwarded-Groups headers
+// (Caddy forward_auth → oauth2-proxy → Logto). TRUST BOUNDARY: enabling this
+// asserts the server is reachable ONLY through the forward-auth proxy — bind
+// to localhost / firewall it, otherwise these headers are attacker-controlled.
+const AUTH_MODE = process.env.AUTH_MODE || "none";
+const authEnabled = AUTH_MODE === "forward_auth";
+
+function userFromHeaders(headers) {
+  const email = headers["x-forwarded-email"];
+  if (!email) return null;
+  const groups = String(headers["x-forwarded-groups"] || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return { email: String(email), groups };
+}
+
 // ── Custom provider config (Volces / 火山引擎) ────────────────────────────────
 
-// Volces (火山引擎) chat provider is optional: an unset VOLCES_API_KEY means the
+// Volces (火山引擎) chat provider is optional: an unset LLM_API_KEY means the
 // provider is not registered and the server starts with no chat provider (chat
 // non-functional, logged), mirroring the LiteLLM graceful-degrade convention.
-// The documents RAG reads VOLCES_API_KEY separately via initStore().
-const VOLCES_API_KEY = process.env.VOLCES_API_KEY?.trim();
-const VOLCES_BASE_URL = process.env.VOLCES_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3";
-const volcesEnabled = Boolean(VOLCES_API_KEY);
+// The documents RAG reads LLM_API_KEY separately via initStore().
+const LLM_API_KEY = process.env.LLM_API_KEY?.trim();
+const LLM_BASE_URL = process.env.LLM_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3";
+const volcesEnabled = Boolean(LLM_API_KEY);
 
 // Default chat model. When set, the agent session starts on this model id.
 // Otherwise the server prefers the first LiteLLM model (when LiteLLM is configured)
@@ -50,7 +69,7 @@ const DEFAULT_MODEL = process.env.DEFAULT_MODEL || "";
 // The extension reads LITELLM_BASE_URL / LITELLM_API_KEY from the environment
 // (loaded from .env by dotenv/config above). When either is missing, the
 // litellm provider is skipped so the server falls back to Volces (when
-// VOLCES_API_KEY is set) or starts with no chat provider (logged).
+// LLM_API_KEY is set) or starts with no chat provider (logged).
 const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL?.trim();
 const LITELLM_API_KEY = process.env.LITELLM_API_KEY?.trim();
 const litellmEnabled = Boolean(LITELLM_BASE_URL && LITELLM_API_KEY);
@@ -88,11 +107,32 @@ function isLitellmModel(m) {
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+// noServer + manual handleUpgrade so WS upgrades pass the same forward-auth
+// gate as HTTP requests (missing identity ⇒ handshake rejected with 401).
+const wss = new WebSocketServer({ noServer: true });
+server.on("upgrade", (req, socket, head) => {
+  if (authEnabled && !userFromHeaders(req.headers)) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+});
 
 // Document collection: JSON bodies for text/url submissions; multipart file
 // uploads are kept in memory (LlamaIndex readers read the buffer directly).
 app.use(express.json());
+
+// Forward-auth gate: when enabled, every HTTP request needs a proxy-injected
+// identity; attaches req.user = { email, groups } for downstream handlers.
+app.use((req, res, next) => {
+  if (!authEnabled) return next();
+  const user = userFromHeaders(req.headers);
+  if (!user) return res.status(401).json({ error: "Authentication required" });
+  req.user = user;
+  next();
+});
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
@@ -102,6 +142,9 @@ const upload = multer({
 
 let session = null;
 let isStreaming = false;
+// Active catalog agent: "local" = the pi session above; any other id = a
+// catalog agent-remote (chat mode) entry that prompts are forked to.
+let currentAgentId = "local";
 // True once any text_delta has been streamed during the current agent turn.
 // Used by the agent_end handler to avoid re-broadcasting the full assistant
 // text (which would duplicate what streaming already delivered), while still
@@ -249,7 +292,7 @@ async function expandSkillContent(skill, args) {
 
 async function initAgent() {
   agentAuthStorage = AuthStorage.create();
-  agentAuthStorage.setRuntimeApiKey("volces", VOLCES_API_KEY);
+  agentAuthStorage.setRuntimeApiKey("volces", LLM_API_KEY);
   modelRegistry = ModelRegistry.create(agentAuthStorage);
 
   // Connect MCP servers first so their tools are discovered before the session
@@ -342,7 +385,7 @@ async function initAgent() {
     console.log(`[mcp] Registering ${agentMcpToolNames.length} MCP tool(s): ${agentMcpToolNames.join(", ")}`);
   }
 
-  // Native Volces chat provider. Built only when VOLCES_API_KEY is set AND
+  // Native Volces chat provider. Built only when LLM_API_KEY is set AND
   // LiteLLM is NOT configured (see extensionFactories), so the agent stays
   // LiteLLM-only when LiteLLM is available and degrades to no chat provider
   // when neither is configured. The documents RAG uses Volces directly via
@@ -350,8 +393,8 @@ async function initAgent() {
   agentProviderFactory = volcesEnabled ? (pi) => {
     pi.registerProvider("volces", {
       name: "Volces Coding",
-      baseUrl: VOLCES_BASE_URL,
-      apiKey: VOLCES_API_KEY,
+      baseUrl: LLM_BASE_URL,
+      apiKey: LLM_API_KEY,
       api: "openai-completions",
       models: [
         {
@@ -731,6 +774,80 @@ async function switchModelTo(id, ws) {
   }
 }
 
+// ── Catalog agent switching (mirrors the model-selection messages) ───────────
+
+// Agents the agent switcher offers: the local pi session plus visible
+// chat-mode remote agents (link agents are external pages, not chat targets).
+function switchableAgents(user) {
+  return catalog
+    .getCatalogFor(user ?? null)
+    .agents.filter((a) => a.type === "agent-local" || (a.type === "agent-remote" && a.mode === "chat"));
+}
+
+// Switch the active catalog agent by id. Same contract as switchModelTo:
+// rejected while streaming, errors go to the requesting client only.
+function switchAgentTo(id, ws) {
+  if (isStreaming) {
+    ws.send(JSON.stringify({ type: "error", message: "Cannot switch agent while the agent is responding" }));
+    return false;
+  }
+  const target = switchableAgents(ws.user).find((a) => a.id === id);
+  if (!target) {
+    ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${id}` }));
+    return false;
+  }
+  if (id === currentAgentId) return true;
+  currentAgentId = id;
+  broadcast({ type: "agent_changed", id });
+  return true;
+}
+
+// Fork a prompt to a remote OpenAI-compat endpoint: POST <baseUrl>/chat/completions
+// with stream:true and translate SSE deltas into the existing text events, so the
+// frontend renders remote agents exactly like the local one. v1 ceiling: remote
+// turns are broadcast-only (no chat-history persistence) and one at a time — a
+// prompt while a remote turn is streaming is rejected instead of steered.
+async function streamRemoteChat(entry, text) {
+  isStreaming = true; // set synchronously (same contract as the local prompt path)
+  broadcast({ type: "agent_start" });
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (entry.apiKey) headers.Authorization = `Bearer ${entry.apiKey}`;
+    const r = await fetch(`${entry.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model: entry.model, messages: [{ role: "user", content: text }], stream: true }),
+      signal: AbortSignal.timeout(300_000),
+    });
+    if (!r.ok) throw new Error(`${entry.id} HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    const decoder = new TextDecoder();
+    let buf = "";
+    for await (const chunk of r.body) {
+      buf += decoder.decode(chunk, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      for (const line of lines) {
+        const s = line.trim();
+        if (!s.startsWith("data:")) continue;
+        const payload = s.slice(5).trim();
+        if (payload === "[DONE]") continue;
+        let delta;
+        try {
+          delta = JSON.parse(payload).choices?.[0]?.delta?.content;
+        } catch {
+          continue; // ponytail: skip malformed SSE lines rather than kill the stream
+        }
+        if (delta) broadcast({ type: "text", delta });
+      }
+    }
+  } catch (err) {
+    console.error(`Remote agent '${entry.id}' error:`, err.message);
+    broadcast({ type: "error", message: err.message });
+  } finally {
+    finishTurn();
+  }
+}
+
 // Handle `/model [id]`: with no id, report the current model + available models;
 // with an id, switch (via switchModelTo) and emit a command_use block describing the result.
 async function handleModelCommand(args, ws) {
@@ -781,7 +898,9 @@ async function handleNewCommand(ws) {
 
 // ── WebSocket handling ───────────────────────────────────────────────────────
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  // Identity is fixed at upgrade time (v1 ceiling: no re-auth mid-connection).
+  ws.user = authEnabled ? userFromHeaders(req.headers) : null;
   clients.add(ws);
   console.log(`Client connected (${clients.size} total)`);
 
@@ -794,6 +913,9 @@ wss.on("connection", (ws) => {
       ? currentModelId.slice(8) // "litellm/".length = 8
       : currentModelId;
   ws.send(JSON.stringify({ type: "current_model", id: broadcastId }));
+  // Sync the agent switcher: active catalog agent + switchable agent list.
+  ws.send(JSON.stringify({ type: "current_agent", id: currentAgentId }));
+  ws.send(JSON.stringify({ type: "agents", agents: switchableAgents(ws.user) }));
   // Send the chat session list + current session so the sidebar syncs on connect.
   if (session) {
     chatHistory
@@ -882,6 +1004,26 @@ wss.on("connection", (ws) => {
           // Normal prompt (includes unknown "/…" commands that fall through):
           // echo the user message and forward.
           broadcast({ type: "user", text });
+
+          // Remote-agent fork: when a chat-mode catalog agent is active, stream
+          // from its OpenAI-compat endpoint instead of the local session. The
+          // user message is echoed above but NOT recorded — remote turns are
+          // not persisted into chat-history (v1 ceiling).
+          if (currentAgentId !== "local") {
+            if (isStreaming) {
+              ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
+              break;
+            }
+            const entry = catalog.getAgentEntry(currentAgentId);
+            if (!entry) {
+              // Catalog changed under us (entry removed / no longer visible).
+              ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${currentAgentId}` }));
+              break;
+            }
+            await streamRemoteChat(entry, text);
+            break;
+          }
+
           // Mirror the user prompt into the SQLite project database.
           chatHistory.recordMessage(chatHistory.currentSessionId(), "user", text);
 
@@ -915,6 +1057,16 @@ wss.on("connection", (ws) => {
 
       case "set_model": {
         await switchModelTo(data.id, ws);
+        break;
+      }
+
+      case "list_agents": {
+        ws.send(JSON.stringify({ type: "agents", agents: switchableAgents(ws.user) }));
+        break;
+      }
+
+      case "set_agent": {
+        switchAgentTo(data.id, ws);
         break;
       }
 
@@ -1233,6 +1385,70 @@ app.use(express.static(webDist));
 // SPA's API calls).
 app.get(/^\/(?!api\/|oc-web|litellm-web|assets\/|v1\/|v2\/|ui|key\/|spend\/|model\/|models|sso\/|login|logout|user\/|get_image|get_favicon|get\/|litellm-asset-prefix\/).*/, (_req, res) => {
   res.sendFile(path.join(webDist, "index.html"));
+});
+
+// Identity introspection: lets the frontend render login state without
+// inspecting headers. email/groups are null when auth is off.
+app.get("/api/auth/me", (req, res) => {
+  res.json({
+    mode: AUTH_MODE,
+    email: req.user?.email ?? null,
+    groups: req.user?.groups ?? null,
+  });
+});
+
+// ── Agent & app catalog (agents.json + AGENTS_CONFIG_URL, see catalog.js) ────
+// GET is role-filtered + redacted per requesting user; POST refresh is
+// admin-gated when auth is on, open to any client when auth is off.
+app.get("/api/catalog", (req, res) => {
+  res.json(catalog.getCatalogFor(req.user ?? null));
+});
+
+app.post("/api/catalog/refresh", async (req, res) => {
+  if (authEnabled && !req.user?.groups?.includes("admin")) {
+    return res.status(403).json({ error: "Admin group required" });
+  }
+  try {
+    res.json(await catalog.refresh(req.user ?? null));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Nango connect broker (nango-connect app entries) ─────────────────────────
+// Mirrors connect-app/server.mjs: mint a connect session tagged to the
+// requesting user (org = email domain) so Nango isolates their connections,
+// and hand back the Connect UI URL. Requires forward-auth — there is no
+// identity to tag otherwise. The Nango secret stays server-side.
+app.post("/api/apps/:id/connect", async (req, res) => {
+  if (!authEnabled || !req.user?.email) {
+    return res.status(400).json({ error: "Connect requires AUTH_MODE=forward_auth" });
+  }
+  const entry = catalog.getAppEntry(req.params.id);
+  if (!entry || entry.kind !== "nango-connect") {
+    return res.status(404).json({ error: `Unknown nango-connect app: ${req.params.id}` });
+  }
+  const secret = process.env.NANGO_SECRET_KEY;
+  if (!secret) return res.status(500).json({ error: "NANGO_SECRET_KEY not set" });
+  const email = req.user.email;
+  try {
+    const r = await fetch(`${entry.nangoUrl.replace(/\/+$/, "")}/connect/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` },
+      body: JSON.stringify({
+        tags: { end_user_id: email, end_user_email: email, organization_id: email.split("@")[1] },
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) throw new Error(`Nango HTTP ${r.status}`);
+    const data = await r.json();
+    const ui = (entry.connectUiUrl || entry.nangoUrl).replace(/\/+$/, "");
+    const api = encodeURIComponent((entry.apiUrl || entry.nangoUrl).replace(/\/+$/, ""));
+    res.json({ url: `${ui}/?session_token=${data.token}&apiURL=${api}` });
+  } catch (err) {
+    console.error(`[apps] connect session for '${req.params.id}' failed:`, err.message);
+    res.status(502).json({ error: err.message });
+  }
 });
 
 // ── Server config (e.g. LiteLLM management UI link) ──────────────────────────
@@ -2035,12 +2251,12 @@ await workdirStore.initWorkdirStore();
 await db.initDb();
 // Initialize document store (PageIndex indexing, LlamaIndex framework)
 if (db.isDbReady()) {
-  if (!VOLCES_API_KEY) {
-    console.warn("[documents] VOLCES_API_KEY not set; documents RAG indexing/query calls will fail at call time");
+  if (!LLM_API_KEY) {
+    console.warn("[documents] LLM_API_KEY not set; documents RAG indexing/query calls will fail at call time");
   }
   await documents.initStore({
-    baseUrl: VOLCES_BASE_URL,
-    apiKey: VOLCES_API_KEY,
+    baseUrl: LLM_BASE_URL,
+    apiKey: LLM_API_KEY,
     model: documents.DOCUMENTS_MODEL,
     broadcast,
   });
@@ -2055,6 +2271,8 @@ await chatHistory.importLegacySessions();
 // the legacy stores. Runs after importLegacySessions so chat-history-store data
 // flows through the SDK store into SQLite.
 await migrate.runLegacyMigrations();
+
+await catalog.initCatalog({ broadcast });
 
 // Initialize cron module
 await cron.initCron({
@@ -2075,6 +2293,7 @@ server.listen(PORT, HOST, () => {
 
 async function shutdown() {
   cron.shutdown();
+  catalog.stopCatalog();
   try {
     await closeMcpClients(mcpClients);
   } catch (err) {

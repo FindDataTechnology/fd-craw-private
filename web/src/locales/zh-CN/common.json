@@ -15,7 +15,16 @@
     "extensions": "🧩 扩展",
     "knowledge": "📚 Knowledge",
     "openconnector": "🔌 OpenConnector",
-    "litellm": "🧭 LiteLLM"
+    "litellm": "🧭 LiteLLM",
+    "agents": "🤖 智能体"
+  },
+  "agentsPage": {
+    "title": "智能体与应用",
+    "agents": "智能体",
+    "apps": "应用",
+    "connect": "连接",
+    "connecting": "连接中…",
+    "loadFailed": "加载目录失败：{{error}}"
   },
   "sidebar": {
     "brand": "Platform",

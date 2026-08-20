@@ -21,6 +21,10 @@ export type ServerMessage =
   | { type: "current_model"; id: string | null }
   | { type: "models"; models: ModelInfo[] }
   | { type: "model_changed"; id: string | null }
+  | { type: "agents"; agents: AgentInfo[] }
+  | { type: "current_agent"; id: string }
+  | { type: "agent_changed"; id: string }
+  | { type: "catalog_changed" }
   | { type: "skills"; skills: SkillInfo[] }
   | { type: "documents_status"; [k: string]: unknown }
   | { type: "sessions"; sessions: SessionMeta[]; current?: string }
@@ -46,6 +50,24 @@ export interface ModelInfo {
   provider?: string;
 }
 
+// Catalog agent (GET /api/catalog / the `agents` WS message). Serialized
+// server-side — secrets (apiKey) never reach the client.
+export interface AgentInfo {
+  id: string;
+  type: "agent-local" | "agent-remote";
+  name?: string;
+  mode?: "chat" | "link";
+  model?: string;
+  url?: string;
+}
+
+export interface AppInfo {
+  id: string;
+  name?: string;
+  kind: "link" | "nango-connect";
+  url?: string;
+}
+
 export interface SkillInfo {
   name: string;
   description?: string;
@@ -69,6 +91,8 @@ export type ClientMessage =
   | { type: "prompt"; text: string }
   | { type: "list_models" }
   | { type: "set_model"; id: string }
+  | { type: "list_agents" }
+  | { type: "set_agent"; id: string }
   | { type: "list_skills" }
   | { type: "list_sessions" }
   | { type: "new_session" }

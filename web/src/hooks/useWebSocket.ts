@@ -57,6 +57,7 @@ export function useWebSocket() {
         attempt = 0;
         setStatus("connected");
         ws.send(JSON.stringify({ type: "list_models" } satisfies ClientMessage));
+        ws.send(JSON.stringify({ type: "list_agents" } satisfies ClientMessage));
         ws.send(JSON.stringify({ type: "list_skills" } satisfies ClientMessage));
         ws.send(JSON.stringify({ type: "list_sessions" } satisfies ClientMessage));
       };

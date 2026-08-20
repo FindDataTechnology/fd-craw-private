@@ -15,8 +15,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const SETTING_KEYS = [
-  "VOLCES_API_KEY",
-  "VOLCES_BASE_URL",
+  "LLM_API_KEY",
+  "LLM_BASE_URL",
+  "LLM_UPSTREAM_BASE_URL",
+  "LLM_UPSTREAM_KEY_1",
+  "LLM_UPSTREAM_KEY_2",
   "VOLCES_PLAN_BASE_URL",
   "VOLCES_PLAN_KEY_1",
   "VOLCES_PLAN_KEY_2",

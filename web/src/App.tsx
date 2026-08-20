@@ -9,6 +9,7 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
 import { ExtensionsPage } from "@/pages/ExtensionsPage";
 import { OpenConnectorPage, LiteLLMPage } from "@/pages/EmbeddedServicePages";
+import { AgentsPage } from "@/pages/AgentsPage";
 
 export default function App() {
   const { send } = useWebSocket();
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/extensions" element={<ExtensionsPage />} />
+        <Route path="/agents" element={<AgentsPage />} />
         <Route path="/openconnector" element={<OpenConnectorPage />} />
         <Route path="/litellm" element={<LiteLLMPage />} />
         <Route path="*" element={<Navigate to="/chat" replace />} />

@@ -38,8 +38,8 @@ export function openPreferencesWindow() {
 // IPC handlers registered once when the app starts
 export function registerPreferencesIpc(supervisor) {
   // Allow only these keys to be read/written
-  const ALLOWED_VISIBLE_KEYS = ["VOLCES_API_KEY", "VOLCES_BASE_URL", "DEFAULT_MODEL", "DOCUMENTS_MODEL", "LITELLM_API_KEY"];
-  const ALLOWED_WRITE_KEYS = ["VOLCES_API_KEY", "VOLCES_BASE_URL", "DEFAULT_MODEL", "DOCUMENTS_MODEL"];
+  const ALLOWED_VISIBLE_KEYS = ["LLM_API_KEY", "LLM_BASE_URL", "DEFAULT_MODEL", "DOCUMENTS_MODEL", "LITELLM_API_KEY"];
+  const ALLOWED_WRITE_KEYS = ["LLM_API_KEY", "LLM_BASE_URL", "DEFAULT_MODEL", "DOCUMENTS_MODEL"];
   const ALLOWED_SERVICE_RESTART = ["server-js", "litellm", "openconnector"];
 
   // Get whitelisted visible settings
