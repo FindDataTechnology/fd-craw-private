@@ -15,6 +15,7 @@ import * as db from "./db.js";
 import * as migrate from "./migrate.js";
 import * as cron from "./cron.js";
 import * as extensionStore from "./extension-store.js";
+import * as skillMaterialize from "./skill-materialize.js";
 import * as workdirStore from "./workdir-store.js";
 import * as catalog from "./catalog.js";
 import { resolveBundleSafe } from "./bundle-manifest.js";
@@ -134,10 +135,10 @@ let defaultModel = null;
 // dsh bridge + session id.
 let dshBridge = null;
 let dshSessionId = null;
-// dsh MCP live-reload (Task 4.5): the REST routes mutate the DB, then call this
-// to regenerate the mcp patch + restart the child (no stock reload RPC).
-// ponytail: restart drops in-memory session state (v1 ceiling; design Q2).
-let dshRegenMcp = null;
+// dsh MCP live-reload: REST routes mutate the DB, then call this to rewrite the
+// watched mcp.patch.yml so cordis HMR hot-swaps dsh-mcp-client (no process restart).
+// Falls back to restart() only when PLATFORM_MCP_HOTSWAP=0.
+let dshUpdateMcp = null;
 // Declared model list from the profile generator. Populated by initDshAgent
 // from writeLlmProfile(); the generator's declared list IS the dsh model list —
 // dsh exposes no stock listModels RPC, so server.js sources the selector from
@@ -236,6 +237,29 @@ async function expandSkillContent(skill, args) {
   return `${body}${argSection}`;
 }
 
+// Expand @doc:<id> reference tokens into the ingested document's source text so
+// the agent sees the attachment content in context (design D4). Mirrors how
+// /skill: tokens are expanded before session.prompt(). Unknown/missing ids are
+// replaced with a short note so the prompt stays coherent. No new dependency —
+// reuses documents.getDocumentContent (the same path /api/documents/:id serves).
+async function expandDocRefs(text) {
+  if (!text.includes("@doc:")) return text;
+  const refs = [...text.matchAll(/@doc:([A-Za-z0-9_-]+)/g)];
+  if (!refs.length) return text;
+  let out = text;
+  for (const m of refs) {
+    const id = m[1];
+    let body;
+    try { body = await documents.getDocumentContent(id); }
+    catch (e) { console.warn(`[doc] @doc:${id} lookup failed: ${e.message}`); }
+    const snippet = body && body.trim()
+      ? body.trim().slice(0, 12000)
+      : `(document ${id} is unavailable or empty)`;
+    out = out.replaceAll(m[0], `\n\n--- attached document ${id} ---\n${snippet}\n--- end document ${id} ---\n`);
+  }
+  return out;
+}
+
 // Scan the project skills/ dir (dir bundles `<name>/SKILL.md` + flat `<name>.md`)
 // for [{name, description, filePath}]. list_skills + /skill: expansion source
 // the same dir the skill-filesystem plugin's customSkillDirs points at (Task 5.3).
@@ -310,7 +334,7 @@ function seedStartupMcpConfigs(mcpJsonServers, ocMcpConfig) {
 // now it only emits `done` on turn completion (the 1.5 round-trip placeholder).
 async function initDshAgent() {
   const { DshBridge } = await import("./dsh-bridge.js");
-  const { writeLlmProfile, writeMcpPatch, writeSkillsPatch } = await import("./dsh-profile.js");
+  const { writeLlmProfile, writeMcpPatch, writeSkillsPatch, ensureCredentialsStore, buildScrubbedEnv } = await import("./dsh-profile.js");
 
   // Write the dsh llm-adapter profile BEFORE spawning dsh so the runtime
   // loads the Volces/LiteLLM routes at initialize. The generator's declared
@@ -318,6 +342,11 @@ async function initDshAgent() {
   // the selector from it (Task 3.3). Empty list = dormant (Task 3.6).
   const { models } = await writeLlmProfile();
   dshModels = models;
+
+  // Seed the dsh-credentials-local store from process.env (design D3) and build
+  // a scrubbed child env so the file is the winning key-resolution layer.
+  try { ensureCredentialsStore(); } catch (e) { console.warn(`[dsh] credentials store init failed: ${e?.message || e}`); }
+  const dshChildEnv = buildScrubbedEnv();
 
   // Seed startup MCP configs into the extensions DB so the UI "Installed" tab
   // shows them (source=startup). writeMcpPatch reads mcp.json directly for the
@@ -333,9 +362,35 @@ async function initDshAgent() {
   const mcpPatchPath = await writeMcpPatch();
 
   // Write the skill-filesystem config override (customSkillDirs) so dsh
-  // discovers the project's skills/ dir. Static; written once, no
-  // live-reload (Task 5.1).
-  const skillsPatchPath = writeSkillsPatch();
+  // discovers the project's skills/ dir AND the DB-custom-skill materialization
+  // dir. The materialization dir is rebuilt from the DB first (design D2): DB
+  // skills become <name>/SKILL.md files dsh-skill-filesystem Chokidar-watches,
+  // so they hot-reload at runtime on CRUD (no restart).
+  let skillMaterializeDir = null;
+  try {
+    const { rebuildFromDb, writeSkill, MATERIALIZE_DIR } = await import("./skill-materialize.js");
+    if (db.isDbReady()) {
+      const { failures } = rebuildFromDb(extensionStore.listCustomSkills);
+      // Reconciliation pass: retry rows that failed the first write once,
+      // then drop still-dirty rows from the materialized set (the DB remains
+      // the durable store; the next CRUD or restart re-attempts them).
+      if (failures.length) {
+        const rows = extensionStore.listCustomSkills().filter((s) => failures.includes(s.name));
+        const stillDirty = [];
+        for (const s of rows) {
+          try { if (!writeSkill(s)) stillDirty.push(s.name); }
+          catch (e) { stillDirty.push(s.name); console.warn(`[skills] retry failed for "${s.name}": ${e.message}`); }
+        }
+        if (stillDirty.length) console.warn(`[skills] materialization still dirty after retry: ${stillDirty.join(", ")}`);
+      }
+    }
+    skillMaterializeDir = MATERIALIZE_DIR;
+  } catch (e) {
+    console.warn(`[skills] materialization dir unavailable: ${e?.message || e}`);
+  }
+  const skillsDirs = [path.resolve("skills")];
+  if (skillMaterializeDir) skillsDirs.push(skillMaterializeDir);
+  const skillsPatchPath = writeSkillsPatch(skillsDirs);
 
   // Default model: DEFAULT_MODEL env if declared, else first declared model.
   let provider = "deepseek-official";
@@ -356,17 +411,42 @@ async function initDshAgent() {
     onEvent: handleDshEvent,
     mcpPatchPath,
     skillsPatchPath,
+    env: dshChildEnv,
   });
   await dshBridge.start();
-  // MCP live-reload (Task 4.5): the REST routes mutate the DB then call this to
-  // regenerate the mcp patch + restart the child with the new --patch (dsh has
-  // no stock reload-profile RPC). dsh persists sessions by id, so a restart
-  // resumes the conversation from disk.
-  // ponytail: no regen serialization — concurrent REST calls may overlap
-  // restarts; serialize if a rapid edit storm ever wedges the child.
-  dshRegenMcp = async () => {
-    const patchPath = await writeMcpPatch();
-    await dshBridge.restart({ mcpPatchPath: patchPath });
+  // MCP live-reload (design D1): the REST routes mutate the DB then call this to
+  // rewrite mcp.patch.yml in place — cordis-plugin-include/hmr watches that file
+  // (confirmed by source inspection; see design Open Question 1) and hot-swaps
+  // dsh-mcp-client (disconnect/reconnect the affected server, no process restart).
+  // Single-flight mutex + debounce serialize overlapping mutations; restart() is
+  // the documented fallback (PLATFORM_MCP_HOTSWAP=0, or hot-swap never settles).
+  let mcpChain = Promise.resolve();
+  let mcpPending = false;
+  const hotswapEnabled = process.env.PLATFORM_MCP_HOTSWAP !== "0";
+  const HOTSWAP_SETTLE_MS = Number(process.env.PLATFORM_MCP_HOTSWAP_SETTLE_MS || 800);
+  dshUpdateMcp = () => {
+    mcpPending = true;
+    const run = mcpChain.then(async () => {
+      mcpPending = false;
+      const patchPath = await writeMcpPatch();
+      if (hotswapEnabled && patchPath) {
+        // The patch file was rewritten atomically (temp+rename inside
+        // writeMcpPatch); cordis' Chokidar watcher fires refresh() → dsh-mcp-client
+        // hot-swaps. No RPC confirms the swap, so settle on a fixed delay — dsh's
+        // own debounce is ~100ms; the server-side settle covers reconnect + initial
+        // tools/list. ponytail: no confirmation signal exists in the dsh SDK
+        // protocol; a settle delay is the simplest bound that lets "applying…" clear.
+        await new Promise((r) => setTimeout(r, HOTSWAP_SETTLE_MS));
+        return;
+      }
+      // Fallback: hot-swap disabled or no servers (empty patch). Restart re-spawns
+      // the child with the new --patch; dsh persists sessions by id so the
+      // conversation resumes from disk. Serialized behind mcpChain, so concurrent
+      // mutations can't overlap-corrupt the restart.
+      if (patchPath !== undefined) await dshBridge.restart({ mcpPatchPath: patchPath });
+    });
+    mcpChain = run.then(() => {}, () => {});
+    return run;
   };
   // Session shim: dsh prompt resolves immediately with the message id; the
   // turn plays out as notifications. isStreaming is set here synchronously
@@ -500,19 +580,6 @@ function handleDshEvent(notif) {
 }
 
 
-// Rebuild the agent session bound to a new working directory. dsh fixes cwd at
-// spawn time (no runtime setter), so switching workdir would require a full
-// bridge restart — a v1 ceiling (design Q2). Reject with a clear message so the
-// UI can surface it. Rejected while streaming to avoid rebuilding mid-turn.
-async function rebuildAgentForWorkdir(workdir) {
-  if (isStreaming) throw new Error("Cannot change working directory while the agent is responding");
-  if (!workdir) throw new Error("No working directory provided");
-  // ponytail: dsh fixes cwd at spawn time; switching workdir requires a full
-  // restart (v1 ceiling — design Q2). Reject with a clear message rather than
-  // silently no-op, so the UI can surface it.
-  throw new Error("Working-directory switching is not supported under the dsh runtime");
-}
-
 // Start a new chat session: create a fresh SDK session and reset the agent's
 // in-memory messages. Rejected while streaming to avoid switching mid-turn.
 async function createNewSession() {
@@ -545,6 +612,26 @@ async function switchToSession(id) {
 // model list (no stock listModels RPC). Sourced once at initDshAgent from
 // writeLlmProfile().
 async function getAvailableModels() {
+  return dshModels.map((m) => ({ id: m.id, name: m.name || m.id, provider: m.provider }));
+}
+
+// Refresh the model list at runtime (design D3 / spike 2). Re-runs writeLlmProfile
+// so LiteLLM /v1/models is re-discovered and settings.yaml is rewritten; dsh-
+// settings-file hot-reloads the llm-pi-ai: section and dsh-llm-pi-ai's onChange
+// re-registers the adapter routes + model directory live (no restart). dshModels
+// is updated from the fresh declared list and clients are told to refetch.
+// ponytail: the active model is left as-is; a switch to a newly-appeared model
+// still goes through switchModelTo (which restarts — the per-session model is an
+// initialize arg, a genuine ceiling). This only refreshes the *selector*.
+let dshProfileMod = null;
+async function refreshDshModels() {
+  if (!dshProfileMod) dshProfileMod = await import("./dsh-profile.js");
+  const { models } = await dshProfileMod.writeLlmProfile();
+  const before = dshModels.map((m) => m.id).join(",");
+  dshModels = models;
+  const after = dshModels.map((m) => m.id).join(",");
+  if (before !== after) console.log(`[dsh] model list refreshed: ${after || "(none)"}`);
+  broadcast({ type: "models", models: await getAvailableModels() });
   return dshModels.map((m) => ({ id: m.id, name: m.name || m.id, provider: m.provider }));
 }
 
@@ -615,6 +702,11 @@ function switchAgentTo(id, ws) {
 async function streamRemoteChat(entry, text) {
   isStreaming = true; // set synchronously (same contract as the local prompt path)
   broadcast({ type: "agent_start" });
+  // Persist the user turn to the SQLite mirror (design D6) — closes the v1
+  // ceiling where remote turns were broadcast-only and a browser close/reopen
+  // left a dangling user message with no reply.
+  chatHistory.recordMessage(chatHistory.currentSessionId(), "user", text);
+  let assistantText = "";
   try {
     const headers = { "Content-Type": "application/json" };
     if (entry.apiKey) headers.Authorization = `Bearer ${entry.apiKey}`;
@@ -642,13 +734,18 @@ async function streamRemoteChat(entry, text) {
         } catch {
           continue; // ponytail: skip malformed SSE lines rather than kill the stream
         }
-        if (delta) broadcast({ type: "text", delta });
+        if (delta) {
+          assistantText += delta;
+          broadcast({ type: "text", delta });
+        }
       }
     }
   } catch (err) {
     console.error(`Remote agent '${entry.id}' error:`, err.message);
     broadcast({ type: "error", message: err.message });
   } finally {
+    // Persist the assistant's final aggregated text (design D6).
+    if (assistantText) chatHistory.recordMessage(chatHistory.currentSessionId(), "assistant", assistantText);
     finishTurn();
   }
 }
@@ -731,13 +828,6 @@ wss.on("connection", (ws, req) => {
         )
       )
       .catch((e) => console.error("[chat-history] list on connect failed:", e.message));
-    // Send the current session's workdir so the sidebar shows it on connect.
-    const curId = chatHistory.currentSessionId();
-    if (curId) {
-      workdirStore.getWorkdir(curId).then((wd) => {
-        if (wd) ws.send(JSON.stringify({ type: "workdir", path: wd }));
-      }).catch((e) => console.error("[workdir] getWorkdir on connect failed:", e.message));
-    }
   }
   // Send initial dashboard state on connect
   ws.send(JSON.stringify({ type: "dashboard_update", state: cron.getDashboardState() }));
@@ -781,6 +871,8 @@ wss.on("connection", (ws, req) => {
               console.warn(`[skill] Failed to expand "${cmd.name}": ${err.message}`);
             }
           }
+          // Expand @doc:<id> attachment references (design D4).
+          promptText = await expandDocRefs(promptText);
 
           // No steer mechanism through the bridge; reject concurrent prompts
           // host-side (Task 2.7) rather than queueing a second turn.
@@ -815,8 +907,8 @@ wss.on("connection", (ws, req) => {
 
           // Remote-agent fork: when a chat-mode catalog agent is active, stream
           // from its OpenAI-compat endpoint instead of the local session. The
-          // user message is echoed above but NOT recorded — remote turns are
-          // not persisted into chat-history (v1 ceiling).
+          // user message is echoed above; streamRemoteChat persists both the
+          // user and assistant turns to chat-history (design D6).
           if (currentAgentId !== "local") {
             if (isStreaming) {
               ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
@@ -828,7 +920,8 @@ wss.on("connection", (ws, req) => {
               ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${currentAgentId}` }));
               break;
             }
-            await streamRemoteChat(entry, text);
+            // Expand @doc:<id> attachment references for the remote agent too.
+            await streamRemoteChat(entry, await expandDocRefs(text));
             break;
           }
 
@@ -845,8 +938,11 @@ wss.on("connection", (ws, req) => {
           // Set in-flight synchronously (before the first await) so a concurrent
           // prompt is rejected. agent_start sets it again later (idempotent).
           isStreaming = true;
+          // Expand @doc:<id> attachment references into the document content the
+          // agent sees (design D4); the user message above keeps the raw refs.
+          const promptWithDocs = await expandDocRefs(text);
           try {
-            await session.prompt(text);
+            await session.prompt(promptWithDocs);
           } catch (err) {
             console.error("Agent error:", err.message);
             broadcast({ type: "error", message: err.message });
@@ -975,49 +1071,16 @@ wss.on("connection", (ws, req) => {
 
       case "switch_session": {
         try {
-          // If the target session has a different workdir than the current agent
-          // cwd, rebuild the agent bound to that workdir first (the SDK fixes cwd
-          // at session creation). Otherwise just repoint the session manager.
-          const targetWorkdir = await workdirStore.getWorkdir(data.id);
-          const currentCwd = session?.sessionManager?.getCwd?.() ?? process.cwd();
-          if (targetWorkdir && targetWorkdir !== currentCwd) {
-            await rebuildAgentForWorkdir(targetWorkdir);
-          }
           const result = await switchToSession(data.id);
-          const workdir = targetWorkdir ?? null;
           broadcast({
             type: "session_loaded",
             id: result.id,
             title: result.title,
             messages: result.messages,
-            workdir,
           });
           broadcast({ type: "session_changed", id: result.id });
-          if (workdir) broadcast({ type: "workdir", path: workdir });
           const sessions = await chatHistory.listSessions();
           broadcast({ type: "sessions", sessions, current: result.id });
-        } catch (err) {
-          ws.send(JSON.stringify({ type: "error", message: err.message }));
-        }
-        break;
-      }
-
-      case "set_workdir": {
-        try {
-          const workdir = data.path;
-          if (!workdir) throw new Error("No working directory provided");
-          // Rebuild the agent bound to the new cwd, then persist the workdir for
-          // the current session so it is restored on switch-back.
-          await rebuildAgentForWorkdir(workdir);
-          const sessionId = chatHistory.currentSessionId();
-          if (sessionId) await workdirStore.setWorkdir(sessionId, workdir);
-          broadcast({ type: "workdir", path: workdir });
-          broadcast({
-            type: "command_use",
-            name: "workdir",
-            args: workdir,
-            message: `Working directory set to ${workdir}`,
-          });
         } catch (err) {
           ws.send(JSON.stringify({ type: "error", message: err.message }));
         }
@@ -1270,17 +1333,32 @@ app.get("/api/config", (_req, res) => {
   });
 });
 
-// Local bundled LiteLLM master key, so the user can sign into the management UI
-// (the bundled proxy's master_key is auto-generated server-side). Exposed ONLY
-// when LiteLLM is local (localhost) - for a remote proxy the user has their own
-// credentials and this returns null (no key reaches the browser in that case).
+// Refresh the dsh model list at runtime (design D3 / spike 2). Re-discovers
+// LiteLLM models via writeLlmProfile; dsh-settings-file hot-reloads the
+// llm-pi-ai: section so new models reach the adapter without a restart. The
+// active model is untouched. Admin-gated under forward-auth (a config mutation).
+app.post("/api/models/refresh", async (req, res) => {
+  if (authEnabled && !req.user?.groups?.includes("admin")) {
+    return res.status(403).json({ error: "Admin group required" });
+  }
+  try {
+    const models = await refreshDshModels();
+    res.json({ models });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// LiteLLM management-UI access info. The master key is NEVER sent to the
+// browser (design D3 — tokens never reach the browser): local mode auto-logs
+// into the /ui iframe via the server-set cookie (see the /litellm-web proxy +
+// login below); remote mode uses the user's own credentials. apiBaseUrl is
+// non-secret (already derivable from /api/config's litellmManagementUrl) and
+// returned only when LiteLLM is local so the user knows the proxy address.
 app.get("/api/litellm/credentials", (_req, res) => {
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(LITELLM_BASE_URL || "");
-  // apiBaseUrl is non-secret (already derivable from litellmManagementUrl) and lets the
-  // user call ${apiBaseUrl}/v1/... directly with the master key as bearer. masterKey
-  // stays gated on the local-proxy case; both are null for a remote proxy.
   res.json({
-    masterKey: isLocal ? (LITELLM_API_KEY || null) : null,
+    masterKey: null,
     apiBaseUrl: isLocal ? (LITELLM_BASE_URL || null) : null,
   });
 });
@@ -1372,7 +1450,7 @@ app.post("/api/extensions/mcp", async (req, res) => {
     // saved; the connection is best-effort.
     broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
     res.json(server);
-    dshRegenMcp?.().catch((e) => console.warn(`[extensions] dsh MCP regen failed: ${e.message}`));
+    dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
   } catch (err) {
     if (err.message?.includes("UNIQUE constraint")) {
       return res.status(409).json({ error: `MCP server "${name}" already exists` });
@@ -1401,8 +1479,9 @@ app.put("/api/extensions/mcp/:name", async (req, res) => {
     const configChanged = config && JSON.stringify(config) !== JSON.stringify(oldServer.config);
     const enabledChanged = enabled !== undefined && enabled !== oldServer.enabled;
     if (configChanged || enabledChanged) {
-      // dsh owns MCP connections via the profile; regenerate + restart.
-      dshRegenMcp?.().catch((e) => console.warn(`[extensions] dsh MCP regen failed: ${e.message}`));
+      // dsh owns MCP connections via the profile; rewrite the watched patch so
+      // cordis HMR hot-swaps dsh-mcp-client (no restart on the primary path).
+      dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
       broadcast({ type: "extensions_changed", resource: "mcp", action: "updated", name });
     }
     res.json(server);
@@ -1427,7 +1506,7 @@ app.delete("/api/extensions/mcp/:name", async (req, res) => {
   extensionStore.removeMcpServer(name);
   broadcast({ type: "extensions_changed", resource: "mcp", action: "removed", name });
   res.json({ ok: true });
-  dshRegenMcp?.().catch((e) => console.warn(`[extensions] dsh MCP regen failed: ${e.message}`));
+  dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
 });
 
 // Enable or disable an MCP server.
@@ -1448,10 +1527,10 @@ app.patch("/api/extensions/mcp/:name/enable", async (req, res) => {
     return res.status(400).json({ error: `MCP server "${name}" is locked (bundled) and cannot be disabled` });
   }
   const updated = extensionStore.toggleMcpServer(name, enabled);
-  // broadcast + respond immediately; regen (dsh) or connect/disconnect (pi) in background.
+  // broadcast + respond immediately; update (dsh hot-swap) in background.
   broadcast({ type: "extensions_changed", resource: "mcp", action: "toggled", name, enabled });
   res.json(updated);
-  dshRegenMcp?.().catch((e) => console.warn(`[extensions] dsh MCP regen failed: ${e.message}`));
+  dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
 });
 
 // List all skills (file-based + custom from database).
@@ -1497,6 +1576,8 @@ app.post("/api/extensions/skills", (req, res) => {
   }
   try {
     const skill = extensionStore.addCustomSkill({ name, description, content, enabled });
+    // Materialize as SKILL.md so dsh-skill-filesystem hot-loads it (no restart).
+    try { skillMaterialize.writeSkill(skill); } catch (e) { console.warn(`[skills] materialize write failed for "${name}": ${e.message}`); }
     broadcast({ type: "extensions_changed", resource: "skill", action: "added", name });
     res.json(skill);
   } catch (err) {
@@ -1527,6 +1608,9 @@ app.put("/api/extensions/skills/:name", (req, res) => {
     return res.status(404).json({ error: `Skill "${name}" not found` });
   }
   const updated = extensionStore.updateCustomSkill(name, { description, content, enabled });
+  // Rewrite the materialized SKILL.md (atomic temp+rename) so the watcher
+  // hot-reloads the new content; enabled=false removes the file instead.
+  try { skillMaterialize.writeSkill(updated); } catch (e) { console.warn(`[skills] materialize rewrite failed for "${name}": ${e.message}`); }
   broadcast({ type: "extensions_changed", resource: "skill", action: "updated", name });
   res.json(updated);
 });
@@ -1550,6 +1634,8 @@ app.delete("/api/extensions/skills/:name", (req, res) => {
     return res.status(404).json({ error: `Skill "${name}" not found` });
   }
   extensionStore.removeCustomSkill(name);
+  // Remove the materialized SKILL.md so the watcher hot-unloads it.
+  try { skillMaterialize.removeSkill(name); } catch (e) { console.warn(`[skills] materialize remove failed for "${name}": ${e.message}`); }
   broadcast({ type: "extensions_changed", resource: "skill", action: "removed", name });
   res.json({ ok: true });
 });
@@ -1577,6 +1663,9 @@ app.patch("/api/extensions/skills/:name/enable", (req, res) => {
     return res.status(404).json({ error: `Skill "${name}" not found` });
   }
   const updated = extensionStore.toggleCustomSkill(name, enabled);
+  // enabled → write SKILL.md (hot-load); disabled → remove it (hot-unload).
+  try { enabled ? skillMaterialize.writeSkill(updated) : skillMaterialize.removeSkill(name); }
+  catch (e) { console.warn(`[skills] materialize toggle failed for "${name}": ${e.message}`); }
   broadcast({ type: "extensions_changed", resource: "skill", action: "toggled", name, enabled });
   res.json(updated);
 });

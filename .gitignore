@@ -29,6 +29,8 @@ sessions-store/
 cron-store/
 knowledge-store.archive/
 test-results/
+# DB custom-skill materialization dir (runtime artifact; rebuilt from the DB)
+custom-skills/
 
 # Headless local-services launcher dev state (generated creds + seeded config,
 # written under PLATFORM_DATA_DIR / CWD by bootstrap/first-run.js). See local-services.js.

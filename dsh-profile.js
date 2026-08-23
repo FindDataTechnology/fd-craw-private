@@ -15,7 +15,7 @@
 // Writes atomically (temp+rename) and returns the declared model list so server.js
 // can source its model selector without a dsh listModels RPC (dsh has none stock;
 // the generator's declared list IS the dsh list — dsh loads exactly this file).
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, renameSync, chmodSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,6 +23,7 @@ import yaml from "js-yaml";
 
 const DSH_HOME = process.env.DSH_HOME || join(homedir(), ".dsh");
 const SETTINGS_PATH = join(DSH_HOME, "settings.yaml");
+const CREDENTIALS_PATH = join(DSH_HOME, ".credentials.yaml");
 
 // Volces gateway model catalog — deliberately scoped to 3 ids to keep the
 // model selector frozen. The gateway serves more (minimax-m3, qwen3.x, …);
@@ -161,6 +162,70 @@ export async function writeLlmProfile() {
   return { providers, models };
 }
 
+// ── Provider credentials via dsh-credentials-local (design D3) ───────────────
+// dsh-credentials-local resolves a key per-request with this layering (read-only
+// layers win): inherited process env > .credentials.yaml > .env files. To make
+// .credentials.yaml the live-rotatable source, the dsh child is spawned with a
+// scrubbed env that omits the upstream keys (see buildScrubbedEnv + dsh-bridge
+// `env` option), so the file is the winning layer. A rotated key written here
+// then reaches the next LLM request without a dsh restart — dsh-credentials-local
+// Chokidar-watches this file and re-resolves per request.
+//
+// Document is the version-1 layout dsh-credentials-local requires:
+//   version: 1
+//   refs:
+//     LLM_API_KEY: <value>
+//     LITELLM_API_KEY: <value>
+// Seeded from process.env on first run (file absent); 0600 perms. Atomic write.
+const CREDENTIAL_REFS = ["LLM_API_KEY", "LITELLM_API_KEY"];
+
+export function ensureCredentialsStore() {
+  let doc;
+  try {
+    const existing = readFileSync(CREDENTIALS_PATH, "utf8");
+    const loaded = yaml.load(existing);
+    doc = loaded && typeof loaded === "object" && !Array.isArray(loaded) ? loaded : {};
+  } catch (err) {
+    if (err.code !== "ENOENT" && err.code !== undefined) {
+      // A malformed credentials doc is warned but not fatal — recreate it.
+      console.warn(`[dsh-profile] .credentials.yaml unreadable, recreating: ${err.message}`);
+    }
+    doc = {};
+  }
+  doc.version = 1;
+  doc.refs = doc.refs && typeof doc.refs === "object" ? doc.refs : {};
+  let changed = false;
+  for (const ref of CREDENTIAL_REFS) {
+    const val = process.env[ref]?.trim();
+    if (val && doc.refs[ref] !== val) { doc.refs[ref] = val; changed = true; }
+  }
+  // Always (re)write on first run (file absent) so perms are set; otherwise
+  // only write when a ref changed, to avoid needlessly tripping the watcher.
+  const absent = !existsSync(CREDENTIALS_PATH);
+  if (!changed && !absent) return { path: CREDENTIALS_PATH, changed: false };
+  mkdirSync(dirname(CREDENTIALS_PATH), { recursive: true });
+  const tmp = CREDENTIALS_PATH + ".tmp";
+  writeFileSync(tmp, yaml.dump(doc), "utf8");
+  renameSync(tmp, CREDENTIALS_PATH);
+  try { chmodSync(CREDENTIALS_PATH, 0o600); } catch { /* perms best-effort on some FS */ }
+  console.log(`[dsh-profile] wrote credentials store (${Object.keys(doc.refs).join(", ") || "empty"}) → ${CREDENTIALS_PATH}`);
+  return { path: CREDENTIALS_PATH, changed: true };
+}
+
+// Build a dsh child env that inherits the parent env MINUS the upstream API
+// keys, so dsh-credentials-local's .credentials.yaml is the winning resolution
+// layer (the inherited-env layer would otherwise shadow it). The parent keeps
+// its own process.env for server-side consumers (documents RAG, LiteLLM login).
+// Returns null when no upstream keys are configured (no scrubbing needed —
+// caller passes null and HarnessClient inherits process.env as before).
+export function buildScrubbedEnv() {
+  const hasAny = CREDENTIAL_REFS.some((r) => process.env[r]?.trim());
+  if (!hasAny) return null;
+  const env = { ...process.env };
+  for (const ref of CREDENTIAL_REFS) delete env[ref];
+  return env;
+}
+
 // ── MCP server patch (dsh-mcp-client) ─────────────────────────────────────────
 // dsh-mcp-client is a cordis LOADER entry (not a settings.yaml section): one
 // plugin instance per MCP server, declared in a `--patch` overlay so the user's
@@ -274,14 +339,17 @@ export async function writeMcpPatch() {
 // written once at startup; no live-reload (skills/ doesn't change at runtime).
 const SKILLS_PATCH_PATH = join(DSH_HOME, "profiles", PROFILE_NAME, "skills.patch.yml");
 
-export function writeSkillsPatch(skillsDir = resolve("skills")) {
+export function writeSkillsPatch(skillsDirs = [resolve("skills")]) {
   // ponytail: single static entry; customSkillDirs is the only field that matters
   // (providerName/includeDefaultRoots/watch take schema defaults when config is
-  // overridden, so the built-in discovery roots are preserved).
+  // overridden, so the built-in discovery roots are preserved). skillsDirs may be
+  // a single path (legacy) or an array; the materialization dir (DB custom skills)
+  // is appended by server.js so dsh-skill-filesystem Chokidar-watches it too.
+  const dirs = Array.isArray(skillsDirs) ? skillsDirs : [skillsDirs];
   const entry = {
     id: "skill-filesystem",
     name: "@deepseek-ai/dsh-skill-filesystem",
-    config: { customSkillDirs: [skillsDir] },
+    config: { customSkillDirs: dirs },
   };
   mkdirSync(dirname(SKILLS_PATCH_PATH), { recursive: true });
   const tmp = SKILLS_PATCH_PATH + ".tmp";

@@ -42,13 +42,15 @@
     "disconnected": "Déconnecté"
   },
   "composer": {
-    "placeholder": "Demandez n'importe quoi à pi… (tapez / pour les commandes, Entrée pour envoyer, Maj+Entrée pour un saut de ligne)",
+    "placeholder": "Demandez n'importe quoi à Find Data Technology… (tapez / pour les commandes, Entrée pour envoyer, Maj+Entrée pour un saut de ligne)",
     "placeholderDisabled": "Connexion…",
     "send": "Envoyer",
     "helpHeader": "Commandes disponibles :",
     "dropHint": "Déposez des fichiers pour les envoyer vers la collection de documents",
     "uploaded": "{{name}} envoyé",
     "uploadFailed": "Échec de l'envoi : {{message}}",
+    "attach": "Joindre un fichier",
+    "removeAttachment": "Retirer la pièce jointe",
     "cmd": {
       "model": "changer ou afficher le modèle actif",
       "new": "démarrer une nouvelle session de discussion",
@@ -60,7 +62,7 @@
     "empty": "Envoyez un message pour commencer à discuter."
   },
   "turn": {
-    "assistantName": "pi",
+    "assistantName": "Find Data Technology",
     "thinkingStreaming": "Réflexion…",
     "thinking": "💭 Réflexion",
     "statusRunning": "en cours…",
@@ -217,11 +219,5 @@
       "readyToUse": "Prêt à l'emploi",
       "needsConfig": "Configuration requise"
     }
-  },
-  "workdir": {
-    "label": "Répertoire de travail",
-    "change": "Changer",
-    "notSet": "Non défini",
-    "desktopOnly": "Le sélecteur de dossier n'est disponible que dans l'application de bureau"
   }
 }

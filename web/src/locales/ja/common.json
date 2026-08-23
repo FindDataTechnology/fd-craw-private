@@ -42,13 +42,15 @@
     "disconnected": "切断済み"
   },
   "composer": {
-    "placeholder": "pi に何でも質問…（/ でコマンド、Enter で送信、Shift+Enter で改行）",
+    "placeholder": "Find Data Technology に何でも質問…（/ でコマンド、Enter で送信、Shift+Enter で改行）",
     "placeholderDisabled": "接続中…",
     "send": "送信",
     "helpHeader": "利用可能なコマンド:",
     "dropHint": "ファイルをドロップしてドキュメントコレクションにアップロード",
     "uploaded": "{{name}} をアップロードしました",
     "uploadFailed": "アップロード失敗: {{message}}",
+    "attach": "ファイルを添付",
+    "removeAttachment": "添付を削除",
     "cmd": {
       "model": "アクティブなモデルを切り替えまたは表示",
       "new": "新しいチャットセッションを開始",
@@ -60,7 +62,7 @@
     "empty": "メッセージを送信してチャットを開始してください。"
   },
   "turn": {
-    "assistantName": "pi",
+    "assistantName": "Find Data Technology",
     "thinkingStreaming": "考え中…",
     "thinking": "💭 思考",
     "statusRunning": "実行中…",
@@ -217,11 +219,5 @@
       "readyToUse": "すぐに使える",
       "needsConfig": "設定が必要"
     }
-  },
-  "workdir": {
-    "label": "作業ディレクトリ",
-    "change": "変更",
-    "notSet": "未設定",
-    "desktopOnly": "フォルダ選択はデスクトップアプリでのみ利用できます"
   }
 }

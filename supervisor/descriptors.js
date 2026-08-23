@@ -300,18 +300,6 @@ export function getDescriptors({
       healthPath: "/api/config",
       dependsOn: [], // Phase 2: ["pi-agent"]
     },
-    {
-      id: "pi-agent",
-      name: "pi agent",
-      kind: "node",
-      transport: "stdio-rpc",
-      enabled: false, // Phase 2 flips this on
-      optional: false,
-      start: null,
-      url: null,
-      healthPath: null,
-      dependsOn: [],
-    },
     postgresDescriptor,
     litellmDescriptor,
     openconnectorDescriptor,

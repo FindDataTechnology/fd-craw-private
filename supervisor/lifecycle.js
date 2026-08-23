@@ -103,8 +103,8 @@ export class Supervisor {
     }
 
     // Start the remaining servers in dependency order (server-js is non-optional
-    // and awaited; pi-agent is disabled; http-external/disabled sidecars are
-    // probed/marked here). Optional failures are non-fatal.
+    // and awaited; http-external/disabled sidecars are probed/marked here).
+    // Optional failures are non-fatal.
     for (const id of this._startupOrder()) {
       if (spawnedSidecars.has(id)) continue; // already started above
       const s = this.servers.get(id);

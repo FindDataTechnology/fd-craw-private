@@ -42,13 +42,15 @@
     "disconnected": "已断开"
   },
   "composer": {
-    "placeholder": "向 pi 提问…（输入 / 查看命令，回车发送，Shift+回车换行）",
+    "placeholder": "向 Find Data Technology 提问…（输入 / 查看命令，回车发送，Shift+回车换行）",
     "placeholderDisabled": "连接中…",
     "send": "发送",
     "helpHeader": "可用命令：",
     "dropHint": "拖放文件以上传到文档集合",
     "uploaded": "已上传 {{name}}",
     "uploadFailed": "上传失败：{{message}}",
+    "attach": "添加附件",
+    "removeAttachment": "移除附件",
     "cmd": {
       "model": "切换或显示当前模型",
       "new": "开始新对话",
@@ -60,7 +62,7 @@
     "empty": "发送消息开始对话。"
   },
   "turn": {
-    "assistantName": "pi",
+    "assistantName": "Find Data Technology",
     "thinkingStreaming": "思考中…",
     "thinking": "💭 思考",
     "statusRunning": "运行中…",
@@ -217,11 +219,5 @@
       "readyToUse": "可直接使用",
       "needsConfig": "需要配置"
     }
-  },
-  "workdir": {
-    "label": "工作目录",
-    "change": "更改",
-    "notSet": "未设置",
-    "desktopOnly": "文件夹选择仅在桌面应用中可用"
   }
 }

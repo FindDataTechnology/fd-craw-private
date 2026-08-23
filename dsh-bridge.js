@@ -57,14 +57,22 @@ export class DshBridge {
   #cwd;
   #mcpPatchPath;
   #skillsPatchPath;
+  #env;
 
-  constructor({ onEvent, provider, model, cwd, mcpPatchPath, skillsPatchPath } = {}) {
+  constructor({ onEvent, provider, model, cwd, mcpPatchPath, skillsPatchPath, env } = {}) {
     if (onEvent) this.#onEvent = onEvent;
     this.#provider = provider || "deepseek-official";
     this.#model = model || "deepseek-v4-flash";
     this.#cwd = cwd || process.cwd();
     this.#mcpPatchPath = mcpPatchPath || null;
     this.#skillsPatchPath = skillsPatchPath || null;
+    // When provided, the dsh child is spawned with this env instead of the
+    // inherited process env — used to scrub upstream API keys (LLM_API_KEY /
+    // LITELLM_API_KEY) so dsh-credentials-local's .credentials.yaml is the
+    // winning resolution layer and a rotated key reaches the next request
+    // without a restart (design D3). The parent keeps its own process.env copy
+    // for its server-side consumers (documents RAG, LiteLLM cookie login).
+    this.#env = env;
   }
 
   // Spawn the runtime, perform the initialize handshake, subscribe to
@@ -86,6 +94,7 @@ export class DshBridge {
       command: COMMAND,
       args,
       cwd: this.#cwd,
+      env: this.#env,
       requestTimeoutMs: REQUEST_TIMEOUT_MS,
       shutdownTimeoutMs: SHUTDOWN_TIMEOUT_MS,
     });
@@ -190,12 +199,6 @@ export class DshBridge {
     if (model) this.#model = model;
     if (mcpPatchPath !== undefined) this.#mcpPatchPath = mcpPatchPath;
     return this.#spawn();
-  }
-
-  // One raw JSON-RPC request (for future setModel/listModels custom RPCs).
-  async request(method, params, timeoutMs) {
-    this.#requireReady();
-    return this.#client.request(method, params, timeoutMs);
   }
 
   #requireReady() {

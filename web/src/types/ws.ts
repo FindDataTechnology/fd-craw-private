@@ -29,8 +29,7 @@ export type ServerMessage =
   | { type: "documents_status"; [k: string]: unknown }
   | { type: "sessions"; sessions: SessionMeta[]; current?: string }
   | { type: "session_changed"; id: string }
-  | { type: "session_loaded"; id: string; title?: string; messages: ChatMessage[]; workdir?: string | null }
-  | { type: "workdir"; path: string | null }
+  | { type: "session_loaded"; id: string; title?: string; messages: ChatMessage[] }
   | { type: "cron_jobs"; jobs: unknown[] }
   | { type: "cron_status"; job: unknown }
   | { type: "cron_removed"; id: string }
@@ -96,5 +95,4 @@ export type ClientMessage =
   | { type: "list_skills" }
   | { type: "list_sessions" }
   | { type: "new_session" }
-  | { type: "switch_session"; id: string }
-  | { type: "set_workdir"; path: string };
+  | { type: "switch_session"; id: string };

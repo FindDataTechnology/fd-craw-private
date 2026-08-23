@@ -1,8 +1,8 @@
 // Chat store — single source of truth for the React chat surface.
 //
-// Direct port of the imperative state that lived across module-scoped variables
-// in public/app.js: WS status, models, skills, sessions, streaming flag, the
-// message list. One reducer function per incoming WS type via `apply()`.
+// Holds the imperative chat state: WS status, models, skills, sessions,
+// streaming flag, the message list. One reducer function per incoming WS type
+// via `apply()`.
 //
 // A "turn" is one user prompt + one assistant response. All server events that
 // arrive between agent_start and done attach to the current assistant turn
@@ -55,7 +55,6 @@ interface State {
   currentSessionId: string | null;
   turns: Turn[];
   isStreaming: boolean;
-  currentWorkdir: string | null;
   // Setters used by the WS hook.
   setStatus: (s: ConnStatus) => void;
   apply: (m: ServerMessage) => void;
@@ -64,7 +63,6 @@ interface State {
   clearView: () => void;
   toggleAllThinking: () => void;
   toggleBlock: (turnId: string, index: number) => void;
-  setWorkdir: (path: string | null) => void;
 }
 
 let uid = 0;
@@ -116,7 +114,6 @@ export const useChatStore = create<State>((set) => ({
   currentSessionId: null,
   turns: [],
   isStreaming: false,
-  currentWorkdir: null,
 
   setStatus: (s) => set({ status: s }),
 
@@ -252,11 +249,7 @@ export const useChatStore = create<State>((set) => ({
                   },
             ),
             isStreaming: false,
-            currentWorkdir: m.workdir ?? null,
           };
-
-        case "workdir":
-          return { currentWorkdir: m.path ?? null };
 
         // Non-chat channels. Ignored for now — the owning views/stores
         // subscribe to these themselves (e.g. useExtensionsStore.applyEvent
@@ -290,8 +283,6 @@ export const useChatStore = create<State>((set) => ({
     set((state) => ({ turns: [...state.turns, { id: nextId(), role: "user", text }] })),
 
   clearView: () => set({ turns: [], isStreaming: false }),
-
-  setWorkdir: (path) => set({ currentWorkdir: path }),
 
   toggleAllThinking: () =>
     set((state) => {
@@ -329,11 +320,11 @@ export const useChatStore = create<State>((set) => ({
     })),
 }));
 
-// Test hook: expose the store on window so Playwright can drive events
-// without a real WebSocket (used by e2e/thinking-blocks.spec.js). Harmless in
-// production (nothing sensitive on the store; users could reach the same
-// handlers by sending fake WS messages). Deliberately not gated by NODE_ENV —
-// e2e runs against the production build (web/dist).
-if (typeof window !== "undefined") {
+// Dev/test hook: expose the store on window so it can be driven without a real
+// WebSocket. Gated to dev builds (import.meta.env.DEV) so the Zustand store is
+// not globally readable/mutable in production. The e2e consumer that needed it
+// in the prod build is gone; a future prod-build e2e that needs it should use a
+// real WS or a dedicated test seam.
+if (typeof window !== "undefined" && import.meta.env.DEV) {
   (window as unknown as { __chatStore?: typeof useChatStore }).__chatStore = useChatStore;
 }

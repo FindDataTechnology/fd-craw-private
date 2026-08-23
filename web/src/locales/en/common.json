@@ -42,13 +42,15 @@
     "disconnected": "Disconnected"
   },
   "composer": {
-    "placeholder": "Ask pi anything… (type / for commands, Enter to send, Shift+Enter for newline)",
+    "placeholder": "Ask Find Data Technology anything… (type / for commands, Enter to send, Shift+Enter for newline)",
     "placeholderDisabled": "Connecting…",
     "send": "Send",
     "helpHeader": "Available commands:",
     "dropHint": "Drop files to upload to the document collection",
     "uploaded": "Uploaded {{name}}",
     "uploadFailed": "Upload failed: {{message}}",
+    "attach": "Attach a file",
+    "removeAttachment": "Remove attachment",
     "cmd": {
       "model": "switch or show the active model",
       "new": "start a new chat session",
@@ -60,7 +62,7 @@
     "empty": "Send a message to start chatting."
   },
   "turn": {
-    "assistantName": "pi",
+    "assistantName": "Find Data Technology",
     "thinkingStreaming": "Thinking…",
     "thinking": "💭 Thinking",
     "statusRunning": "running…",
@@ -217,11 +219,5 @@
       "readyToUse": "Ready to use",
       "needsConfig": "Needs config"
     }
-  },
-  "workdir": {
-    "label": "Working Directory",
-    "change": "Change",
-    "notSet": "Not set",
-    "desktopOnly": "Folder picker is only available in the desktop app"
   }
 }

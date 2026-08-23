@@ -1,8 +1,6 @@
 // WebSocket lifecycle hook. One connection for the whole app.
 //
-// Direct port of connect()/scheduleReconnect() from public/app.js. On open,
-// the client asks the server for models, skills, and sessions — same as vanilla.
-//
+// On open, the client asks the server for models, skills, and sessions.
 // Returns `send()` for outgoing messages; incoming messages flow into the
 // Zustand store via apply().
 

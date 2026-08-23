@@ -1,8 +1,7 @@
 // ── Health probes ────────────────────────────────────────────────────────────
 //
 // Transport-appropriate health checks (spec: "Health checking per transport").
-// HTTP probe for port-speaking and http-external servers. RPC ping for stdio
-// servers is added in Phase 2 alongside the pi-agent bridge.
+// HTTP probe for port-speaking and http-external servers.
 
 import http from "node:http";
 import https from "node:https";

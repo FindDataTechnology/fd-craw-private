@@ -36,8 +36,6 @@ export function Sidebar({ send }: Props) {
   const currentSessionId = useChatStore((s) => s.currentSessionId);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const clearView = useChatStore((s) => s.clearView);
-  const currentWorkdir = useChatStore((s) => s.currentWorkdir);
-  const setWorkdir = useChatStore((s) => s.setWorkdir);
   const agents = useChatStore((s) => s.agents);
   const currentAgent = useChatStore((s) => s.currentAgent);
   const catalogVersion = useChatStore((s) => s.catalogVersion);
@@ -128,38 +126,6 @@ export function Sidebar({ send }: Props) {
               )}
             </button>
           ))}
-        </div>
-      </div>
-
-      {/* Working directory: folder the agent operates in. Only wired in the
-          desktop app (window.platform is undefined in a plain browser). */}
-      <div className="flex flex-col gap-1 border-t border-border p-3" data-testid="workdir-section">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-muted-foreground">{t("workdir.label")}</span>
-          <button
-            onClick={async () => {
-              if (!window.platform?.pickWorkdir) {
-                alert(t("workdir.desktopOnly"));
-                return;
-              }
-              const path = await window.platform.pickWorkdir();
-              if (path) {
-                setWorkdir(path);
-                send({ type: "set_workdir", path });
-              }
-            }}
-            data-testid="workdir-pick-btn"
-            className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            {t("workdir.change")}
-          </button>
-        </div>
-        <div
-          className="truncate text-xs text-muted-foreground"
-          title={currentWorkdir ?? undefined}
-          data-testid="workdir-path"
-        >
-          {currentWorkdir || t("workdir.notSet")}
         </div>
       </div>
 

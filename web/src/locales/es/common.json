@@ -42,13 +42,15 @@
     "disconnected": "Desconectado"
   },
   "composer": {
-    "placeholder": "Pregúntale a pi lo que sea… (escribe / para comandos, Enter para enviar, Shift+Enter para salto de línea)",
+    "placeholder": "Pregúntale a Find Data Technology lo que sea… (escribe / para comandos, Enter para enviar, Shift+Enter para salto de línea)",
     "placeholderDisabled": "Conectando…",
     "send": "Enviar",
     "helpHeader": "Comandos disponibles:",
     "dropHint": "Suelta archivos para subirlos a la colección de documentos",
     "uploaded": "Subido {{name}}",
     "uploadFailed": "Error al subir: {{message}}",
+    "attach": "Adjuntar un archivo",
+    "removeAttachment": "Quitar adjunto",
     "cmd": {
       "model": "cambiar o mostrar el modelo activo",
       "new": "iniciar una nueva sesión de chat",
@@ -60,7 +62,7 @@
     "empty": "Envía un mensaje para empezar a chatear."
   },
   "turn": {
-    "assistantName": "pi",
+    "assistantName": "Find Data Technology",
     "thinkingStreaming": "Pensando…",
     "thinking": "💭 Pensando",
     "statusRunning": "ejecutando…",
@@ -217,11 +219,5 @@
       "readyToUse": "Listo para usar",
       "needsConfig": "Requiere configuración"
     }
-  },
-  "workdir": {
-    "label": "Directorio de trabajo",
-    "change": "Cambiar",
-    "notSet": "Sin establecer",
-    "desktopOnly": "El selector de carpetas solo está disponible en la aplicación de escritorio"
   }
 }
