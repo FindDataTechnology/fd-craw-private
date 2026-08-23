@@ -21,7 +21,17 @@ test("@smoke chat turn saves history without duplicating text", async ({ page, r
   await expect(turn).toBeVisible({ timeout: 30000 });
   await expect(turn).toHaveAttribute("data-streaming", "false", { timeout: 45000 });
 
-  const bubbleText = (await turn.textContent()) || "";
+  // The rendered turn includes a thinking block (reasoning) when the model
+  // emits reasoning_content; that's rendered but NOT persisted (only text
+  // blocks are), so strip it before comparing to the persisted answer —
+  // otherwise reasoning inflates the bubble ~30x and trips the ceiling.
+  const bubbleText = await turn.evaluate((el) => {
+    const clone = el.cloneNode(true);
+    clone
+      .querySelectorAll('[data-testid="thinking-block"]')
+      .forEach((n) => n.remove());
+    return (clone.textContent || "").trim();
+  });
 
   // The assistant message is persisted fire-and-forget on `done`, so poll.
   const getAssistantText = async () => {

@@ -2,7 +2,7 @@
   "type": "module",
   "name": "platform",
   "version": "1.3.0",
-  "description": "Platform - browser-based AI assistant built on the pi-coding-agent SDK",
+  "description": "Platform - browser-based AI assistant built on the DeepSeek Harness (dsh) runtime",
   "main": "electron/main.js",
   "engines": {
     "node": ">=22"
@@ -24,8 +24,7 @@
     "postinstall": "node scripts/postinstall-web.js && node scripts/postinstall-bundle.js"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "latest",
-    "@earendil-works/pi-coding-agent": "latest",
+    "@deepseek-ai/dsh-sdk-client": "^0.0.1-rc.1",
     "@llamaindex/openai": "latest",
     "@llamaindex/readers": "latest",
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -37,7 +36,6 @@
     "node-schedule": "^2.1.1",
     "officeparser": "^7.5.1",
     "pageindex": "^1.0.1",
-    "pi-provider-litellm": "^1.2.9",
     "undici": "latest",
     "ws": "^8.18.0"
   },

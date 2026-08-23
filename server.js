@@ -1,22 +1,12 @@
 import 'dotenv/config';
-import {
-  AuthStorage,
-  createAgentSession,
-  DefaultResourceLoader,
-  getAgentDir,
-  ModelRegistry,
-  SessionManager,
-  SettingsManager,
-} from "@earendil-works/pi-coding-agent";
-import litellmExtension from "pi-provider-litellm";
 import express from "express";
 import { WebSocketServer } from "ws";
 import http from "http";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
-import { connectMcpServers, connectServers, closeMcpClients, connectSingleServer, disconnectSingleServer } from "./mcp-bridge.js";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import multer from "multer";
-import { fetchLitellmModels } from "./litellm-models.js";
 import * as chatHistory from "./chat-history.js";
 import * as openConnector from "./open-connector.js";
 import * as documents from "./documents.js";
@@ -58,18 +48,17 @@ function userFromHeaders(headers) {
 // The documents RAG reads LLM_API_KEY separately via initStore().
 const LLM_API_KEY = process.env.LLM_API_KEY?.trim();
 const LLM_BASE_URL = process.env.LLM_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3";
-const volcesEnabled = Boolean(LLM_API_KEY);
 
-// Default chat model. When set, the agent session starts on this model id.
-// Otherwise the server prefers the first LiteLLM model (when LiteLLM is configured)
-// and falls back to the first Volces model. See resolveDefaultModel().
+// Default chat model. When set, the dsh session starts on this model id;
+// otherwise the first declared profile model is used. See initDshAgent().
 const DEFAULT_MODEL = process.env.DEFAULT_MODEL || "";
 
-// ── LiteLLM proxy config (consumed by pi-provider-litellm) ───────────────────
-// The extension reads LITELLM_BASE_URL / LITELLM_API_KEY from the environment
-// (loaded from .env by dotenv/config above). When either is missing, the
-// litellm provider is skipped so the server falls back to Volces (when
-// LLM_API_KEY is set) or starts with no chat provider (logged).
+// ── LiteLLM proxy config ─────────────────────────────────────────────────────
+// LITELLM_BASE_URL / LITELLM_API_KEY feed two consumers: the dsh LLM profile
+// (dsh-profile.js writeLlmProfile, loaded from .env by dotenv/config above) and
+// the LiteLLM management-UI reverse proxy (/litellm-web, /ui, …). When either is
+// missing the litellm route is skipped so the server falls back to the Volces
+// gateway (when LLM_API_KEY is set) or starts with no chat provider (logged).
 const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL?.trim();
 const LITELLM_API_KEY = process.env.LITELLM_API_KEY?.trim();
 const litellmEnabled = Boolean(LITELLM_BASE_URL && LITELLM_API_KEY);
@@ -92,17 +81,6 @@ function splitPolicy(policy) {
   const permissions =
     allow || deny ? { ...(allow ? { allow } : {}), ...(deny ? { deny } : {}) } : null;
   return { locked: policy.locked === true, permissions };
-}
-
-// Returns true if a model is LiteLLM-routed: it has configured auth and is not
-// the native Volces provider. The LiteLLM extension registers its models under
-// upstream provider names (deepseek, volcengine, openrouter, …) - NOT a single
-// "litellm" provider - so a `provider === "litellm"` check never matches them.
-// When LiteLLM is enabled only the LiteLLM extension is registered, so every
-// authed model is LiteLLM-routed; when it is not enabled only Volces is
-// registered, so this returns false for all models.
-function isLitellmModel(m) {
-  return hasAuth(m) && m.provider !== "volces";
 }
 
 const app = express();
@@ -142,7 +120,7 @@ const upload = multer({
 
 let session = null;
 let isStreaming = false;
-// Active catalog agent: "local" = the pi session above; any other id = a
+// Active catalog agent: "local" = the local dsh session; any other id = a
 // catalog agent-remote (chat mode) entry that prompts are forked to.
 let currentAgentId = "local";
 // True once any text_delta has been streamed during the current agent turn.
@@ -150,56 +128,26 @@ let currentAgentId = "local";
 // text (which would duplicate what streaming already delivered), while still
 // emitting it once as a fallback for non-streaming model responses.
 let streamedTextThisTurn = false;
-let modelRegistry = null;
-let loader = null;
-let mcpClients = [];
-// Count of MCP tools registered with the agent (set after connectServers).
-let mcpToolCount = 0;
 // The model the agent session starts on (set during async init; read by the
 // /api/supervisor/status route).
 let defaultModel = null;
-// Agent-building primitives cached by initAgent once and reused whenever the
-// session is rebuilt for a different working directory (SDK fixes cwd at
-// session creation, so switching folders means recreating the session).
-let agentAuthStorage = null;
-let agentMcpTools = [];
-let agentMcpToolNames = [];
-let agentProviderFactory = null;
-
-// Models eligible for the selector/default/switching: those with configured
-// auth. Because exactly one chat provider is registered (LiteLLM extension OR
-// Volces - see extensionFactories), this naturally scopes to LiteLLM-only when
-// LiteLLM is configured and Volces-only when it is not, with no provider
-// allowlist needed. Unconfigured built-in providers (no API key) are excluded.
-function hasAuth(m) {
-  return modelRegistry?.hasConfiguredAuth?.(m) ?? false;
-}
-
-
-// Resolve the model the agent session starts on (passed explicitly to
-// createAgentSession so LiteLLM is the default rather than the SDK's opaque
-// "first available" heuristic). Order: DEFAULT_MODEL env -> first LiteLLM
-// model (if enabled) -> first model with configured auth (Volces, when LiteLLM
-// is not configured). When LiteLLM is enabled but no LiteLLM-routed model is
-// resolvable (proxy unreachable at startup and the extension registered
-// nothing), return null and log - do NOT silently fall back to Volces.
-function resolveDefaultModel() {
-  const available = modelRegistry?.getAvailable() ?? [];
-  if (DEFAULT_MODEL) {
-    const m = available.find((x) => x.id === DEFAULT_MODEL && hasAuth(x));
-    if (m) return m;
-    console.warn(`[model] DEFAULT_MODEL '${DEFAULT_MODEL}' not found among configured models`);
-  }
-  if (litellmEnabled) {
-    const litellmModel = available.filter(hasAuth).find(isLitellmModel);
-    if (litellmModel) return litellmModel;
-    console.warn(
-      "[model] LiteLLM enabled but no LiteLLM-routed model resolvable; not falling back to Volces"
-    );
-    return null;
-  }
-  return available.filter(hasAuth)[0];
-}
+// dsh bridge + session id.
+let dshBridge = null;
+let dshSessionId = null;
+// dsh MCP live-reload (Task 4.5): the REST routes mutate the DB, then call this
+// to regenerate the mcp patch + restart the child (no stock reload RPC).
+// ponytail: restart drops in-memory session state (v1 ceiling; design Q2).
+let dshRegenMcp = null;
+// Declared model list from the profile generator. Populated by initDshAgent
+// from writeLlmProfile(); the generator's declared list IS the dsh model list —
+// dsh exposes no stock listModels RPC, so server.js sources the selector from
+// this (Task 3.3).
+let dshModels = [];
+// dsh→WS event-translation state (Task 2). dshToolNames carries callId→name from
+// tool/call across to tool/result (which has no name); dshTurnError carries an
+// assistant/chunk finish error to the turn/end error broadcast.
+const dshToolNames = new Map();
+let dshTurnError = null;
 
 const clients = new Set();
 
@@ -288,347 +236,281 @@ async function expandSkillContent(skill, args) {
   return `${body}${argSection}`;
 }
 
+// Scan the project skills/ dir (dir bundles `<name>/SKILL.md` + flat `<name>.md`)
+// for [{name, description, filePath}]. list_skills + /skill: expansion source
+// the same dir the skill-filesystem plugin's customSkillDirs points at (Task 5.3).
+// ponytail: regex frontmatter parse + no caching (4 files, called rarely); a
+// multi-line/quoted description or a hot list_skills path needs a real parser + cache.
+function getFileSkills(dir = path.resolve("skills")) {
+  let entries;
+  try { entries = readdirSync(dir); } catch { return []; }
+  const skills = [];
+  for (const entry of entries) {
+    const full = path.join(dir, entry);
+    let st;
+    try { st = statSync(full); } catch { continue; }
+    const filePath = st.isDirectory() ? path.join(full, "SKILL.md") : (entry.endsWith(".md") ? full : null);
+    if (!filePath) continue;
+    let raw;
+    try { raw = readFileSync(filePath, "utf8"); } catch { continue; }
+    const block = raw.match(/^---[\s\S]*?---/)?.[0];
+    if (!block) continue;
+    const name = block.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+    const desc = block.match(/^description:\s*(.+)$/m)?.[1]?.trim();
+    if (!name) continue;
+    skills.push({ name, description: desc || "", filePath });
+  }
+  return skills;
+}
+
 // ── Agent session ────────────────────────────────────────────────────────────
 
-async function initAgent() {
-  agentAuthStorage = AuthStorage.create();
-  agentAuthStorage.setRuntimeApiKey("volces", LLM_API_KEY);
-  modelRegistry = ModelRegistry.create(agentAuthStorage);
-
-  // Connect MCP servers first so their tools are discovered before the session
-  // is created. The tool names MUST be added to the `tools` allowlist below,
-  // otherwise the SDK filters custom tools out (see agent-session _refreshToolRegistry).
-  //
-  // read mcp.json once, connect via connectServers, then seed configs
-  // into the extensions DB so the UI "Installed" tab shows them.
-  let mcpJsonServers = {};
-  try {
-    const raw = await readFile(path.resolve("mcp.json"), "utf8");
-    mcpJsonServers = JSON.parse(raw).mcpServers || {};
-  } catch { /* no mcp.json or parse error — MCP disabled */ }
-
-  // Bundle-manifest mcpServers are the packager's pre-installed MCPs: connect
-  // the enabled ones here (before session creation, so their tools join the
-  // session allowlist) and seed them below. `enabled` is seed metadata, not
-  // part of the MCP client config — strip it. mcp.json wins name collisions
-  // (operator config overrides the packaged default).
-  const manifestServers = Object.fromEntries(
-    Object.entries(bundle.mcpServers)
-      .filter(([, entry]) => entry.enabled !== false)
-      .map(([name, entry]) => {
-        const { enabled, ...config } = entry;
-        return [name, config];
-      })
-  );
-  const mcp = await connectServers({ mcpServers: { ...manifestServers, ...mcpJsonServers } });
-  let mcpTools = mcp.tools;
-  let mcpClientList = mcp.clients;
-
-  // When OpenConnector is enabled, register its runtime /mcp endpoint as an
-  // additional MCP server so the agent can call list_apps / search_actions /
-  // get_action_guide / execute_action (and thus any connected provider's
-  // Actions). connectServers skips a failed connect without blocking the rest
-  // of MCP/agent startup, so an unreachable runtime is non-fatal.
-  const ocMcpConfig = openConnector.buildMcpServerConfig();
+// Seed startup MCP configs into the extensions DB so the UI "Installed" tab
+// shows them. INSERT OR IGNORE preserves user edits. Origins: mcp.json entries
+// stay "user" (operator config); OpenConnector and manifest mcpServers entries
+// are pre-installed by the package ("bundled"). Manifest entries take
+// locked/permissions from the permissions map ("mcp:<name>" → { allow, deny,
+// locked }). Seeding lives here (not in bootstrap/first-run.js) because
+// better-sqlite3 only loads under the Node that runs server.js — the Electron
+// main process has a different ABI.
+// ponytail: shared by the dsh bridge + extension REST routes (design D4 —
+// host-side config sources unchanged); writeMcpPatch reads the DB but does not
+// seed it, so the seeding must happen here before the patch is written.
+function seedStartupMcpConfigs(mcpJsonServers, ocMcpConfig) {
+  if (!db.isDbReady()) return;
+  for (const [name, config] of Object.entries(mcpJsonServers)) {
+    extensionStore.seedMcpServer({ name, config, enabled: true });
+  }
   if (ocMcpConfig) {
-    // OC starts in parallel with server.js (bundled local mode), so its /mcp
-    // endpoint may not be ready on the first attempt. Retry for ~30s before
-    // giving up; connectServers skips a failed connect without blocking the rest
-    // of agent startup, so an unreachable runtime is still non-fatal.
-    const ocMcp = await connectServers(
-      { mcpServers: { "open-connector": ocMcpConfig } },
-      { retries: 20, intervalMs: 1500 }
-    );
-    mcpTools = mcpTools.concat(ocMcp.tools);
-    mcpClientList = mcpClientList.concat(ocMcp.clients);
-  }
-
-  // auto-seed startup MCP configs into extensions DB so the UI
-  // "Installed" tab shows them. INSERT OR IGNORE preserves user edits.
-  // Origins: mcp.json entries stay "user" (operator config); OpenConnector and
-  // manifest mcpServers entries are pre-installed by the package ("bundled").
-  // Manifest entries take locked/permissions from the permissions map
-  // ("mcp:<name>" → { allow, deny, locked }). Seeding lives here (not in
-  // bootstrap/first-run.js) because better-sqlite3 only loads under the Node
-  // that runs server.js — the Electron main process has a different ABI.
-  if (db.isDbReady()) {
-    for (const [name, config] of Object.entries(mcpJsonServers)) {
-      extensionStore.seedMcpServer({ name, config, enabled: true });
-    }
-    if (ocMcpConfig) {
-      const policy = splitPolicy(bundle.permissions["mcp:open-connector"]);
-      extensionStore.seedMcpServer({
-        name: "open-connector",
-        config: ocMcpConfig,
-        enabled: true,
-        origin: bundle.components.openconnector ? "bundled" : "user",
-        ...policy,
-      });
-    }
-    for (const [name, entry] of Object.entries(bundle.mcpServers)) {
-      const { enabled = true, ...config } = entry;
-      extensionStore.seedMcpServer({
-        name,
-        config,
-        enabled,
-        origin: "bundled",
-        ...splitPolicy(bundle.permissions[`mcp:${name}`]),
-      });
-    }
-  }
-
-  mcpClients = mcpClientList;
-  agentMcpTools = mcpTools;
-  agentMcpToolNames = mcpTools.map((t) => t.name);
-  mcpToolCount = agentMcpToolNames.length;
-  if (agentMcpToolNames.length) {
-    console.log(`[mcp] Registering ${agentMcpToolNames.length} MCP tool(s): ${agentMcpToolNames.join(", ")}`);
-  }
-
-  // Native Volces chat provider. Built only when LLM_API_KEY is set AND
-  // LiteLLM is NOT configured (see extensionFactories), so the agent stays
-  // LiteLLM-only when LiteLLM is available and degrades to no chat provider
-  // when neither is configured. The documents RAG uses Volces directly via
-  // initStore() and does NOT depend on this provider being registered.
-  agentProviderFactory = volcesEnabled ? (pi) => {
-    pi.registerProvider("volces", {
-      name: "Volces Coding",
-      baseUrl: LLM_BASE_URL,
-      apiKey: LLM_API_KEY,
-      api: "openai-completions",
-      models: [
-        {
-          id: "deepseek-v4-pro",
-          name: "DeepSeek V4 Pro",
-          reasoning: false,
-          input: ["text"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128000,
-          maxTokens: 8192,
-        },
-        {
-          id: "deepseek-v4-flash",
-          name: "DeepSeek V4 Flash",
-          reasoning: false,
-          input: ["text"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128000,
-          maxTokens: 8192,
-        },
-        {
-          id: "glm-5.2",
-          name: "GLM 5.2",
-          reasoning: false,
-          input: ["text"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128000,
-          maxTokens: 8192,
-        },
-      ],
+    const policy = splitPolicy(bundle.permissions["mcp:open-connector"]);
+    extensionStore.seedMcpServer({
+      name: "open-connector",
+      config: ocMcpConfig,
+      enabled: true,
+      origin: bundle.components.openconnector ? "bundled" : "user",
+      ...policy,
     });
-  } : null;
-
-  // Build the initial session bound to the server's CWD (no workdir picked yet).
-  await buildAndBindSession(process.cwd());
+  }
+  for (const [name, entry] of Object.entries(bundle.mcpServers)) {
+    const { enabled = true, ...config } = entry;
+    extensionStore.seedMcpServer({
+      name,
+      config,
+      enabled,
+      origin: "bundled",
+      ...splitPolicy(bundle.permissions[`mcp:${name}`]),
+    });
+  }
 }
 
-// Build a fresh agent session bound to `cwd` and wire up event subscription.
-// The SDK fixes the working directory at session creation (cwd is private with
-// no setter), so switching folders means rebuilding the session. One-time
-// primitives (auth, MCP tools, provider factory) are cached by initAgent and
-// reused across rebuilds; only the loader + session are recreated.
-async function buildAndBindSession(cwd) {
-  loader = new DefaultResourceLoader({
-    cwd,
-    agentDir: getAgentDir(),
-    additionalSkillPaths: [path.resolve("skills")],
-    // Register at most one chat provider so the agent is single-sourced:
-    //   - LiteLLM configured  -> LiteLLM extension only (LiteLLM-only by
-    //     construction; native Volces chat models can never leak into the
-    //     selector, the startup default, or runtime switching).
-    //   - LiteLLM not configured, Volces key set -> Volces provider only.
-    //   - Neither configured -> no chat provider (server starts; chat logged
-    //     as non-functional until a key is provisioned).
-    extensionFactories: litellmEnabled ? [litellmExtension] : (volcesEnabled ? [agentProviderFactory] : []),
-    systemPromptOverride: () => "You are a helpful coding assistant. Be concise.",
-  });
-  await loader.reload();
+// ── dsh runtime path ──────────────────────────────────────────────────────────
+// Spawns the dsh subprocess via dsh-bridge.js and presents a minimal session
+// shim to the WS handler/cron so the rest of server.js is runtime-agnostic.
+// Task 2 fills handleDshEvent with the full dsh→WS event-translation map; for
+// now it only emits `done` on turn completion (the 1.5 round-trip placeholder).
+async function initDshAgent() {
+  const { DshBridge } = await import("./dsh-bridge.js");
+  const { writeLlmProfile, writeMcpPatch, writeSkillsPatch } = await import("./dsh-profile.js");
 
-  // The LiteLLM extension registers models WITHOUT a `baseUrl`, but the SDK's
-  // provider-attribution check calls `model.baseUrl.includes(...)` (no optional
-  // chaining) and crashes on undefined -> "Cannot read properties of undefined
-  // (reading 'includes')". Backfill baseUrl on LiteLLM-routed models so the
-  // check is safe (the value is the local proxy, never an openrouter/nvidia host).
-  if (litellmEnabled) {
-    for (const m of modelRegistry?.getAvailable() ?? []) {
-      if (m.baseUrl === undefined) m.baseUrl = LITELLM_BASE_URL;
-    }
+  // Write the dsh llm-adapter profile BEFORE spawning dsh so the runtime
+  // loads the Volces/LiteLLM routes at initialize. The generator's declared
+  // list IS the dsh model list (no stock listModels RPC); server.js sources
+  // the selector from it (Task 3.3). Empty list = dormant (Task 3.6).
+  const { models } = await writeLlmProfile();
+  dshModels = models;
+
+  // Seed startup MCP configs into the extensions DB so the UI "Installed" tab
+  // shows them (source=startup). writeMcpPatch reads mcp.json directly for the
+  // runtime patch but does NOT seed the DB — seeding is UI-only (Task 4.1).
+  let dshMcpJson = {};
+  try { dshMcpJson = JSON.parse(await readFile(path.resolve("mcp.json"), "utf8")).mcpServers || {}; } catch {}
+  const dshOcMcp = openConnector.buildMcpServerConfig();
+  seedStartupMcpConfigs(dshMcpJson, dshOcMcp);
+
+  // Write the dsh-mcp-client patch overlay (one loader entry per MCP server
+  // from mcp.json + DB + OpenConnector /mcp). The bridge passes it via --patch;
+  // null = no servers configured, flag omitted (Task 4.1/4.2).
+  const mcpPatchPath = await writeMcpPatch();
+
+  // Write the skill-filesystem config override (customSkillDirs) so dsh
+  // discovers the project's skills/ dir. Static; written once, no
+  // live-reload (Task 5.1).
+  const skillsPatchPath = writeSkillsPatch();
+
+  // Default model: DEFAULT_MODEL env if declared, else first declared model.
+  let provider = "deepseek-official";
+  let model = "deepseek-v4-flash";
+  if (dshModels.length) {
+    const pick =
+      (DEFAULT_MODEL && dshModels.find((m) => m.id === DEFAULT_MODEL)) || dshModels[0];
+    provider = pick.provider;
+    model = pick.id;
+  } else {
+    console.warn("[dsh] no LLM keys configured; chat non-functional (static + REST still served)");
   }
 
-  if (!defaultModel) {
-    defaultModel = resolveDefaultModel();
-    if (defaultModel) {
-      console.log(`[model] Default chat model: ${defaultModel.provider}/${defaultModel.id}`);
-    } else {
-      console.warn("[model] No default model resolved; falling back to SDK default");
-    }
-  }
-
-  // Use the SDK's persistent SessionManager (JSONL sessions under the sessions
-  // store dir) instead of inMemory(), so conversations are auto-persisted and can
-  // be resumed/switched. The store dir is owned by chat-history.js (overridable via
-  // SESSIONS_STORE_DIR for E2E isolation). The cwd binds the agent's bash/file
-  // operations to the selected working directory.
-  const result = await createAgentSession({
-    thinkingLevel: "off",
-    authStorage: agentAuthStorage,
-    modelRegistry,
-    model: defaultModel,
-    resourceLoader: loader,
-    tools: ["read", "bash", "grep", "find", "ls", ...agentMcpToolNames],
-    customTools: agentMcpTools,
-    sessionManager: SessionManager.create(cwd, chatHistory.getSessionsDir()),
-    settingsManager: SettingsManager.inMemory(),
+  dshSessionId = "platform-" + randomUUID();
+  dshBridge = new DshBridge({
+    provider,
+    model,
+    onEvent: handleDshEvent,
+    mcpPatchPath,
+    skillsPatchPath,
   });
-
-  session = result.session;
-  // Let the chat-history adapter read/switch the live session manager.
-  chatHistory.setSessionManager(session.sessionManager);
-
-  // Subscribe to agent events and broadcast to all clients
-  session.subscribe((event) => {
-    switch (event.type) {
-      case "message_start": {
-        if (event.message?.role === "assistant") {
-          broadcast({ type: "agent_start" });
-        }
-        break;
-      }
-      case "message_end": {
-        const msg = event.message;
-        if (msg?.role === "assistant" && msg.content) {
-          for (const block of msg.content) {
-            if (block.type === "thinking" && block.thinking) {
-              broadcast({ type: "thinking", delta: block.thinking });
-            }
-            // Assistant text is delivered via streaming text_delta in
-            // message_update (with a one-shot fallback in agent_end when
-            // nothing streamed), so it is intentionally NOT echoed here -
-            // re-emitting the full text on message_end would duplicate the
-            // streamed message in the UI.
-            // tool_use / tool_result are handled via tool_execution_* events
-            // below with full input/output detail, so they are intentionally
-            // not echoed here to avoid duplicate tool blocks.
-          }
-        }
-        break;
-      }
-      case "message_update": {
-        const msg = event.assistantMessageEvent;
-        if (msg?.type === "text_delta" && msg.delta) {
-          streamedTextThisTurn = true;
-          broadcast({ type: "text", delta: msg.delta });
-        } else if (msg?.type === "thinking_delta" && msg.delta) {
-          broadcast({ type: "thinking", delta: msg.delta });
-        }
-        break;
-      }
-      case "tool_execution_start":
-        broadcast({
-          type: "tool_start",
-          toolCallId: event.toolCallId,
-          name: event.toolName,
-          args: event.args,
-        });
-        break;
-      case "tool_execution_update":
-        broadcast({
-          type: "tool_update",
-          toolCallId: event.toolCallId,
-          name: event.toolName,
-          partialResult: event.partialResult,
-        });
-        break;
-      case "tool_execution_end":
-        broadcast({
-          type: "tool_end",
-          toolCallId: event.toolCallId,
-          name: event.toolName,
-          result: event.result,
-          isError: event.isError,
-        });
-        break;
-      case "agent_start":
-        // Idempotent: isStreaming is now set synchronously at prompt dispatch
-        // (see the prompt handler) so a concurrent prompt observes it and
-        // steers instead of racing a second turn on the shared session.
-        isStreaming = true;
-        streamedTextThisTurn = false;
-        break;
-      case "agent_end":
-        if (event.messages) {
-          const lastAssistant = [...event.messages].reverse().find((m) => m.role === "assistant");
-          if (lastAssistant?.content) {
-            // Fallback: if no text was streamed this turn (e.g. a non-streaming
-            // model response), emit the final assistant text once here so it
-            // still appears in the UI. When text WAS streamed, emitting it again
-            // would duplicate the already-rendered message.
-            if (!streamedTextThisTurn) {
-              for (const block of lastAssistant.content) {
-                if (block.type === "text" && block.text) {
-                  broadcast({ type: "text", delta: block.text });
-                }
-              }
-            }
-            // The SDK persists the assistant turn to the session file on
-            // message_end; no manual append is needed.
-            // Mirror the assistant's final text into the SQLite project database.
-            const assistantText = chatHistory.extractMessageText(lastAssistant);
-            if (assistantText) {
-              chatHistory.recordMessage(chatHistory.currentSessionId(), "assistant", assistantText);
-            }
-          }
-          const errorMsg = session.agent?.state?.errorMessage;
-          if (errorMsg) {
-            broadcast({ type: "error", message: errorMsg });
-          }
-        }
-        // finishTurn() resets streaming state, broadcasts `done` (re-enabling the
-        // UI), and refreshes the sidebar session list. Idempotent per turn.
-        finishTurn();
-        break;
-    }
-  });
-
-  console.log(`Agent ready (model: ${session.model?.id || "auto"})`);
+  await dshBridge.start();
+  // MCP live-reload (Task 4.5): the REST routes mutate the DB then call this to
+  // regenerate the mcp patch + restart the child with the new --patch (dsh has
+  // no stock reload-profile RPC). dsh persists sessions by id, so a restart
+  // resumes the conversation from disk.
+  // ponytail: no regen serialization — concurrent REST calls may overlap
+  // restarts; serialize if a rapid edit storm ever wedges the child.
+  dshRegenMcp = async () => {
+    const patchPath = await writeMcpPatch();
+    await dshBridge.restart({ mcpPatchPath: patchPath });
+  };
+  // Session shim: dsh prompt resolves immediately with the message id; the
+  // turn plays out as notifications. isStreaming is set here synchronously
+  // (host-side streaming guard) so a concurrent prompt observes it.
+  // model.id mirrors the broadcast shape (unprefixed id) so current_model on
+  // connect matches what the selector sends (Task 3.4).
+  // ponytail: dsh has no SessionManager; expose the minimum shape chat-history
+  // needs (getSessionId/currentSessionId + no-op buildSessionContext) so the
+  // sidebar reflects the live dsh session as current. recordMessage still
+  // mirrors to SQLite; getSessionFile returns null (no JSONL under dsh).
+  const dshSm = {
+    getSessionId: () => dshSessionId,
+    getSessionFile: () => null,
+    buildSessionContext: () => ({ messages: [] }),
+    newSession: () => { dshSessionId = "platform-" + randomUUID(); },
+    setSessionId: (id) => { dshSessionId = id; },
+    setSessionFile: () => {},
+  };
+  chatHistory.setSessionManager(dshSm);
+  session = {
+    prompt: async (text) => {
+      isStreaming = true;
+      await dshBridge.prompt(dshSessionId, [{ type: "text", text }]);
+    },
+    model: { id: model },
+    sessionManager: dshSm,
+  };
+  defaultModel = { id: model, provider, name: model };
+  console.log(`[dsh] runtime ready (provider=${provider} model=${model})`);
 }
 
-// ── Chat session switching (mutates the live agent) ──────────────────────────
+// dsh → WS event-translation map (Task 2). The dsh runtime emits an append-only
+// session event log as `session.event` notifications plus `session.status`
+// lifecycle notifications; this maps them onto the frozen WS protocol the React
+// frontend already speaks.
+//   turn/start          → agent_start (isStreaming already set at dispatch)
+//   assistant/chunk     → text / thinking / (error capture on finish error)
+//   assistant/message   → chat-history record (assistant turn persistence)
+//   tool/call           → tool_start
+//   tool/result         → tool_end
+//   turn/end (error)    → error
+//   session.status idle → finishTurn (done + sessions refresh)
+// dsh has no partial-tool-result event, so tool_update is unmapped. Unmapped
+// notifications log at debug (DSH_DEBUG) and never drop the turn.
+function handleDshEvent(notif) {
+  const { method, params } = notif || {};
+  if (method === "session.status") {
+    if (params?.status === "idle") finishTurn();
+    return;
+  }
+  if (method !== "session.event") {
+    if (process.env.DSH_DEBUG)
+      console.debug("[dsh] notification:", method, JSON.stringify(params)?.slice(0, 200));
+    return;
+  }
+  const ev = params?.event;
+  if (!ev) return;
+  if (process.env.DSH_DEBUG) console.log("[dsh-debug] event:", ev.type, JSON.stringify(ev.data)?.slice(0, 600));
+  switch (ev.type) {
+    case "turn/start":
+      // One agent_start per turn. isStreaming was already set synchronously at
+      // prompt dispatch (see the WS prompt handler) so a concurrent prompt
+      // observes it; re-affirm here idempotently.
+      isStreaming = true;
+      streamedTextThisTurn = false;
+      dshTurnError = null;
+      dshToolNames.clear();
+      broadcast({ type: "agent_start" });
+      break;
+    case "assistant/chunk": {
+      const chunk = ev.data?.chunk;
+      if (!chunk) break;
+      if (chunk.type === "text-delta" && chunk.text) {
+        streamedTextThisTurn = true;
+        broadcast({ type: "text", delta: chunk.text });
+      } else if (chunk.type === "reasoning-delta" && chunk.text) {
+        broadcast({ type: "thinking", delta: chunk.text });
+      } else if (chunk.type === "finish" && chunk.reason?.kind === "error") {
+        // Capture the LLM failure; broadcast on turn/end (the turn-completion
+        // signal), then session.status idle → finishTurn → done.
+        dshTurnError = chunk.reason.failure?.message || "LLM request failed";
+      }
+      break;
+    }
+    case "assistant/message": {
+      // Mirror the assistant's final text into the SQLite project database
+      // (on assistant/message). Only records when text was produced.
+      const blocks = ev.data?.message?.content;
+      if (Array.isArray(blocks)) {
+        const text = blocks.filter((b) => b.type === "text").map((b) => b.text).join("");
+        if (text) chatHistory.recordMessage(chatHistory.currentSessionId(), "assistant", text);
+      }
+      break;
+    }
+    case "tool/call":
+      dshToolNames.set(ev.data.callId, ev.data.name);
+      broadcast({
+        type: "tool_start",
+        toolCallId: ev.data.callId,
+        name: ev.data.name,
+        // dsh carries raw JSON string arguments; parse to match the WS contract.
+        args: (() => { try { return JSON.parse(ev.data.arguments); } catch { return ev.data.arguments; } })(),
+      });
+      break;
+    case "tool/result": {
+      const callId =
+        ev.data?.message?.source?.callId ?? ev.data?.message?.content?.[0]?.toolCallId;
+      const resultBlocks = ev.data?.message?.content?.[0]?.content;
+      const resultText = Array.isArray(resultBlocks)
+        ? resultBlocks.filter((b) => b.type === "text").map((b) => b.text).join("") || null
+        : null;
+      broadcast({
+        type: "tool_end",
+        toolCallId: callId,
+        name: dshToolNames.get(callId) ?? undefined,
+        result: resultText,
+        isError: !!ev.data?.error || !!ev.data?.message?.content?.[0]?.isError,
+      });
+      break;
+    }
+    case "turn/end":
+      if (ev.data?.reason?.kind === "error" && dshTurnError) {
+        broadcast({ type: "error", message: dshTurnError });
+      }
+      dshTurnError = null;
+      break;
+    default:
+      if (process.env.DSH_DEBUG) console.debug("[dsh] unmapped event:", ev.type);
+      break;
+  }
+}
 
-// Rebuild the agent session bound to a new working directory. The SDK fixes cwd
-// at session creation (no runtime setter), so switching the workdir requires
-// recreating the session. The current conversation is preserved by repointing
-// the new SessionManager at the existing session file and reloading messages.
-// Rejected while streaming to avoid rebuilding mid-turn.
+
+// Rebuild the agent session bound to a new working directory. dsh fixes cwd at
+// spawn time (no runtime setter), so switching workdir would require a full
+// bridge restart — a v1 ceiling (design Q2). Reject with a clear message so the
+// UI can surface it. Rejected while streaming to avoid rebuilding mid-turn.
 async function rebuildAgentForWorkdir(workdir) {
   if (isStreaming) throw new Error("Cannot change working directory while the agent is responding");
   if (!workdir) throw new Error("No working directory provided");
-  const prevSessionFile = session?.sessionManager?.getSessionFile?.() ?? null;
-
-  await buildAndBindSession(workdir);
-
-  // Repoint the fresh session manager at the previous conversation (if any) so
-  // the user keeps their history; otherwise it stays on the brand-new session.
-  if (prevSessionFile) {
-    try {
-      session.sessionManager.setSessionFile(prevSessionFile);
-      session.agent.state.messages = session.sessionManager.buildSessionContext().messages;
-    } catch (err) {
-      console.warn("[workdir] could not restore previous session:", err.message);
-    }
-  }
-  console.log(`[workdir] Agent rebuilt with cwd: ${workdir}`);
-  return workdir;
+  // ponytail: dsh fixes cwd at spawn time; switching workdir requires a full
+  // restart (v1 ceiling — design Q2). Reject with a clear message rather than
+  // silently no-op, so the UI can surface it.
+  throw new Error("Working-directory switching is not supported under the dsh runtime");
 }
 
 // Start a new chat session: create a fresh SDK session and reset the agent's
@@ -636,10 +518,8 @@ async function rebuildAgentForWorkdir(workdir) {
 async function createNewSession() {
   if (isStreaming) throw new Error("Cannot start a new chat while the agent is responding");
   session.sessionManager.newSession();
-  // newSession() changes the session manager's target but leaves the agent's
-  // in-memory messages stale; reload from the (now empty) session so the next
-  // turn starts clean.
-  session.agent.state.messages = session.sessionManager.buildSessionContext().messages;
+  // ponytail: dsh has no in-memory message state to reset — newSession() (shim)
+  // already minted a fresh dshSessionId; the next prompt carries it.
   return chatHistory.currentSessionId();
 }
 
@@ -649,126 +529,51 @@ async function createNewSession() {
 async function switchToSession(id) {
   if (isStreaming) throw new Error("Cannot switch chat while the agent is responding");
   const currentId = chatHistory.currentSessionId();
-  const sessionPath = id === currentId ? null : await chatHistory.getSessionPath(id);
-  if (!sessionPath && id !== currentId) {
-    throw new Error(`Unknown session: ${id}`);
-  }
-  if (sessionPath) {
-    session.sessionManager.setSessionFile(sessionPath);
-  }
-  const ctx = session.sessionManager.buildSessionContext();
-  // Re-sync the agent's in-memory messages to the loaded session. setSessionFile()
-  // alone does NOT update agent.state.messages (only createAgentSession does, at
-  // creation), so without this the model would serve the previous session's context.
-  session.agent.state.messages = ctx.messages;
-  const sessions = await chatHistory.listSessions();
-  const meta = sessions.find((s) => s.id === id) || {};
-  return { id, title: meta.title || "Chat", messages: chatHistory.messagesForClient(ctx.messages) };
+  // ponytail: dsh has no in-memory message state to resync — switching the
+  // session id is enough; the next prompt carries the new id, and chat-history
+  // serves the sidebar's message list from SQLite.
+  if (id !== currentId) session.sessionManager.setSessionId(id);
+  // Read the resumed transcript from SQLite so session_loaded carries the real
+  // turns into the view (dsh keeps no in-memory message state to resync).
+  const sess = await chatHistory.getSession(id);
+  return { id, title: sess?.title || "Chat", messages: sess?.messages || [] };
 }
 
 // ── Command + model/session helpers (used by the prompt dispatcher) ──────────
 
-// The model list shown to clients. When LiteLLM is configured, source it live
-// from the proxy's OpenAI-compatible /v1/models endpoint (authoritative;
-// reflects admin-UI changes without a restart). On fetch failure/timeout, fall
-// back to the SDK registry's configured-auth models. When LiteLLM is not
-// configured, use the registry directly. Deduplicates by id.
+// The model list shown to clients. The profile generator's declared list IS the
+// model list (no stock listModels RPC). Sourced once at initDshAgent from
+// writeLlmProfile().
 async function getAvailableModels() {
-  let models;
-  if (litellmEnabled) {
-    const litellmModels = await fetchLitellmModels({
-      baseUrl: LITELLM_BASE_URL,
-      apiKey: LITELLM_API_KEY,
-    });
-    if (litellmModels && litellmModels.length) {
-      models = litellmModels;
-    } else {
-      // LiteLLM /v1/models unavailable. The registry is LiteLLM-only (only the
-      // LiteLLM extension is registered), so this fallback never exposes
-      // native Volces models. If the extension also registered nothing (proxy
-      // down at startup), the selector shows no models rather than Volces.
-      models = (modelRegistry?.getAvailable() ?? []).filter(hasAuth);
-      if (models.length === 0) {
-        console.warn(
-          "[model] LiteLLM /v1/models unavailable and no LiteLLM-routed models in registry; returning empty model list"
-        );
-      } else {
-        console.warn("[model] LiteLLM /v1/models unavailable; falling back to registry LiteLLM models");
-      }
-    }
-  } else {
-    models = (modelRegistry?.getAvailable() ?? []).filter(hasAuth);
-  }
-  return models
-    .filter((m, i, arr) => arr.findIndex((x) => x.id === m.id) === i)
-    .map((m) => ({ id: m.id, name: m.name || m.id, provider: m.provider || "litellm" }));
+  return dshModels.map((m) => ({ id: m.id, name: m.name || m.id, provider: m.provider }));
 }
 
 // Switch the active model by id, enforcing the streaming guard. Sends any error
 // to the requesting client and returns true on success. Shared by the
-// `set_model` WS handler and the `/model` command. If LiteLLM is enabled and the
-// id is not in the registry, the model may have been added to the proxy after
-// startup; reload the loader once to re-discover it before giving up.
+// `set_model` WS handler and the `/model` command.
 async function switchModelTo(id, ws) {
   if (isStreaming) {
     ws.send(JSON.stringify({ type: "error", message: "Cannot switch model while the agent is responding" }));
     return false;
   }
-  const findInRegistry = () => {
-    // When LiteLLM is enabled the registry is LiteLLM-only (only the LiteLLM
-    // extension is registered), so native Volces ids can never match here and
-    // a switch to a Volces model is rejected as "Unknown model".
-    const available = (modelRegistry?.getAvailable() ?? []).filter(hasAuth);
-    // Exact match first
-    let target = available.find((m) => m.id === id);
-    if (target) return target;
-    // Try matching with any provider prefix
-    target = available.find((m) => m.id.endsWith(`/${id}`));
-    if (target) return target;
-    // Try fuzzy matching: id contains the model name segment (handles
-    // "volc-coding-deepseek-v4-pro" matching "deepseek-v4-pro" or "deepseek-v4-pro"
-    // matching "deepseek/deepseek-v4-pro")
-    const normalize = (s) => s.replace(/^.*\//, "").toLowerCase();
-    const idNormalized = normalize(id);
-    target = available.find((m) => normalize(m.id) === idNormalized);
-    if (target) return target;
-    // Last resort: contains partial match
-    target = available.find((m) =>
-      normalize(m.id).includes(idNormalized) || idNormalized.includes(normalize(m.id))
-    );
-    return target;
-  };
-  // Check if already the current model (idempotent behavior)
-  const currentModelId = session?.model?.id || "";
-  const isAlreadyCurrent =
-    currentModelId === id ||
-    currentModelId.endsWith(`/${id}`) ||
-    (currentModelId.startsWith("litellm/") && currentModelId.slice(8) === id);
-  if (isAlreadyCurrent) {
-    return true;
-  }
-  let target = findInRegistry();
-  if (!target && litellmEnabled && loader) {
-    try {
-      await loader.reload();
-      target = findInRegistry();
-    } catch (err) {
-      console.warn("[model] reload to discover new model failed:", err.message);
-    }
-  }
+  // ponytail: no stock setModel RPC, so a live switch restarts the bridge with
+  // the new provider/model baked into initialize. This drops the child's
+  // in-memory session state (v1 ceiling); a non-disruptive switch needs a
+  // custom dsh RPC. Unknown model → "Unknown model" error.
+  const target = dshModels.find((m) => m.id === id);
   if (!target) {
     ws.send(JSON.stringify({ type: "error", message: `Unknown model: ${id}` }));
     return false;
   }
+  if (session?.model?.id === id) return true;
   try {
-    await session.setModel(target);
-    // Broadcast the original id the client requested (from the dropdown),
-    // not the registry's internal id. This ensures the client's model
-    // selector shows a value that matches the dropdown options.
+    await dshBridge.restart({ provider: target.provider, model: target.id });
+    session.model = { id: target.id };
+    defaultModel = { id: target.id, provider: target.provider, name: target.name || target.id };
     broadcast({ type: "model_changed", id });
     return true;
   } catch (err) {
-    console.error("setModel error:", err.message);
+    console.error("[dsh] model switch failed:", err.message);
     ws.send(JSON.stringify({ type: "error", message: err.message }));
     return false;
   }
@@ -776,7 +581,7 @@ async function switchModelTo(id, ws) {
 
 // ── Catalog agent switching (mirrors the model-selection messages) ───────────
 
-// Agents the agent switcher offers: the local pi session plus visible
+// Agents the agent switcher offers: the local dsh session plus visible
 // chat-mode remote agents (link agents are external pages, not chat targets).
 function switchableAgents(user) {
   return catalog
@@ -952,7 +757,7 @@ wss.on("connection", (ws, req) => {
         const text = data.text?.trim();
         if (!text) return;
 
-        // The SDK persists the user turn to the session file; no manual append.
+        // Parse a leading slash-command (/skill, /model, /new, …) if present.
         const cmd = parseCommand(text);
 
         if (cmd && cmd.command === "skill") {
@@ -964,7 +769,9 @@ wss.on("connection", (ws, req) => {
 
           // Manually expand the skill content and send that to the agent. This
           // does not rely on session.prompt() expanding slash commands.
-          const skills = loader?.getSkills().skills ?? [];
+          // Scan the skills/ dir (same dir the skill-filesystem plugin's
+          // customSkillDirs points at, Task 5.3).
+          const skills = getFileSkills();
           const skill = skills.find((s) => s.name === cmd.name);
           let promptText = text;
           if (skill) {
@@ -975,17 +782,18 @@ wss.on("connection", (ws, req) => {
             }
           }
 
+          // No steer mechanism through the bridge; reject concurrent prompts
+          // host-side (Task 2.7) rather than queueing a second turn.
+          if (isStreaming) {
+            ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
+            break;
+          }
+
+          // Set in-flight synchronously (before the first await) so a concurrent
+          // prompt is rejected. agent_start sets it again later (idempotent).
+          isStreaming = true;
           try {
-            if (isStreaming) {
-              await session.prompt(promptText, { streamingBehavior: "steer" });
-            } else {
-              // Set in-flight synchronously (before the first await) so a
-              // concurrent prompt observes it and steers instead of racing a
-              // second turn on the shared session. agent_start sets it again
-              // later (idempotent).
-              isStreaming = true;
-              await session.prompt(promptText);
-            }
+            await session.prompt(promptText);
           } catch (err) {
             console.error("Agent error:", err.message);
             broadcast({ type: "error", message: err.message });
@@ -1024,20 +832,21 @@ wss.on("connection", (ws, req) => {
             break;
           }
 
+          // No steer mechanism through the bridge; reject concurrent prompts
+          // host-side (Task 2.7) rather than queueing a second turn.
+          if (isStreaming) {
+            ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
+            break;
+          }
+
           // Mirror the user prompt into the SQLite project database.
           chatHistory.recordMessage(chatHistory.currentSessionId(), "user", text);
 
+          // Set in-flight synchronously (before the first await) so a concurrent
+          // prompt is rejected. agent_start sets it again later (idempotent).
+          isStreaming = true;
           try {
-            if (isStreaming) {
-              await session.prompt(text, { streamingBehavior: "steer" });
-            } else {
-              // Set in-flight synchronously (before the first await) so a
-              // concurrent prompt observes it and steers instead of racing a
-              // second turn on the shared session. agent_start sets it again
-              // later (idempotent).
-              isStreaming = true;
-              await session.prompt(text);
-            }
+            await session.prompt(text);
           } catch (err) {
             console.error("Agent error:", err.message);
             broadcast({ type: "error", message: err.message });
@@ -1072,7 +881,7 @@ wss.on("connection", (ws, req) => {
 
       case "list_skills": {
         const COMPUTER_USE_ENABLED = process.env.ENABLE_COMPUTER_USE === "true";
-        const skills = (loader?.getSkills().skills ?? [])
+        const skills = getFileSkills()
           .filter((s) => {
             if (!COMPUTER_USE_ENABLED && s.name.startsWith("computer-")) {
               return false;
@@ -1511,7 +1320,6 @@ app.get("/api/supervisor/status", (_req, res) => {
     ],
     provider: defaultModel ? defaultModel.provider : null,
     currentModel: defaultModel ? defaultModel.id : null,
-    mcpToolCount,
     uptimeMs: process.uptime() * 1000,
   });
 });
@@ -1564,14 +1372,7 @@ app.post("/api/extensions/mcp", async (req, res) => {
     // saved; the connection is best-effort.
     broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
     res.json(server);
-    if (server.enabled) {
-      connectSingleServer(name, config).then(({ tools, client }) => {
-        mcpClients.push(client);
-        broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
-      }).catch((err) => {
-        console.warn(`[extensions] Failed to connect new MCP server "${name}": ${err.message} (config saved, not connected)`);
-      });
-    }
+    dshRegenMcp?.().catch((e) => console.warn(`[extensions] dsh MCP regen failed: ${e.message}`));
   } catch (err) {
     if (err.message?.includes("UNIQUE constraint")) {
       return res.status(409).json({ error: `MCP server "${name}" already exists` });
@@ -1600,21 +1401,8 @@ app.put("/api/extensions/mcp/:name", async (req, res) => {
     const configChanged = config && JSON.stringify(config) !== JSON.stringify(oldServer.config);
     const enabledChanged = enabled !== undefined && enabled !== oldServer.enabled;
     if (configChanged || enabledChanged) {
-      // Disconnect old.
-      const { clients: updatedClients } = await disconnectSingleServer(name, mcpClients);
-      mcpClients = updatedClients;
-      // Connect new if enabled.
-      if (server.enabled && config) {
-        try {
-          const { tools, client } = await connectSingleServer(name, config);
-          mcpClients.push(client);
-        } catch (err) {
-          console.warn(`[extensions] Failed to reconnect MCP server "${name}": ${err.message}`);
-          // Roll back to old config.
-          extensionStore.updateMcpServer(name, { config: oldServer.config, enabled: oldServer.enabled });
-          return res.status(500).json({ error: `Failed to reconnect: ${err.message}` });
-        }
-      }
+      // dsh owns MCP connections via the profile; regenerate + restart.
+      dshRegenMcp?.().catch((e) => console.warn(`[extensions] dsh MCP regen failed: ${e.message}`));
       broadcast({ type: "extensions_changed", resource: "mcp", action: "updated", name });
     }
     res.json(server);
@@ -1636,12 +1424,10 @@ app.delete("/api/extensions/mcp/:name", async (req, res) => {
   if (server.locked) {
     return res.status(400).json({ error: `MCP server "${name}" is locked (bundled) and cannot be removed` });
   }
-  // Disconnect if connected.
-  const { clients: updatedClients } = await disconnectSingleServer(name, mcpClients);
-  mcpClients = updatedClients;
   extensionStore.removeMcpServer(name);
   broadcast({ type: "extensions_changed", resource: "mcp", action: "removed", name });
   res.json({ ok: true });
+  dshRegenMcp?.().catch((e) => console.warn(`[extensions] dsh MCP regen failed: ${e.message}`));
 });
 
 // Enable or disable an MCP server.
@@ -1662,26 +1448,10 @@ app.patch("/api/extensions/mcp/:name/enable", async (req, res) => {
     return res.status(400).json({ error: `MCP server "${name}" is locked (bundled) and cannot be disabled` });
   }
   const updated = extensionStore.toggleMcpServer(name, enabled);
-  // broadcast + respond immediately; connect/disconnect in background.
+  // broadcast + respond immediately; regen (dsh) or connect/disconnect (pi) in background.
   broadcast({ type: "extensions_changed", resource: "mcp", action: "toggled", name, enabled });
   res.json(updated);
-  if (enabled && !server.enabled) {
-    // Enabling: connect in background.
-    connectSingleServer(name, server.config).then(({ tools, client }) => {
-      mcpClients.push(client);
-    }).catch((err) => {
-      console.warn(`[extensions] Failed to enable MCP server "${name}": ${err.message}`);
-    });
-  } else if (!enabled && server.enabled) {
-    // Disabling: disconnect in background.
-    disconnectSingleServer(name, mcpClients).then(({ clients: updatedClients }) => {
-      mcpClients = updatedClients;
-    }).catch((err) => {
-      console.warn(`[extensions] Failed to disable MCP server "${name}": ${err.message}`);
-    });
-  } else {
-    broadcast({ type: "extensions_changed", resource: "mcp", action: "toggled", name, enabled });
-  }
+  dshRegenMcp?.().catch((e) => console.warn(`[extensions] dsh MCP regen failed: ${e.message}`));
 });
 
 // List all skills (file-based + custom from database).
@@ -1689,7 +1459,7 @@ app.patch("/api/extensions/mcp/:name/enable", async (req, res) => {
 // bundle manifest: names in manifest `skills` are "bundled" and take
 // locked/permissions from the manifest's permissions map ("skill:<name>").
 app.get("/api/extensions/skills", async (_req, res) => {
-  const fileSkills = (loader?.getSkills().skills ?? []).map((s) => {
+  const fileSkills = getFileSkills().map((s) => {
     const bundled = bundle.skills.includes(s.name);
     const policy = bundled ? splitPolicy(bundle.permissions[`skill:${s.name}`]) : { locked: false, permissions: null };
     return {
@@ -2241,8 +2011,8 @@ if (litellmEnabled) {
 // ── Start ────────────────────────────────────────────────────────────────────
 
 openConnector.initOpenConnector();
-// initChatHistory must run before initAgent so the sessions store dir is resolved
-// before the persistent SessionManager reads it via chatHistory.getSessionsDir().
+// initChatHistory must run before initDshAgent so the sessions store dir is
+// resolved before the session shim reads it via chatHistory.getSessionsDir().
 await chatHistory.initChatHistory();
 await workdirStore.initWorkdirStore();
 // Open the SQLite project database (chat, documents, index, preferences) before
@@ -2261,15 +2031,11 @@ if (db.isDbReady()) {
     broadcast,
   });
 }
-await initAgent();
-// One-time best-effort import of legacy chat-history-store/* into the SDK session
-// store (runs only when the session store is empty). Per-session failures are
-// logged and skipped by the adapter.
-await chatHistory.importLegacySessions();
-// One-time import of legacy file stores (documents-store/, sessions-store/) into
-// the SQLite database. Runs only on a fresh database; idempotent; never deletes
-// the legacy stores. Runs after importLegacySessions so chat-history-store data
-// flows through the SDK store into SQLite.
+await initDshAgent();
+// One-time import of legacy file stores (documents-store/, sessions-store/,
+// chat-history-store/) into the SQLite database. Runs only on a fresh database;
+// idempotent; never deletes the legacy stores. migrate.js reads both legacy
+// chat formats directly with stdlib fs (no SDK dependency).
 await migrate.runLegacyMigrations();
 
 await catalog.initCatalog({ broadcast });
@@ -2295,9 +2061,9 @@ async function shutdown() {
   cron.shutdown();
   catalog.stopCatalog();
   try {
-    await closeMcpClients(mcpClients);
+    await dshBridge?.shutdown();
   } catch (err) {
-    console.error("[shutdown] closeMcpClients failed:", err.message);
+    console.error("[shutdown] dsh bridge failed:", err.message);
   }
   process.exit(0);
 }

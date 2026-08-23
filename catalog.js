@@ -10,7 +10,9 @@ const CATALOG_FILE = path.resolve("agents.json");
 const CLOUD_URL = process.env.AGENTS_CONFIG_URL?.trim() || null;
 const REFRESH_SECS = Number(process.env.CATALOG_REFRESH_SECS || 60);
 
-// The built-in pi agent session is always present (sources may override it).
+// The built-in local agent is always present (sources may override it). It
+// carries no runtime field: server.js routes `local` to whichever session
+// object AGENT_RUNTIME selected (dsh shim or pi session).
 const BUILT_IN = { id: "local", type: "agent-local", name: "Platform" };
 
 let localEntries = { agents: [], apps: [] };

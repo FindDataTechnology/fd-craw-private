@@ -16,9 +16,9 @@
 //     the admin token) on behalf of the browser-facing /api/openconnector/* proxy
 //     in server.js, so tokens never reach the browser;
 //   - builds the MCP server config that registers the runtime's /mcp endpoint
-//     with the agent (handled by mcp-bridge.js), so the agent can call the
-//     discovery toolset (list_apps, search_actions, get_action_guide,
-//     execute_action) and therefore any connected provider's Actions.
+//     with the agent (emitted as a dsh-mcp-client profile entry by dsh-profile.js),
+//     so the agent can call the discovery toolset (list_apps, search_actions,
+//     get_action_guide, execute_action) and therefore any connected provider's Actions.
 //
 // All durable state (connections, credentials, runs) lives in the runtime; this
 // module holds only the in-memory config read at startup.
@@ -181,9 +181,9 @@ export function getPublicConfig() {
 }
 
 // ── MCP server config for the agent bridge ────────────────────────────────────
-// Returns an http MCP server entry (consumed by mcp-bridge.js) pointing at the
-// runtime's /mcp endpoint with the runtime token as a Bearer header, or null
-// when the module is disabled.
+// Returns an http MCP server entry (emitted into the dsh profile by
+// dsh-profile.js) pointing at the runtime's /mcp endpoint with the runtime
+// token as a Bearer header, or null when the module is disabled.
 export function buildMcpServerConfig() {
   if (!openConnectorEnabled) return null;
   const cfg = { url: `${baseUrl}/mcp` };

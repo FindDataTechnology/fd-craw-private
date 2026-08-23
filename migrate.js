@@ -9,18 +9,18 @@
 //       Ready docs are marked `queued` so the indexing pipeline re-indexes them
 //       through PageIndex from their imported source_text (the old LlamaIndex
 //       SummaryIndex is incompatible). Other statuses are preserved.
-//   - sessions-store/*.jsonl (SDK SessionManager)          ->  chat_sessions +
-//       chat_messages, mirroring user/assistant turns.
+//   - sessions-store/*.jsonl (pi SessionManager line-delimited JSON) +
+//     chat-history-store/*.json (oldest {id,title,messages[]} format)
+//       ->  chat_sessions + chat_messages, mirroring user/assistant turns.
+//
+// Reads both legacy chat formats directly with stdlib fs (no SDK dependency);
+// the dsh runtime persists sessions by id and SQLite is the store of record, so
+// the old SDK-JSONL intermediate is gone and both formats flow straight in.
 //
 // Per-item failures are logged and skipped; they never block startup.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import {
-  SessionManager,
-  parseSessionEntries,
-  buildSessionContext,
-} from "@earendil-works/pi-coding-agent";
 import * as db from "./db.js";
 import { extractMessageText } from "./chat-history.js";
 
@@ -35,8 +35,7 @@ function truncateTitle(s) {
 function toIso(d) {
   if (!d) return new Date().toISOString();
   if (typeof d === "string") return d;
-  if (d instanceof Date) return d.toISOString();
-  if (typeof d.toISOString === "function") return d.toISOString();
+  if (d instanceof Date || typeof d.toISOString === "function") return d.toISOString();
   return String(d);
 }
 
@@ -92,46 +91,137 @@ export async function importLegacyDocuments() {
 }
 
 // ── Chat sessions ────────────────────────────────────────────────────────────
+//
+// One-time import of the project's two legacy chat stores into SQLite, run when
+// the DB is fresh (empty). Reads both formats directly with stdlib fs:
+//   - sessions-store/*.jsonl  : pi SessionManager JSONL (line-delimited entries)
+//   - chat-history-store/*.json: oldest {id,title,createdAt,messages[]} format
+//
+// Idempotent (skipped if the DB already has sessions); never deletes the legacy
+// stores. Per-session failures are logged and skipped.
+//
+// ponytail: flattens user/assistant message entries in file order — does not
+// follow the SDK's branch tree or apply compaction summaries. Branched sessions
+// may interleave, but legacy chats are rarely branched and this is a one-time
+// best-effort read-only import.
+
+// Parse a pi SessionManager JSONL file into {id,name,created,messages} where
+// messages is the flat user/assistant text list in file order. Returns null if
+// the file has no valid session header.
+async function readJsonlSession(filePath) {
+  let raw;
+  try {
+    raw = await fs.readFile(filePath, "utf8");
+  } catch {
+    return null;
+  }
+  let header = null;
+  let name = null;
+  const messages = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!header) {
+      if (entry.type === "session" && typeof entry.id === "string") header = entry;
+      continue;
+    }
+    if (entry.type === "session_info" && typeof entry.name === "string") {
+      name = entry.name.trim() || null;
+      continue;
+    }
+    if (entry.type !== "message" || !entry.message) continue;
+    const m = entry.message;
+    if (m.role !== "user" && m.role !== "assistant") continue;
+    const text = extractMessageText(m);
+    if (text) messages.push({ role: m.role, content: text, ts: entry.timestamp });
+  }
+  if (!header) return null;
+  return { id: header.id, name, created: header.timestamp, messages };
+}
+
+// Read a chat-history-store/*.json file (oldest format).
+async function readJsonSession(filePath) {
+  let raw;
+  try {
+    raw = await fs.readFile(filePath, "utf8");
+  } catch {
+    return null;
+  }
+  let s;
+  try {
+    s = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const msgs = Array.isArray(s.messages) ? s.messages : [];
+  const messages = msgs
+    .filter((m) => m && (m.role === "user" || m.role === "assistant"))
+    .map((m) => ({ role: m.role, content: String(m.content || ""), ts: m.ts }));
+  if (!messages.length) return null;
+  return { id: s.id, name: s.title, created: s.createdAt, messages };
+}
+
+function writeSessionToDb(session) {
+  const title = truncateTitle(session.name || session.messages[0]?.content);
+  db.upsertSession(session.id, title, toIso(session.created), toIso(session.created), null);
+  for (const m of session.messages) {
+    db.appendMessage(session.id, m.role, m.content, toIso(m.ts));
+  }
+}
 
 export async function importLegacySessions() {
   if (!db.isDbReady()) return 0;
   if (db.countChatSessions() > 0) return 0; // not fresh
 
+  let imported = 0;
+
+  // sessions-store/*.jsonl (pi SessionManager format)
   const sessionsDir = process.env.SESSIONS_STORE_DIR
     ? path.resolve(process.env.SESSIONS_STORE_DIR)
     : path.resolve("sessions-store");
-
-  let list;
   try {
-    list = await SessionManager.list(process.cwd(), sessionsDir);
-  } catch {
-    return 0; // no legacy session store
-  }
-
-  let imported = 0;
-  for (const s of list) {
-    if (!s.path) continue;
-    try {
-      const raw = await fs.readFile(s.path, "utf8");
-      const entries = parseSessionEntries(raw);
-      const ctx = buildSessionContext(entries);
-      const msgs = (ctx.messages || []).filter(
-        (m) => m && (m.role === "user" || m.role === "assistant")
-      );
-      if (!msgs.length) continue;
-
-      const title = truncateTitle(s.name || s.firstMessage);
-      db.upsertSession(s.id, title, toIso(s.created), toIso(s.modified), s.path || null);
-      for (const m of msgs) {
-        db.appendMessage(s.id, m.role, extractMessageText(m) || "", toIso());
+    const files = (await fs.readdir(sessionsDir)).filter((f) => f.endsWith(".jsonl"));
+    for (const f of files) {
+      const session = await readJsonlSession(path.join(sessionsDir, f));
+      if (!session || !session.messages.length) continue;
+      try {
+        writeSessionToDb(session);
+        imported++;
+      } catch (err) {
+        console.warn(`[migrate] skipped session ${session.id}: ${err.message}`);
       }
-      imported++;
-    } catch (err) {
-      console.warn(`[migrate] skipped session ${s.id}: ${err.message}`);
     }
+  } catch {
+    // no legacy sessions-store
   }
+
+  // chat-history-store/*.json (oldest format)
+  const legacyDir = process.env.CHAT_HISTORY_STORE_DIR
+    ? path.resolve(process.env.CHAT_HISTORY_STORE_DIR)
+    : path.resolve("chat-history-store");
+  try {
+    const files = (await fs.readdir(legacyDir)).filter((f) => f.endsWith(".json"));
+    for (const f of files) {
+      const session = await readJsonSession(path.join(legacyDir, f));
+      if (!session || !session.messages.length) continue;
+      try {
+        writeSessionToDb(session);
+        imported++;
+      } catch (err) {
+        console.warn(`[migrate] skipped session ${session.id}: ${err.message}`);
+      }
+    }
+  } catch {
+    // no legacy chat-history-store
+  }
+
   if (imported) {
-    console.log(`[migrate] imported ${imported} session(s) from ${sessionsDir}`);
+    console.log(`[migrate] imported ${imported} legacy session(s)`);
   }
   return imported;
 }

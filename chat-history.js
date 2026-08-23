@@ -1,12 +1,14 @@
-// ── Chat history module (SDK sessions, mirrored to SQLite) ───────────────────
+// ── Chat history module (mirrored to SQLite) ─────────────────────────────────
 //
-// The pi SDK's `SessionManager` remains the live agent's context store (JSONL
-// under SESSIONS_DIR) and the source for resume/switch - it is a sealed,
-// file-based SDK class that cannot be replaced. This module MIRRORS each user
+// The dsh runtime persists chat sessions by id; SQLite is the store of record
+// for the session list and read-only view APIs. This module MIRRORS each user
 // prompt and assistant response into the project SQLite database as the turn
-// progresses, making SQLite the store of record for the session list and
-// read-only view APIs. List/view/path read from SQLite; resume/switch use the
-// SDK's JSONL via the stored `path`.
+// progresses. List/view read from SQLite; the live agent is held by server.js.
+//
+// The `sm` (session manager) shim is set by server.js once the agent is created
+// and exposes the minimum shape this module needs (getSessionId /
+// getSessionFile / buildSessionContext) so the sidebar can flag the current
+// session. Under dsh it is a thin shim around the dsh session id.
 //
 // Exposes:
 //   - recordMessage(sessionId, role, content): mirror a turn into SQLite.
@@ -14,13 +16,11 @@
 //   - getSession(id): read a session's messages (SQLite, or live for current).
 //   - currentSessionId(), getSessionPath(), messagesForClient(), etc.
 //
-// Switching/creating sessions mutates the live agent (session.sessionManager +
-// agent.state.messages) and is performed in server.js, which owns the agent
-// session; this module owns read/convert/mirror operations.
+// Switching/creating sessions mutates the live agent and is performed in
+// server.js, which owns the agent session; this module owns read/convert/mirror
+// operations.
 
-import { SessionManager, buildSessionContext, parseSessionEntries } from "@earendil-works/pi-coding-agent";
 import { promises as fs } from "node:fs";
-import path from "node:path";
 import * as db from "./db.js";
 import { storeDir } from "./paths.js";
 
@@ -166,9 +166,16 @@ export function currentSessionId() {
 // id is the current unflushed session.
 export async function getSession(id) {
   if (!id) return null;
+  // Under dsh the session shim's buildSessionContext() is a no-op (returns no
+  // messages), so the live branch would hand back an empty transcript for the
+  // current session even though recordMessage has mirrored the turns into
+  // SQLite. Fall through to SQLite when the live context is empty. (Under the
+  // old pi runtime buildSessionContext returned the freshest in-memory state,
+  // which is why the live branch existed.)
   if (id === currentSessionId()) {
     const ctx = sm?.buildSessionContext?.() ?? { messages: [] };
-    return { id, title: titleFromFirstUser(ctx.messages), messages: messagesForClient(ctx.messages) };
+    const live = messagesForClient(ctx.messages);
+    if (live.length) return { id, title: titleFromFirstUser(ctx.messages), messages: live };
   }
   if (!db.isDbReady()) return null;
   const meta = db.getSessionMeta(id);
@@ -185,67 +192,10 @@ export async function getSessionPath(id) {
   return db.getSessionPath(id);
 }
 
-// ── One-time legacy import (chat-history-store -> SDK sessions) ──────────────
+// ── One-time legacy import ────────────────────────────────────────────────────
 //
-// On first run (when the SDK sessions store has no sessions yet), import each
-// chat-history-store/*.json session into the SDK session store so existing
-// conversations are not lost. These then flow into SQLite via migrate.js's
-// sessions-store import. Per-session failures are logged and skipped; the legacy
-// dir is left intact as a backup.
-export async function importLegacySessions() {
-  const legacyDir = storeDir("chat-history-store", process.env.CHAT_HISTORY_STORE_DIR);
-  let files = [];
-  try {
-    files = await fs.readdir(legacyDir);
-  } catch {
-    return 0; // no legacy store
-  }
-  const jsonFiles = files.filter((f) => f.endsWith(".json"));
-  if (!jsonFiles.length) return 0;
-
-  // Skip if the new store already has sessions (already imported, or in use).
-  let existing = [];
-  try {
-    existing = await SessionManager.list(process.cwd(), SESSIONS_DIR);
-  } catch {
-    // ignore
-  }
-  if (existing.length) return 0;
-
-  let imported = 0;
-  for (const f of jsonFiles) {
-    try {
-      const raw = await fs.readFile(path.join(legacyDir, f), "utf8");
-      const s = JSON.parse(raw);
-      const msgs = Array.isArray(s.messages) ? s.messages : [];
-      if (!msgs.length) continue;
-      const tmp = SessionManager.create(process.cwd(), SESSIONS_DIR);
-      let hasAssistant = false;
-      for (const m of msgs) {
-        if (m.role === "user") {
-          tmp.appendMessage({ role: "user", content: String(m.content || ""), timestamp: Date.now() });
-        } else if (m.role === "assistant") {
-          hasAssistant = true;
-          tmp.appendMessage({
-            role: "assistant",
-            content: [{ type: "text", text: String(m.content || "") }],
-            api: "openai-completions",
-            provider: "volces",
-            model: "legacy",
-            usage: {
-              input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-            },
-            stopReason: "stop",
-            timestamp: Date.now(),
-          });
-        }
-      }
-      if (hasAssistant) imported++; // only sessions that flushed a file count
-    } catch (err) {
-      console.warn(`[chat-history] legacy import skipped ${f}: ${err.message}`);
-    }
-  }
-  if (imported) console.log(`[chat-history] Imported ${imported} legacy session(s) from ${legacyDir}`);
-  return imported;
-}
+// Legacy chat-history-store/*.json sessions are imported straight into SQLite by
+// migrate.js's importLegacySessions (it reads both sessions-store/*.jsonl and
+// chat-history-store/*.json directly with stdlib fs). This module no longer
+// round-trips them through an intermediate SDK-JSONL store, so it has no legacy
+// import of its own — see migrate.js.
