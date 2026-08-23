@@ -11,8 +11,27 @@ async function ensureModelsLoaded(page) {
 }
 
 test.describe("model selection", () => {
+  // The switch tests change the shared server's active model. The Playwright
+  // webServer is one server for the WHOLE run (reused across projects), so a
+  // switch test leaving e.g. deepseek-v4-flash selected breaks the @smoke
+  // chat-turn project that inherits this server (flash 503s on this gateway).
+  // Capture the baseline in beforeEach, restore it in afterEach.
+  let originalModel;
+
   test.beforeEach(async ({ page }) => {
     await gotoChat(page);
+    const modelSelect = page.getByTestId("model-select");
+    await ensureModelsLoaded(page);
+    originalModel = await modelSelect.inputValue();
+  });
+
+  test.afterEach(async ({ page }) => {
+    const modelSelect = page.getByTestId("model-select");
+    const current = await modelSelect.inputValue().catch(() => null);
+    if (current && originalModel && current !== originalModel) {
+      await modelSelect.selectOption(originalModel);
+      await expect(modelSelect).toHaveValue(originalModel, { timeout: 20000 });
+    }
   });
 
   test("model selector loads models and reflects active model", async ({ page }) => {
