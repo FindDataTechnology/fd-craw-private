@@ -42,3 +42,11 @@ postgres-data/
 # Local Playwright CLI console logs (scratch)
 .playwright-cli/
 web/.playwright-cli/
+
+# SSH / remote-infra scratch (docker-compose for the tokenvault IDP deployment;
+# references env-held secrets but is private infra, not part of this app)
+.remote-dc.yml
+.remote-dc-current.yml
+.tmp-testpw-hash
+sso-test.mjs
+connect-app/
