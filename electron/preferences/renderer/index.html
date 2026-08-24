@@ -113,7 +113,6 @@
 <body>
   <div class="tabs">
     <div class="tab active" data-tab="general">General</div>
-    <div class="tab" data-tab="litellm">LiteLLM</div>
     <div class="tab" data-tab="openconnector">OpenConnector</div>
   </div>
 
@@ -133,23 +132,6 @@
     <div class="actions">
       <button id="saveGeneral">Save & Restart Server</button>
       <span id="generalStatus"></span>
-    </div>
-  </div>
-
-  <div class="tab-panel" data-panel="litellm">
-    <div class="form-group">
-      <label for="litellmApiKey">LiteLLM Master Key (read-only)</label>
-      <input type="text" id="litellmApiKey" class="readonly" readonly>
-      <button id="copyLitellmKey" style="margin-top: 8px;">Copy to Clipboard</button>
-    </div>
-    <div class="form-group">
-      <label for="litellmConfig">LiteLLM Configuration (YAML)</label>
-      <textarea id="litellmConfig" name="litellmConfig"></textarea>
-    </div>
-    <div id="litellmError" class="error" style="display:none;"></div>
-    <div class="actions">
-      <button id="saveLitellm">Save & Restart LiteLLM</button>
-      <span id="litellmStatus"></span>
     </div>
   </div>
 

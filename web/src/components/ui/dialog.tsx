@@ -12,8 +12,13 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
 
   return (
     <div className="fixed inset-0 z-50">
-      <div className="fixed inset-0 bg-black/80" onClick={() => onOpenChange?.(false)} />
-      <div className="fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%]">
+      {/* backdrop; clicking it closes the modal */}
+      <div
+        className="fixed inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in-0"
+        onClick={() => onOpenChange?.(false)}
+      />
+      {/* content container - max-h + scroll keeps tall forms usable on small screens */}
+      <div className="fixed left-[50%] top-[50%] z-50 max-h-[90vh] w-full translate-x-[-50%] translate-y-[-50%] overflow-y-auto">
         {children}
       </div>
     </div>
@@ -25,7 +30,8 @@ const DialogContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
     <div
       ref={ref}
       className={cn(
-        "w-full max-w-lg rounded-lg border bg-background p-6 shadow-lg",
+        "mx-auto w-full max-w-lg rounded-lg border bg-background p-6 shadow-lg",
+        "animate-in fade-in-0 zoom-in-95",
         className
       )}
       {...props}
@@ -48,9 +54,16 @@ DialogFooter.displayName = "DialogFooter"
 
 const DialogTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTMLHeadingElement>>(
   ({ className, ...props }, ref) => (
-    <h2 ref={ref} className={cn("text-lg font-semibold leading-none tracking-tight", className)} {...props} />
+    <h2 ref={ref} className={cn("flex items-center gap-2 text-lg font-semibold leading-none tracking-tight", className)} {...props} />
   )
 )
 DialogTitle.displayName = "DialogTitle"
 
-export { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle }
+const DialogDescription = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement>>(
+  ({ className, ...props }, ref) => (
+    <p ref={ref} className={cn("text-sm text-muted-foreground", className)} {...props} />
+  )
+)
+DialogDescription.displayName = "DialogDescription"
+
+export { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription }

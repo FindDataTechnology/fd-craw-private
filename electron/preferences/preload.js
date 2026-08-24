@@ -10,12 +10,6 @@ contextBridge.exposeInMainWorld("platform", {
   // Set a settings field
   setSettingField: (key, value) => ipcRenderer.invoke("settings:set-field", { key, value }),
 
-  // Get full LiteLLM YAML config
-  getLiteLLMConfig: () => ipcRenderer.invoke("litellm:get-config"),
-
-  // Save new LiteLLM YAML config
-  setLiteLLMConfig: (content) => ipcRenderer.invoke("litellm:set-config", { content }),
-
   // Regenerate OpenConnector tokens (never returns the tokens)
   rotateOpenConnectorTokens: () => ipcRenderer.invoke("openconnector:rotate-tokens"),
 

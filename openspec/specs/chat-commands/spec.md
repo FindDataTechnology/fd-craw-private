@@ -34,30 +34,35 @@ The chat UI SHALL render each server-handled command invocation as a collapsible
 - **AND** the raw `/model …` text SHALL NOT be rendered as a normal user message
 
 ### Requirement: Chat input provides unified slash-command autocomplete
-The chat UI SHALL present a slash-command autocomplete popup listing all available commands - the meta-commands (`/model`, `/new`, `/clear`, `/help`) and the `/skill:<name>` commands sourced from the `skills` list - filtered by the text typed after `/`. The user SHALL be able to navigate the list with arrow keys and insert the selected command with Enter; Escape SHALL close the popup without inserting. Inserting a command SHALL NOT auto-send; the user may append arguments and send normally. The UI SHALL also provide a visible button to open a command list popup that shows all available commands and models.
+The composer SHALL show a popover when the user types `/` at the start of an input or after a space. The popover SHALL list every available chat command and skill (from the WS `skills` event and the built-in commands like `/model`, `/clear`, `/skill:<name>`) grouped into "Commands" and "Skills" sections with a visible divider. Each entry SHALL show the canonical form (e.g. `/skill:foo`) and a short description. The popover SHALL filter entries as the user types; arrow keys navigate; Enter inserts the chosen entry into the composer; Escape dismisses the popover without modifying the composer's text.
 
-#### Scenario: typing slash lists all commands
-- **WHEN** the user types `/` at the start of the chat input
-- **THEN** the UI SHALL show a popup listing the meta-commands and all available `/skill:` commands
+#### Scenario: typing slash opens picker
+- **WHEN** the user types `/` as the first character of the composer
+- **THEN** the popover SHALL appear with the full list of skills and commands grouped into "Commands" and "Skills" sections
+- **AND** the first entry SHALL be highlighted
 
-#### Scenario: filtering by typed text
-- **WHEN** the user types `/mod` in the chat input
-- **THEN** the popup SHALL list only the commands whose names match `mod`
+#### Scenario: filter by typing
+- **WHEN** the popover is open and the user types additional characters
+- **THEN** the list SHALL filter to entries whose canonical form contains the typed substring (case-insensitive)
+- **AND** the first matching entry SHALL be highlighted
 
-#### Scenario: enter inserts the command without sending
-- **WHEN** the user selects a command in the popup and presses Enter
-- **THEN** the command text SHALL be inserted into the chat input with a trailing space
-- **AND** the popup SHALL close
-- **AND** the message SHALL NOT be sent
+#### Scenario: select with Enter
+- **WHEN** the popover is open and the user presses Enter on a highlighted entry
+- **THEN** the composer's text SHALL be replaced with the entry's canonical form (followed by a trailing space)
+- **AND** the popover SHALL close
+- **AND** the composer SHALL remain focused so the user can continue typing arguments
 
-#### Scenario: escape closes the popup without inserting
-- **WHEN** the popup is open and the user presses Escape
-- **THEN** the popup SHALL close
-- **AND** no command SHALL be inserted into the input
+#### Scenario: dismiss with Escape
+- **WHEN** the popover is open and the user presses Escape
+- **THEN** the popover SHALL close
+- **AND** the composer's text SHALL be unchanged
 
-#### Scenario: command list button opens popup
-- **WHEN** the user clicks the command list button
-- **THEN** the UI SHALL show a popup listing all available slash commands and models
-- **AND** clicking a command SHALL insert it into the input
-- **AND** clicking a model SHALL select it as the active model
+### Requirement: Slash picker groups built-in commands and skills
+The slash-command popover SHALL include the built-in chat commands (`/model`, `/new`, `/clear`, `/help`) in a "Commands" section and the loaded skills (from the WS `skills` event) in a "Skills" section, separated by a visible divider. The source of truth for built-ins is the chat-composer's command constant; the source for skills is the WS `skills` event. The first item across both sections SHALL be highlighted by default; the highlight SHALL wrap within each section but SHALL NOT cross sections.
+
+#### Scenario: two groups in the picker
+- **WHEN** the popover is open with the default list
+- **THEN** the picker SHALL show a "Commands" section containing `/model`, `/new`, `/clear`, and `/help`
+- **AND** a "Skills" section containing the discovered skills
+- **AND** the two sections SHALL have visible dividers between them
 

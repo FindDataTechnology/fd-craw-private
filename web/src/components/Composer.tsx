@@ -6,17 +6,18 @@
 //   /skill:<name>   - server expands from loaded skills
 //
 // The paperclip uploads via POST /api/documents and injects an @doc:<id>
-// reference the server expands into the agent's context. Autocomplete opens
-// when the text starts with "/". Arrow keys navigate, Tab/Enter accepts, Esc
-// closes.
+// reference the server expands into the agent's context. The slash-command
+// autocomplete is delegated to <SlashCommandPicker> (sectioned popover with
+// filter, keyboard nav, Esc dismiss, Enter insert).
 //
 // All user-visible strings resolve through the i18n bundle. Slash-command
 // tokens (/model, /new, …) are identifiers and stay literal.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Paperclip, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
+import { SlashCommandPicker, type SlashCommand } from "@/components/SlashCommandPicker";
 import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
 import { showToast } from "@/components/Toast";
@@ -44,6 +45,10 @@ export function Composer({ send }: Props) {
 
   const [value, setValue] = useState("");
   const [acIdx, setAcIdx] = useState(0);
+  // Esc "dismisses" the picker without clearing the composer (a separate
+  // state from the text-derived open check so the user keeps what they
+  // typed). The flag resets as soon as the text changes.
+  const [pickerDismissed, setPickerDismissed] = useState(false);
   const [drag, setDrag] = useState(false);
   // Attached documents: each is an ingested @doc:<id> reference (design D4).
   // The paperclip uploads via POST /api/documents (the path that already works
@@ -56,10 +61,12 @@ export function Composer({ send }: Props) {
   const disabled = status !== "connected";
   const trimmed = value.trim();
 
-  const commands = [
-    ...CMD_META.map((c) => ({ label: c.label, description: t(c.descKey) })),
-    ...skills.map((s) => ({ label: `/skill:${s.name}`, description: s.description || "" })),
-  ];
+  // Built-in commands (Commands section). Skills come from the store and are
+  // rendered as the Skills section inside <SlashCommandPicker>.
+  const commands: SlashCommand[] = CMD_META.map((c) => ({
+    label: c.label,
+    description: t(c.descKey),
+  }));
 
   // Autogrow.
   useEffect(() => {
@@ -68,13 +75,6 @@ export function Composer({ send }: Props) {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [value]);
-
-  const showAc = value.startsWith("/") && commands.length > 0;
-  const filter = value.toLowerCase();
-  const acItems = showAc
-    ? commands.filter((c) => c.label.toLowerCase().includes(filter)).slice(0, 12)
-    : [];
-  const acVisible = showAc && acItems.length > 0;
 
   const submit = () => {
     if (!trimmed || disabled) return;
@@ -108,10 +108,10 @@ export function Composer({ send }: Props) {
     setAttachments([]);
   };
 
-  const acceptAc = () => {
-    const pick = acItems[acIdx];
+  const acceptAc = (label?: string) => {
+    const pick = label;
     if (!pick) return;
-    setValue(pick.label + " ");
+    setValue(pick + " ");
     setAcIdx(0);
     textareaRef.current?.focus();
   };
@@ -135,10 +135,12 @@ export function Composer({ send }: Props) {
     setAttachments((a) => a.filter((x) => x.id !== id));
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (acVisible) {
+    // The slash picker derives "is open" from the text content, so we always
+    // forward arrow / Enter / Tab / Esc when the picker is showing.
+    if (pickerOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setAcIdx((i) => Math.min(i + 1, acItems.length - 1));
+        setAcIdx((i) => i + 1);
         return;
       }
       if (e.key === "ArrowUp") {
@@ -148,18 +150,21 @@ export function Composer({ send }: Props) {
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        acceptAc();
+        // The picker itself handles the pick via mouse; keyboard Enter uses
+        // the same path. The flat item list lives inside the picker.
         return;
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        setValue("");
+        setPickerDismissed(true);
         return;
       }
-      if (e.key === "Enter" && !e.shiftKey && value.startsWith("/") && !value.includes(" ")) {
-        // If still on just a slash-token, Enter accepts autocomplete rather than submitting.
+      if (e.key === "Enter" && !e.shiftKey) {
+        // Insert the highlighted pick rather than submit the raw `/...` text.
         e.preventDefault();
-        acceptAc();
+        const items = mergedItems;
+        const pick = items[Math.min(acIdx, items.length - 1)];
+        if (pick) acceptAc(pick.label);
         return;
       }
     }
@@ -168,6 +173,37 @@ export function Composer({ send }: Props) {
       submit();
     }
   };
+
+  // Build the same flat item list the picker renders, so Enter can resolve
+  // the highlighted label without the picker exposing a ref-based lookup.
+  // Mirrors the filter (substring, case-insensitive, max 8/section) and the
+  // Commands → Skills ordering. The picker is "open" only while a `/` token
+  // is present AND the user has not dismissed it with Esc.
+  const pickerOpen = useMemo(() => {
+    const m = value.match(/(^|\s)(\/[^/\s]*)$/);
+    if (!m) return false;
+    if (pickerDismissed) return false;
+    return true;
+  }, [value, pickerDismissed]);
+  // Reset the dismissed flag whenever the user edits the text (typing or
+  // pasting), so the next `/` token re-opens the picker.
+  useEffect(() => {
+    if (pickerDismissed) setPickerDismissed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  const mergedItems = useMemo(() => {
+    const m = value.match(/(^|\s)(\/[^/\s]*)$/);
+    if (!m) return [];
+    const query = m[2].slice(1).toLowerCase();
+    const cmds = commands
+      .filter((c) => c.label.toLowerCase().includes(query))
+      .slice(0, 8);
+    const sks = skills
+      .map((s) => ({ label: `/skill:${s.name}`, description: s.description || "" }))
+      .filter((s) => s.label.toLowerCase().includes(query))
+      .slice(0, 8);
+    return [...cmds, ...sks];
+  }, [value, commands, skills]);
 
   // Drag-drop: upload files via POST /api/documents.
   const onDrop = async (e: React.DragEvent) => {
@@ -188,6 +224,13 @@ export function Composer({ send }: Props) {
     }
   };
 
+  // Determine the active filter index across the merged list. The picker
+  // exposes its own index internally; we drive its highlight from here via
+  // the `highlight` + `onHighlight` contract. The composer owns the
+  // highlight state because it also drives keyboard navigation; the picker
+  // clamps it on render.
+  const handlePick = (label: string) => acceptAc(label);
+
   return (
     <div
       className={cn("relative border-t border-border bg-card px-4 py-3", drag && "bg-primary/5")}
@@ -200,35 +243,20 @@ export function Composer({ send }: Props) {
       }}
       onDrop={onDrop}
     >
-      {acVisible && (
-        <ul
-          role="listbox"
-          className="absolute bottom-full left-4 right-4 mb-2 max-h-60 overflow-y-auto rounded-md border border-border bg-popover shadow-lg"
-        >
-          {acItems.map((c, i) => (
-            <li
-              key={c.label}
-              role="option"
-              aria-selected={i === acIdx}
-              onMouseEnter={() => setAcIdx(i)}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                acceptAc();
-              }}
-              className={cn(
-                "flex items-baseline gap-3 px-3 py-1.5 text-xs",
-                i === acIdx ? "bg-muted" : "hover:bg-muted/60",
-              )}
-            >
-              <span className="font-mono text-foreground">{c.label}</span>
-              <span className="truncate text-muted-foreground">{c.description}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <SlashCommandPicker
+        text={value}
+        open={pickerOpen}
+        highlight={acIdx}
+        onHighlight={setAcIdx}
+        onPick={handlePick}
+        commands={commands}
+      />
       <div className="mx-auto flex max-w-3xl flex-col gap-2 rounded-2xl border border-border bg-background px-3 py-2 focus-within:border-primary">
         {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-muted-foreground" data-testid="composer-attach-count">
+              {t("chat.composer.attachments", { count: attachments.length })}
+            </span>
             {attachments.map((a) => (
               <span
                 key={a.id}

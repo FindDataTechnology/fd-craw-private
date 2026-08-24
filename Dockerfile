@@ -23,8 +23,8 @@
 FROM node:25-bookworm-slim AS builder
 
 # python3/make/g++ for native addons (better-sqlite3); git + curl + tar for the
-# resource build scripts — build-openconnector clones a repo; build-node /
-# build-python-litellm / build-postgres curl release tarballs and extract them.
+# resource build scripts — build-openconnector clones a repo; build-node
+# curls the Node standalone release tarball and extracts it.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         python3 make g++ ca-certificates git curl tar \
@@ -49,17 +49,17 @@ RUN npm ci --ignore-scripts \
 COPY . .
 
 # Build the React frontend, then all bundled Linux resources.
-# predist = build-openconnector + build-node + build-python-litellm + build-postgres
-#           + verify-bundle (asserts every selected component is present).
+# predist = build-openconnector + build-node + verify-bundle (asserts every
+# selected component is present).
 RUN npm run web:build \
     && npm run predist
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM node:25-bookworm-slim AS runtime
 
-# ca-certificates for outbound HTTPS (Volces, LiteLLM upstreams); curl for the
-# Docker HEALTHCHECK. Everything else (Python venv, Postgres binaries) is bundled
-# under resources/ and needs no system packages.
+# ca-certificates for outbound HTTPS (Volces upstreams); curl for the
+# Docker HEALTHCHECK. Everything else is bundled under resources/ and needs
+# no system packages.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
@@ -67,7 +67,7 @@ RUN apt-get update \
 WORKDIR /app
 
 # Production deps (native addons already compiled in the builder), built frontend,
-# and the bundled resources (Python+LiteLLM venv, OpenConnector, Postgres, Node).
+# and the bundled resources (OpenConnector, Node).
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/web/dist ./web/dist
 COPY --from=builder /app/resources ./resources
@@ -85,9 +85,9 @@ COPY --from=builder /app/bootstrap ./bootstrap
 COPY --from=builder /app/skills ./skills
 
 # Persistent state lives under /data: SQLite, sessions, chat-history, cron,
-# postgres-data, litellm.yaml, dev-settings.json. PLATFORM_DATA_DIR points the
-# supervisor (local-services.js) + paths.js here. HOST=0.0.0.0 so k8s probes +
-# docker port-forward reach server.js inside the container.
+# dev-settings.json. PLATFORM_DATA_DIR points the supervisor (local-services.js)
+# + paths.js here. HOST=0.0.0.0 so k8s probes + docker port-forward reach
+# server.js inside the container.
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
@@ -106,6 +106,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -fsS http://localhost:3000/api/config || exit 1
 
-# start.js → local-services.js → Supervisor spawns server.js + LiteLLM +
-# OpenConnector + Postgres as localhost child processes, then keeps running.
+# start.js → local-services.js → Supervisor spawns server.js + OpenConnector
+# as localhost child processes, then keeps running.
 CMD ["node", "scripts/start.js"]

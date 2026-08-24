@@ -10,11 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Icon } from "@/components/ui/icon";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 
@@ -92,14 +94,21 @@ export function SkillForm({ open, onOpenChange, skill, initialSkill, onInstalled
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>
+            <Icon name="book-open" size={20} />
             {isEdit ? t("extensions.skills.editTitle") : t("extensions.skills.addTitle")}
           </DialogTitle>
+          <DialogDescription>{t("extensions.skills.subtitle")}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
           {error && (
-            <div className="bg-destructive/10 text-destructive px-3 py-2 rounded-md text-sm">
-              {error}
+            <div
+              className="flex items-start gap-2 border border-destructive/40 bg-destructive/10 text-destructive px-3 py-2 rounded-md text-sm"
+              data-testid="form-error"
+              role="alert"
+            >
+              <Icon name="alert-circle" size={16} className="mt-0.5 shrink-0" />
+              <span>{error}</span>
             </div>
           )}
 
@@ -143,10 +152,11 @@ export function SkillForm({ open, onOpenChange, skill, initialSkill, onInstalled
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={handleSubmit} disabled={loading}>
+          <Button onClick={handleSubmit} disabled={loading} data-testid="form-submit">
+            {loading && <Icon name="sparkles" size={14} className="animate-pulse" />}
             {loading ? t("common.saving") : isEdit ? t("common.save") : t("common.add")}
           </Button>
         </DialogFooter>

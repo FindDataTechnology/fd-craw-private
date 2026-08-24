@@ -6,7 +6,7 @@
 
 ```json
 {
-  "components": { "litellm": { "include": true }, "openconnector": { "include": true }, "postgres": { "include": "auto" } },
+  "components": { "openconnector": { "include": true } },
   "mcpServers": {},
   "skills": ["computer-file-system", "computer-process", "computer-shell", "example-skill"],
   "permissions": {}
@@ -125,7 +125,7 @@ description: 这个技能做什么、何时使用。一两句话。
 
 ```json
 {
-  "components": { "litellm": { "include": true }, "openconnector": { "include": true }, "postgres": { "include": "auto" } },
+  "components": { "openconnector": { "include": true } },
   "mcpServers": {
     "memory": {
       "command": "npx",
@@ -161,7 +161,7 @@ npm run dist      # electron-builder → 安装包（mac .dmg / win .exe）
 
 清单相关开关：
 
-- `PLATFORM_BUNDLE_COMPONENTS=all|none|"openconnector,litellm"` —— 无需编辑文件即可覆盖组件选择（CI 精简构建、本地测试）。只要选了 `litellm`，`postgres` 就自动包含。
+- `PLATFORM_BUNDLE_COMPONENTS=all|none|openconnector` —— 无需编辑文件即可覆盖组件选择（CI 精简构建、本地测试）。
 - `PLATFORM_BUNDLE_MANIFEST=/abs/path.json` —— 让运行时指向不同的清单文件。用它来**在发布前测试你的扩展清单**：
 
 ```bash
@@ -178,7 +178,7 @@ PLATFORM_BUNDLE_MANIFEST=/tmp/test-bundle.json PLATFORM_BUNDLE_COMPONENTS=openco
 | 位置 | 作用 |
 |---|---|
 | `platform.bundle.json` | 清单（开发时在仓库根，打包后在 `Resources/app/`）。 |
-| `bundle-manifest.js` | `resolveBundle()` / `resolveBundleSafe()` —— 唯一解析器；校验、覆盖、postgres 自动解析。 |
+| `bundle-manifest.js` | `resolveBundle()` / `resolveBundleSafe()` —— 唯一解析器；校验、覆盖。 |
 | `server.js` `initAgent()` | 会话创建前连接启用的清单 `mcpServers`；把每项播种进扩展 DB（`origin: "bundled"`，INSERT-OR-IGNORE）。 |
 | `server.js` `/api/extensions/*` | 扩展管理 API —— 列表/增/改/删 MCP 配置与自定义技能。锁定的打包条目变更返回 400。 |
 | `extension-store.js` | DB 层（`seedMcpServer`、`seedExtensionConfig`）；`origin` / `locked` / `permissions` 列。 |
@@ -197,7 +197,7 @@ The manifest has four keys. This doc covers the two for extensions — `mcpServe
 
 ```json
 {
-  "components": { "litellm": { "include": true }, "openconnector": { "include": true }, "postgres": { "include": "auto" } },
+  "components": { "openconnector": { "include": true } },
   "mcpServers": {},
   "skills": ["computer-file-system", "computer-process", "computer-shell", "example-skill"],
   "permissions": {}
@@ -316,7 +316,7 @@ Ship a disabled-but-visible http MCP, a locked stdio MCP, and two new skills:
 
 ```json
 {
-  "components": { "litellm": { "include": true }, "openconnector": { "include": true }, "postgres": { "include": "auto" } },
+  "components": { "openconnector": { "include": true } },
   "mcpServers": {
     "memory": {
       "command": "npx",
@@ -352,7 +352,7 @@ npm run dist      # electron-builder → installers (mac .dmg / win .exe)
 
 Manifest-aware knobs:
 
-- `PLATFORM_BUNDLE_COMPONENTS=all|none|"openconnector,litellm"` — override component selection without editing the file (CI lean builds, local testing). `postgres` auto-includes whenever `litellm` is selected.
+- `PLATFORM_BUNDLE_COMPONENTS=all|none|openconnector` — override component selection without editing the file (CI lean builds, local testing).
 - `PLATFORM_BUNDLE_MANIFEST=/abs/path.json` — point the runtime at a different manifest file. Use this to **test your extensions manifest before shipping**:
 
 ```bash
@@ -369,7 +369,7 @@ PLATFORM_BUNDLE_MANIFEST=/tmp/test-bundle.json PLATFORM_BUNDLE_COMPONENTS=openco
 | Where | What |
 |---|---|
 | `platform.bundle.json` | Manifest (repo root in dev, inside `Resources/app/` when packaged). |
-| `bundle-manifest.js` | `resolveBundle()` / `resolveBundleSafe()` — the only parser; validation, overrides, postgres auto-resolution. |
+| `bundle-manifest.js` | `resolveBundle()` / `resolveBundleSafe()` — the only parser; validation, overrides. |
 | `server.js` `initAgent()` | Connects enabled manifest `mcpServers` before session creation; seeds each into the extensions DB (`origin: "bundled"`, INSERT-OR-IGNORE). |
 | `server.js` `/api/extensions/*` | Extensions management API — list/add/edit/delete MCP configs and custom skills. Locked bundled entries reject mutation with 400. |
 | `extension-store.js` | DB layer (`seedMcpServer`, `seedExtensionConfig`); `origin` / `locked` / `permissions` columns. |

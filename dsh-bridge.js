@@ -29,7 +29,7 @@ const REQUEST_TIMEOUT_MS = Number(process.env.DSH_REQUEST_TIMEOUT_MS) || 60_000;
 const SHUTDOWN_TIMEOUT_MS = 5000;
 // Backoff ceiling for restart-with-backoff (exponential, capped at 30s).
 const MAX_RESTARTS = Number(process.env.DSH_MAX_RESTARTS) || 5;
-// RACE: llm-pi-ai registers the volces/litellm adapter asynchronously via
+// RACE: llm-pi-ai registers the volces adapter asynchronously via
 // ctx.inject(["settings"]), which fires only AFTER the settings-file provider
 // loads+publishes settings.yaml. An initialize arriving before that injection
 // → "no adapter registered for provider X". Retry with a short backoff until
@@ -58,6 +58,10 @@ export class DshBridge {
   #mcpPatchPath;
   #skillsPatchPath;
   #env;
+  // True while a restart() is in flight (shutdown → spawn → initialize). A
+  // second restart (e.g. a set_model WS call arriving mid-restart) is rejected
+  // with a restart-in-progress error rather than racing the spawn ladder.
+  #restarting = false;
 
   constructor({ onEvent, provider, model, cwd, mcpPatchPath, skillsPatchPath, env } = {}) {
     if (onEvent) this.#onEvent = onEvent;
@@ -186,19 +190,43 @@ export class DshBridge {
     return this.#client.prompt(sessionId, contentBlocks);
   }
 
+  // Best-effort delete of a persisted dsh session. dsh has no documented
+  // session-delete RPC in 0.0.1-rc.1; we send `session/delete` and swallow
+  // "method not found" so a non-supporting runtime just logs a warning and the
+  // host-side SQLite/file cleanup is the winning delete.
+  async deleteSession(sessionId) {
+    if (!sessionId) return false;
+    if (!this.#ready || !this.#client) return false;
+    try {
+      await this.#client.request("session/delete", { sessionId });
+      return true;
+    } catch (err) {
+      console.warn(`[dsh] session/delete for ${sessionId} failed (ignored): ${err.message}`);
+      return false;
+    }
+  }
+
   // Re-initialize the child with a new provider/model/patch. dsh bakes the model
   // into the `initialize` handshake and exposes no stock `setModel`/reload RPC, so
   // a live model switch OR an MCP add/remove (Task 4.5) means a fresh child.
   // ponytail: this drops the child's in-memory session state (v1 ceiling); a
   // non-disruptive switch needs a custom dsh RPC.
   async restart({ provider, model, mcpPatchPath } = {}) {
-    await this.shutdown();
-    this.#shuttingDown = false;
-    this.#restarts = 0;
-    if (provider) this.#provider = provider;
-    if (model) this.#model = model;
-    if (mcpPatchPath !== undefined) this.#mcpPatchPath = mcpPatchPath;
-    return this.#spawn();
+    if (this.#restarting) {
+      throw new Error("dsh restart already in progress");
+    }
+    this.#restarting = true;
+    try {
+      await this.shutdown();
+      this.#shuttingDown = false;
+      this.#restarts = 0;
+      if (provider) this.#provider = provider;
+      if (model) this.#model = model;
+      if (mcpPatchPath !== undefined) this.#mcpPatchPath = mcpPatchPath;
+      return await this.#spawn();
+    } finally {
+      this.#restarting = false;
+    }
   }
 
   #requireReady() {

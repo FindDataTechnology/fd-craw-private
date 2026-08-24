@@ -47,7 +47,8 @@ function validateEntry(entry, source) {
   if (entry.type === "app") {
     if (entry.kind === "link" && entry.url) return entry;
     if (entry.kind === "nango-connect" && entry.nangoUrl) return entry;
-    console.warn(`${where} '${entry.id}': kind must be "link" (with url) or "nango-connect" (with nangoUrl) — dropped`);
+    if (entry.kind === "external-service" && entry.url) return entry;
+    console.warn(`${where} '${entry.id}': kind must be "link" (with url), "nango-connect" (with nangoUrl), or "external-service" (with url) — dropped`);
     return null;
   }
   console.warn(`${where} '${entry.id}': unknown type '${entry.type}' — dropped`);
@@ -108,6 +109,12 @@ function merged() {
 // apiKeyEnv, resolved keys) never reach the browser (design D5).
 function serialize(entry) {
   const base = { id: entry.id, type: entry.type, name: entry.name || entry.id };
+  // Optional display fields (all optional, all whitelisted — not secrets).
+  if (entry.description) base.description = entry.description;
+  if (entry.icon) base.icon = entry.icon;
+  if (Array.isArray(entry.tags)) base.tags = entry.tags;
+  if (entry.version) base.version = entry.version;
+  if (entry.featured === true) base.featured = true;
   if (entry.type === "agent-remote") {
     base.mode = entry.mode;
     if (entry.mode === "chat") base.model = entry.model;
@@ -115,6 +122,11 @@ function serialize(entry) {
   } else if (entry.type === "app") {
     base.kind = entry.kind;
     if (entry.kind === "link") base.url = entry.url;
+    if (entry.kind === "external-service") {
+      base.url = entry.url;
+      if (entry.embedded !== undefined) base.embedded = entry.embedded;
+      if (Array.isArray(entry.features)) base.features = entry.features;
+    }
   }
   return base;
 }
@@ -147,6 +159,21 @@ export function getAgentEntry(id) {
 
 export function getAppEntry(id) {
   return merged().apps.find((a) => a.id === id) || null;
+}
+
+// List ALL apps (all kinds). Used for general iteration when the server needs
+// to know what's available without a specific id lookup. For external-service
+// proxy routing, use getExternalServices() instead.
+export function getAllApps() {
+  return merged().apps;
+}
+
+// List all external-service apps (NEW API-style embedded services). Used by
+// server.js to resolve the /external/:appId proxy to the right upstream.
+// Only external-service apps are returned — link/nango-connect have their own
+// routing (/api/apps/:id/connect for nango, plain link for `link`).
+export function getExternalServices() {
+  return merged().apps.filter((a) => a.kind === "external-service");
 }
 
 // Re-read both sources; broadcast `catalog_changed` when the merged catalog

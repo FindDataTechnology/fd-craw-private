@@ -10,13 +10,11 @@
   },
   "nav": {
     "chat": "💬 Chat",
-    "dashboard": "📊 Dashboard",
-    "documents": "📚 Documents",
-    "extensions": "🧩 Extensions",
     "knowledge": "📚 Knowledge",
-    "openconnector": "🔌 OpenConnector",
-    "litellm": "🧭 LiteLLM",
-    "agents": "🤖 Agents"
+    "agents": "🤖 Agents",
+    "mcp": "🧩 MCP Servers",
+    "skills": "📖 Skills",
+    "models": "⚡ Models"
   },
   "agentsPage": {
     "title": "Agents & Apps",
@@ -34,7 +32,49 @@
     "untitled": "Untitled",
     "loadingModels": "Loading models…",
     "clearChat": "Clear chat",
-    "language": "Language"
+    "language": "Language",
+    "modelChipHint": "Manage models"
+  },
+  "settingsMenu": {
+    "title": "Settings",
+    "status": "📊 System Status",
+    "models": "⚡ LLM Models",
+    "openconnector": "🔌 OpenConnector"
+  },
+  "modelsPage": {
+    "title": "Models",
+    "defaultLabel": "Default",
+    "addProvider": "Add provider",
+    "editProvider": "Edit provider",
+    "addHint": "Add an OpenAI-compatible LLM provider.",
+    "editHint": "Leave the API key blank to keep the current key.",
+    "fieldName": "Name",
+    "fieldBaseUrl": "Base URL",
+    "fieldApiKey": "API key",
+    "keyPlaceholder": "API key (leave blank to keep current)",
+    "keyMasked": "The API key is stored encrypted on the server and never shown.",
+    "apiKeyRequired": "API key is required",
+    "keyPresent": "API key configured",
+    "keyMissing": "No API key",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving…",
+    "deleteProvider": "Delete",
+    "confirmDeleteTitle": "Delete provider?",
+    "confirmDelete": "Delete \"{{name}}\"? This cannot be undone.",
+    "testConnection": "Test connection",
+    "setDefault": "Set as default",
+    "default": "Default",
+    "builtIn": "Built-in",
+    "empty": "No providers configured. Click \"Add provider\" to get started.",
+    "settingsUpdated": "Settings updated.",
+    "restartFailed": "Could not apply settings: {{message}}",
+    "anotherEditInProgress": "Another settings edit is in progress. Try again.",
+    "lastTest": {
+      "never": "Not tested",
+      "ok": "OK",
+      "failed": "Failed"
+    }
   },
   "status": {
     "connected": "Connected",
@@ -51,6 +91,12 @@
     "uploadFailed": "Upload failed: {{message}}",
     "attach": "Attach a file",
     "removeAttachment": "Remove attachment",
+    "attachments": "{{count}} attached",
+    "slashPicker": {
+      "sectionCommands": "Commands",
+      "sectionSkills": "Skills",
+      "noMatches": "No commands match"
+    },
     "cmd": {
       "model": "switch or show the active model",
       "new": "start a new chat session",
@@ -59,7 +105,21 @@
     }
   },
   "chat": {
-    "empty": "Send a message to start chatting."
+    "empty": "Send a message to start chatting.",
+    "welcome": {
+      "greeting": "How can I help today?",
+      "suggestedPrompts": "Suggested prompts",
+      "recentChats": "Recent chats",
+      "viewAll": "View all",
+      "modelFooter": "Model: {{model}}",
+      "agentFooter": "Agent: {{agent}}"
+    },
+    "header": {
+      "editTitle": "Rename session",
+      "titlePlaceholder": "Session title",
+      "rename": "Save new title"
+    },
+    "titleTooLong": "Title must be 200 characters or fewer"
   },
   "turn": {
     "assistantName": "Find Data Technology",
@@ -99,6 +159,40 @@
       "starting": "starting",
       "disabled": "disabled"
     }
+  },
+  "systemStatus": {
+    "title": "System Status",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing…",
+    "loadFailed": "Failed to load status: {{error}}",
+    "retry": "retry",
+    "none": "none",
+    "health": "Health",
+    "activeConfig": "Active Configuration",
+    "resources": "Resources",
+    "activeAgent": "Active Agent",
+    "openconnector": "OpenConnector",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "documents": "Documents",
+    "collections": "Collections: {{count}}",
+    "mcpTools": "MCP Tools",
+    "provider": "Provider: {{name}}",
+    "uptime": "Uptime: {{sec}}s",
+    "manage": "Manage",
+    "state": {
+      "healthy": "healthy",
+      "unhealthy": "unhealthy",
+      "starting": "starting",
+      "disabled": "disabled"
+    }
+  },
+  "sessionMenu": {
+    "delete": "Delete",
+    "confirmTitle": "Delete this chat?",
+    "confirmBody": "This cannot be undone.",
+    "cannotDeleteActive": "Switch to another session first",
+    "deleteFailed": "Failed to delete: {{error}}"
   },
   "documents": {
     "title": "Documents",

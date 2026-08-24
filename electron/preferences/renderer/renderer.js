@@ -23,14 +23,6 @@ async function loadInitial() {
   if (currentSettings.DEFAULT_MODEL !== undefined) {
     document.getElementById('defaultModel').value = currentSettings.DEFAULT_MODEL || '';
   }
-  if (currentSettings.LITELLM_API_KEY !== undefined) {
-    document.getElementById('litellmApiKey').value = currentSettings.LITELLM_API_KEY || '';
-  }
-
-  const litellmResp = await window.platform.getLiteLLMConfig();
-  if (litellmResp.ok) {
-    document.getElementById('litellmConfig').value = litellmResp.content || '';
-  }
 }
 
 loadInitial();
@@ -61,46 +53,6 @@ document.getElementById('saveGeneral').addEventListener('click', async () => {
     statusEl.textContent = '✗ Restart failed: ' + (result.error || 'unknown error');
   }
   setTimeout(() => { statusEl.textContent = ''; }, 5000);
-});
-
-// LiteLLM save
-document.getElementById('saveLitellm').addEventListener('click', async () => {
-  const statusEl = document.getElementById('litellmStatus');
-  const errorEl = document.getElementById('litellmError');
-  const content = document.getElementById('litellmConfig').value;
-
-  const result = await window.platform.setLiteLLMConfig(content);
-  if (!result.ok) {
-    errorEl.style.display = 'block';
-    errorEl.textContent = '✗ Save failed: ' + (result.error || 'unknown error');
-    return;
-  }
-
-  const restartResult = await window.platform.restartService('litellm');
-  if (restartResult.ok) {
-    statusEl.className = 'success';
-    statusEl.textContent = '✓ Saved and restarted LiteLLM';
-    errorEl.style.display = 'none';
-  } else {
-    statusEl.className = 'error';
-    statusEl.textContent = '✗ Restart failed';
-    errorEl.style.display = 'block';
-    errorEl.textContent = (restartResult.error || 'unknown error') + '\n\n';
-    if (restartResult.logs) {
-      errorEl.textContent += restartResult.logs.filter(l => l.trim()).slice(-10).join('\n');
-    }
-  }
-  setTimeout(() => { statusEl.textContent = ''; }, 5000);
-});
-
-// Copy LiteLLM key
-document.getElementById('copyLitellmKey').addEventListener('click', async () => {
-  const text = document.getElementById('litellmApiKey').value;
-  await navigator.clipboard.writeText(text);
-  const btn = document.getElementById('copyLitellmKey');
-  const oldText = btn.textContent;
-  btn.textContent = 'Copied!';
-  setTimeout(() => btn.textContent = oldText, 2000);
 });
 
 // Rotate OC tokens

@@ -1,8 +1,8 @@
 # ── CI/CD: build the full-stack image, push to Harbor, GitOps-deploy via ArgoCD ─
 #
 # Separate from release.yml (Electron .dmg/.exe installers). This workflow builds
-# the single-container Docker image (server + LiteLLM + OpenConnector + Postgres),
-# pushes it to Harbor, then writes the new image tag back into k8s/deployment.yaml
+# the single-container Docker image (server + OpenConnector), pushes it to
+# Harbor, then writes the new image tag back into k8s/deployment.yaml
 # (commit-back GitOps). ArgoCD auto-sync detects the manifest diff and rolls out.
 #
 # Harbor serves plain HTTP on NodePort 30880 (no TLS), so the runner's docker
@@ -24,7 +24,7 @@ name: docker-deploy
 
 on:
   push:
-    branches: [main, embed-litellm-openconnector]
+    branches: [main, embed-openconnector]
     paths:
       # Source the image is built from. k8s/* is deliberately EXCLUDED so the
       # commit-back below (which only touches k8s/deployment.yaml) cannot loop.

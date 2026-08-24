@@ -25,7 +25,7 @@ npm start            # 在 / 提供 React SPA（唯一前端）
 ```bash
 npm run web:dev
 # Vite 在 http://localhost:5173/
-# Node 后端必须同时在 :3000 运行；开发服务器把 /api、/oc-web、/litellm-web
+# Node 后端必须同时在 :3000 运行；开发服务器把 /api、/oc-web、/external
 # 等代理到它，WebSocket 由客户端在运行时直连 :3000（见 src/hooks/useWebSocket.ts）。
 ```
 
@@ -44,7 +44,7 @@ PLATFORM_SKIP_WEB_BUILD=1 npm install
 ```
 web/
 ├── package.json            # 仅前端依赖
-├── vite.config.ts          # base: "/"、开发代理（api/oc-web/litellm-web 等）
+├── vite.config.ts          # base: "/"、开发代理（api/oc-web/external 等）
 ├── tsconfig.json           # strict、noUncheckedIndexedAccess
 ├── components.json         # shadcn CLI 配置（备用）
 ├── index.html              # Vite 入口
@@ -133,7 +133,7 @@ Then open <http://localhost:3000/>.
 npm run web:dev
 # Vite on http://localhost:5173/
 # The Node backend must ALSO be running on :3000; the dev server proxies
-# /api, /oc-web, /litellm-web etc. to it, and the client connects the
+# /api, /oc-web, /external etc. to it, and the client connects the
 # WebSocket directly to :3000 (see src/hooks/useWebSocket.ts).
 ```
 

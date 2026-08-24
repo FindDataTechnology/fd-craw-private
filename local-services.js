@@ -1,33 +1,33 @@
 // ── Headless local-services launcher (dev `npm start`) ───────────────────────
 //
-// Brings up the bundled LiteLLM + OpenConnector locally - and server.js - for
+// Brings up the bundled OpenConnector locally - and server.js - for
 // non-Electron runs, reusing the SAME shared supervisor primitives
 // (supervisor/lifecycle.js) as the desktop Electron app. One lifecycle
 // implementation, two entry points.
 //
 // Per-service URL resolution: a localhost *_BASE_URL (or empty) spawns the
-// bundled service locally on that port (empty -> a free port); a non-localhost
-// URL uses that remote server as-is. So .env sets e.g.
-// LITELLM_BASE_URL=http://localhost:4000 to run the project's internal LiteLLM
-// on port 4000 - the URL you see in .env is the URL server.js gets.
+// bundled service locally on that port (empty -> a free port); anything else ->
+// use that remote URL as-is.
 //
 // server.js is pinned to PORT (default 3000) so the Vite dev proxy
 // (:5173 -> :3000) and the WS client (ws://localhost:3000) keep working.
-// LiteLLM and OpenConnector run on the ports parsed from their .env URLs (or
+// OpenConnector runs on the ports parsed from their .env URLs (or
 // free ports), injected into server.js's env so its modules need no code change.
-
+//
+// LiteLLM removed — dsh-llm manages LLM natively via settings.yaml +
+// .credentials.yaml hot-reload, no bundled child process needed.
 import dotenv from "dotenv";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Supervisor } from "./supervisor/lifecycle.js";
-import { hasBundledLiteLLM, hasBundledOpenConnector } from "./supervisor/descriptors.js";
+import { hasBundledOpenConnector } from "./supervisor/descriptors.js";
 import { resolveBundleSafe } from "./bundle-manifest.js";
 import { findFreePort } from "./supervisor/ports.js";
 import { runFirstRun } from "./bootstrap/first-run.js";
 
 // Load .env with override so PROJECT config wins over inherited shell env - e.g.
-// a globally-exported LITELLM_BASE_URL from .zshrc must not force external mode
+// a globally-exported OPENCONNECTOR_BASE_URL from .zshrc must not force external mode
 // when .env has cleared it for local mode. (server.js stays no-override: the
 // supervisor injects the resolved localhost URLs into its child env directly.)
 dotenv.config({ override: true });
@@ -37,7 +37,8 @@ const PROJECT_ROOT = __dirname;
 
 // Keys forwarded from .env into the agent env. Mirrors SETTING_KEYS in
 // electron/config/settings.js - the supervisor's descriptors read these to
-// decide bundled-vs-external and to wire the litellm/OC child env. Keep in sync.
+// decide bundled-vs-external and to wire the OC child env. Keep in sync.
+// LiteLLM keys removed since there's no bundled LiteLLM child process.
 const SETTING_KEYS = [
   "LLM_API_KEY",
   "LLM_BASE_URL",
@@ -47,10 +48,6 @@ const SETTING_KEYS = [
   "VOLCES_PLAN_BASE_URL",
   "VOLCES_PLAN_KEY_1",
   "VOLCES_PLAN_KEY_2",
-  "LITELLM_BASE_URL",
-  "LITELLM_API_KEY",
-  "LITELLM_MASTER_KEY",
-  "LITELLM_SALT_KEY",
   "DATABASE_URL",
   "OPENCONNECTOR_BASE_URL",
   "OPENCONNECTOR_RUNTIME_TOKEN",
@@ -106,15 +103,15 @@ export async function main() {
   // Resolve each service URL: a localhost URL (or empty) means "spawn the
   // bundled service locally" on the parsed port (or a free port if empty); a
   // non-localhost URL means "use that remote server as-is". So .env can
-  // explicitly say LITELLM_BASE_URL=http://localhost:4000 to run the project's
-  // internal LiteLLM on port 4000 - and that's the URL server.js sees.
-  const ll = parseServiceUrl(env.LITELLM_BASE_URL);
+  // explicitly say OPENCONNECTOR_BASE_URL=http://localhost:3001 to run the
+  // project's internal OpenConnector on port 3001 - and that's the URL server.js sees.
   const oc = parseServiceUrl(env.OPENCONNECTOR_BASE_URL);
 
-  // First-run seeding: copy default litellm.yaml and generate the credentials
-  // the bundled processes need (LITELLM_API_KEY master key, OC runtime/admin
-  // tokens) when absent. Idempotent + atomic. Persisted to dev-settings.json
-  // under the data dir (NOT the user's .env). Only fires for bundled services.
+  // First-run seeding: generate the credentials the bundled processes need
+  // (OC runtime/admin tokens) when absent. Idempotent + atomic. Persisted to
+  // dev-settings.json under the data dir (NOT the user's .env). Only fires for
+  // bundled services.
+  // LiteLLM seeding removed — no bundled LiteLLM child process needs LITELLM_API_KEY.
   const seeded = runFirstRun({
     userDataDir: dataDir,
     resourcesDir,
@@ -129,17 +126,8 @@ export async function main() {
   // with the user's own key/token (the seeder's generated local creds are ignored).
   const agentEnv = {};
   for (const k of SETTING_KEYS) {
-    if (k === "LITELLM_BASE_URL" && ll.mode === "local") continue;
     if (k === "OPENCONNECTOR_BASE_URL" && oc.mode === "local") continue;
     if (env[k] != null && env[k] !== "") agentEnv[k] = String(env[k]);
-  }
-  if (ll.mode === "local" && seeded.LITELLM_API_KEY) {
-    agentEnv.LITELLM_API_KEY = seeded.LITELLM_API_KEY;
-  }
-  // Inject generated LiteLLM secrets for the admin UI and DB encryption
-  if (ll.mode === "local") {
-    if (seeded.LITELLM_MASTER_KEY) agentEnv.LITELLM_MASTER_KEY = seeded.LITELLM_MASTER_KEY;
-    if (seeded.LITELLM_SALT_KEY) agentEnv.LITELLM_SALT_KEY = seeded.LITELLM_SALT_KEY;
   }
   if (oc.mode === "local") {
     if (seeded.OPENCONNECTOR_RUNTIME_TOKEN) agentEnv.OPENCONNECTOR_RUNTIME_TOKEN = seeded.OPENCONNECTOR_RUNTIME_TOKEN;
@@ -148,9 +136,9 @@ export async function main() {
 
   // Resolve ports. server.js pins to PORT (default 3000) - the Vite dev proxy
   // (:5173 -> :3000) and the WS client (ws://localhost:3000) expect it, so a
-  // conflict here is a hard error with a clear message. LiteLLM/OpenConnector
-  // PREFER the port parsed from their .env URL but fall back to a free port if
-  // it's in use, so common ports (4000/3001) on the user's machine don't block
+  // conflict here is a hard error with a clear message. OpenConnector PREFER
+  // the port parsed from its .env URL but fall back to a free port if
+  // it's in use, so common ports (3001) on the user's machine don't block
   // startup. server.js gets the actual URL injected either way.
   const serverPort = Number(env.PORT) || 3000;
   if (!(await isPortFree(serverPort))) {
@@ -161,7 +149,6 @@ export async function main() {
     );
     process.exit(1);
   }
-  const litellmPort = await resolvePort(ll.port, "LiteLLM");
   const ocPort = await resolvePort(oc.port, "OpenConnector");
 
   const supervisor = new Supervisor({
@@ -170,7 +157,6 @@ export async function main() {
     dataDir,
     agentEnv,
     serverPort,
-    litellmPort,
     ocPort,
   });
 
@@ -192,7 +178,7 @@ export async function main() {
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
   // start() spawns server-js (non-optional; throws if unhealthy) and the
-  // optional litellm/openconnector (non-blocking: a failure marks them
+  // optional openconnector (non-blocking: a failure marks them
   // unhealthy without aborting). So a successful return means server.js is up.
   let serverUp = false;
   try {
@@ -240,7 +226,6 @@ export async function main() {
   // the manifest actually selects — deselected components are intentionally
   // absent (the summary already said "excluded (manifest)").
   const missing = [];
-  if (bundleSel.litellm && ll.mode === "local" && !hasBundledLiteLLM(PROJECT_ROOT)) missing.push("LiteLLM");
   if (bundleSel.openconnector && oc.mode === "local" && !hasBundledOpenConnector(PROJECT_ROOT)) missing.push("OpenConnector");
   if (missing.length) {
     console.warn(

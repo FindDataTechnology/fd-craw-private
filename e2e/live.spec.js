@@ -38,7 +38,7 @@ test.describe("live service @live", () => {
 
   test("deployed sidebar shows all nav entries", async ({ page }) => {
     await gotoChat(page);
-    for (const id of ["nav-chat", "nav-dashboard", "nav-documents", "nav-openconnector", "nav-litellm"]) {
+    for (const id of ["nav-chat", "nav-knowledge", "nav-agents", "nav-mcp", "nav-skills", "nav-models"]) {
       await expect(page.getByTestId(id)).toBeVisible();
     }
   });
@@ -46,7 +46,7 @@ test.describe("live service @live", () => {
   test("deployed /dashboard deep link resolves via SPA fallback", async ({ page }) => {
     await pinLocaleEn(page);
     await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("system-status-page")).toBeVisible({ timeout: 15000 });
   });
 
   test("deployed WebSocket answers a list_models round-trip", async ({ page }) => {
@@ -96,11 +96,6 @@ test.describe("live service @live", () => {
     if (cfg.openconnectorEnabled) {
       await page.goto("/openconnector", { waitUntil: "domcontentloaded" });
       await expect(page.getByTestId("openconnector-iframe")).toBeVisible({ timeout: 15000 });
-    }
-
-    if (cfg.litellmEnabled) {
-      await page.goto("/litellm", { waitUntil: "domcontentloaded" });
-      await expect(page.getByTestId("litellm-iframe")).toBeVisible({ timeout: 15000 });
     }
   });
 });

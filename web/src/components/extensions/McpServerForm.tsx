@@ -15,11 +15,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Icon } from "@/components/ui/icon";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 
@@ -217,14 +219,25 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>
+            <Icon name="database" size={20} />
             {isEdit ? t("extensions.mcp.editTitle") : t("extensions.mcp.addTitle")}
           </DialogTitle>
+          <DialogDescription>
+            {isSetup
+              ? setupServer?.installInstructions
+              : t("extensions.mcp.subtitle")}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
           {error && (
-            <div className="bg-destructive/10 text-destructive px-3 py-2 rounded-md text-sm">
-              {error}
+            <div
+              className="flex items-start gap-2 border border-destructive/40 bg-destructive/10 text-destructive px-3 py-2 rounded-md text-sm"
+              data-testid="form-error"
+              role="alert"
+            >
+              <Icon name="alert-circle" size={16} className="mt-0.5 shrink-0" />
+              <span>{error}</span>
             </div>
           )}
 
@@ -242,13 +255,6 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
 
           {isSetup ? (
             <>
-              {/* Help block from the catalog's install instructions. */}
-              {setupServer!.installInstructions && (
-                <div className="bg-muted/50 text-muted-foreground px-3 py-2 rounded-md text-sm">
-                  {setupServer!.installInstructions}
-                </div>
-              )}
-
               {/* Placeholder args: one labeled field per fillable arg, literals read-only. */}
               {tmplArgs.map((a, i) =>
                 isPlaceholderArg(a) ? (
@@ -380,13 +386,15 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
             {t("common.cancel")}
           </Button>
           <Button
             onClick={isSetup ? handleSetupSubmit : handleSubmit}
             disabled={loading || (isSetup && !setupValid)}
+            data-testid="form-submit"
           >
+            {loading && <Icon name="sparkles" size={14} className="animate-pulse" />}
             {loading ? t("common.saving") : isEdit ? t("common.save") : t("common.add")}
           </Button>
         </DialogFooter>

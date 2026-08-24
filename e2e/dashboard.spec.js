@@ -6,7 +6,6 @@ import { gotoDashboard } from "./helpers.js";
 
 const SECRET_KEYS = [
   "LLM_API_KEY",
-  "LITELLM_API_KEY",
   "OPENCONNECTOR_RUNTIME_TOKEN",
   "OPENCONNECTOR_ADMIN_TOKEN",
 ];
@@ -37,7 +36,7 @@ test.describe("React dashboard view", () => {
 
   test("manual refresh works", async ({ page }) => {
     await gotoDashboard(page);
-    await page.getByTestId("dashboard-refresh").click();
+    await page.getByTestId("system-status-refresh").click();
     // Refresh button toggles back from "Refreshing…" - row still visible.
     await expect(page.getByTestId("server-row").first()).toBeVisible();
   });

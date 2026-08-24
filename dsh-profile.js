@@ -3,14 +3,19 @@
 // The dsh-llm-pi-ai plugin mounts dormant and registers LLM routes the moment a
 // `llm-pi-ai:` section appears in $DSH_HOME/settings.yaml (the settings service
 // live-reloads it). This module is the single source that writes that section:
-// it reads the host's LLM env — the same LLM_API_KEY/LLM_BASE_URL Volces gateway
-// + LITELLM_BASE_URL/LITELLM_API_KEY proxy the host uses — and declares
-// OpenAI-compatible (`openai-completions`) routes dsh can serve.
+// it reads the host's LLM env — LLM_API_KEY/LLM_BASE_URL (the Volces gateway) —
+// and declares an OpenAI-compatible (`openai-completions`) route dsh can serve.
 //
 // Per design D4 (host-side config sources unchanged), the env var names are the
-// project's own LLM_*/LITELLM_* (not the task spec's aspirational VOLCES_*); the
-// generator is the seam that adapts them to dsh's `llm-pi-ai:` shape. Per D3,
-// server.js writes the profile and lets dsh load plugins — no JS tool/MCP wiring.
+// project's own LLM_* (not the task spec's aspirational VOLCES_*); the generator
+// is the seam that adapts them to dsh's `llm-pi-ai:` shape. Per D3, server.js
+// writes the profile and lets dsh load plugins — no JS tool/MCP wiring.
+//
+// LiteLLM was removed: dsh-llm manages LLM natively via settings.yaml +
+// .credentials.yaml hot-reload, so there's no LiteLLM child process and no
+// runtime model discovery from a proxy. Model discovery/refresh is handled by
+// dsh-llm's ctx.llm.discoverModels() (when wired) — the generator's declared
+// list remains the bootstrap set dsh loads at startup.
 //
 // Writes atomically (temp+rename) and returns the declared model list so server.js
 // can source its model selector without a dsh listModels RPC (dsh has none stock;
@@ -27,15 +32,13 @@ const CREDENTIALS_PATH = join(DSH_HOME, ".credentials.yaml");
 
 // Volces gateway model catalog — deliberately scoped to 3 ids to keep the
 // model selector frozen. The gateway serves more (minimax-m3, qwen3.x, …);
-// those reach the selector through LiteLLM when its proxy is configured, not
-// through this route.
+// those reach the selector through dsh-llm's discoverModels() when configured,
+// not through this static route.
 const VOLCES_MODELS = [
   { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", contextWindow: 128000, maxTokens: 8192 },
   { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 128000, maxTokens: 8192 },
   { id: "glm-5.2", name: "GLM 5.2", contextWindow: 128000, maxTokens: 8192 },
 ];
-
-const LITELLM_FETCH_TIMEOUT_MS = 4_000;
 
 // Normalize an LLM baseURL to include the API-version path (OpenAI convention).
 // dsh's bundled pi-ai builds the request URL as `${baseURL}/chat/completions`; a
@@ -57,41 +60,17 @@ function normalizeBaseURL(url) {
   }
 }
 
-// Discover the LiteLLM proxy's model list (OpenAI GET /v1/models). Returns a
-// deduped id[] or null on failure/timeout. Lives here so the profile
-// generator owns the full route+model declaration in one place.
-async function discoverLitellmModels(baseUrl, apiKey) {
-  const base = normalizeBaseURL(baseUrl);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), LITELLM_FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${base.replace(/\/+$/, "")}/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      console.warn(`[dsh-profile] litellm /v1/models HTTP ${res.status}`);
-      return null;
-    }
-    const data = await res.json();
-    const ids = Array.isArray(data?.data) ? data.data.map((m) => m?.id).filter(Boolean) : [];
-    return [...new Set(ids)];
-  } catch (err) {
-    console.warn(`[dsh-profile] litellm /v1/models fetch failed: ${err.message}`);
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 // Build the llm-pi-ai providers dict + a flat {id,name,provider} model list from
-// host env. No Volces key + no LiteLLM → empty providers (dormant); chat stays
-// non-functional while static + REST still serve (graceful degrade, Task 3.6).
+// host env. No Volces key → empty providers (dormant); chat stays non-functional
+// while static + REST still serve (graceful degrade, Task 3.6).
+//
+// User-added providers (llm-providers.js, managed via the Models page) are
+// merged in after the env route. Their keys are referenced by env name and
+// seeded into .credentials.yaml by ensureCredentialsStore(), so they hot-reload
+// exactly like the Volces route.
 export async function buildLlmProfile({
   llmApiKey = process.env.LLM_API_KEY?.trim(),
   llmBaseUrl = process.env.LLM_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3",
-  litellmBaseUrl = process.env.LITELLM_BASE_URL?.trim(),
-  litellmApiKey = process.env.LITELLM_API_KEY?.trim(),
 } = {}) {
   const providers = {};
   const models = [];
@@ -108,23 +87,15 @@ export async function buildLlmProfile({
     for (const m of VOLCES_MODELS) models.push({ id: m.id, name: m.name, provider: route });
   }
 
-  if (litellmBaseUrl && litellmApiKey) {
-    const ids = await discoverLitellmModels(litellmBaseUrl, litellmApiKey);
-    if (ids?.length) {
-      const route = "litellm";
-      providers[route] = {
-        apiKeyEnv: "LITELLM_API_KEY",
-        displayName: "LiteLLM",
-        api: "openai-completions",
-        baseURL: normalizeBaseURL(litellmBaseUrl),
-        models: ids.map((id) => ({ id, input: ["text"] })),
-      };
-      for (const id of ids) models.push({ id, name: id, provider: route });
-    } else {
-      // Unreachable proxy: skip the route rather than registering an empty one
-      // (graceful degrade); server.js logs and the selector omits litellm models.
-      console.warn("[dsh-profile] litellm proxy unreachable; skipping litellm route");
-    }
+  // Merge user-managed providers (Models page). Imported lazily to avoid a
+  // cycle (llm-providers imports only paths.js).
+  try {
+    const userLlm = await import("./llm-providers.js");
+    const { providers: userProviders, models: userModels } = userLlm.buildUserProviderEntries();
+    Object.assign(providers, userProviders);
+    models.push(...userModels);
+  } catch (e) {
+    console.warn(`[dsh-profile] user providers unavailable: ${e?.message || e}`);
   }
 
   return { providers, models };
@@ -175,11 +146,13 @@ export async function writeLlmProfile() {
 //   version: 1
 //   refs:
 //     LLM_API_KEY: <value>
-//     LITELLM_API_KEY: <value>
+//     LLM_PROVIDER_KEY_<ID>: <value>   (user-added providers, Models page)
 // Seeded from process.env on first run (file absent); 0600 perms. Atomic write.
-const CREDENTIAL_REFS = ["LLM_API_KEY", "LITELLM_API_KEY"];
+// User-provider keys are added here too so their apiKeyEnv refs resolve; a key
+// rotation via the Models page re-runs this and hot-reloads (Chokidar watch).
+const CREDENTIAL_REFS = ["LLM_API_KEY"];
 
-export function ensureCredentialsStore() {
+export async function ensureCredentialsStore() {
   let doc;
   try {
     const existing = readFileSync(CREDENTIALS_PATH, "utf8");
@@ -199,6 +172,25 @@ export function ensureCredentialsStore() {
     const val = process.env[ref]?.trim();
     if (val && doc.refs[ref] !== val) { doc.refs[ref] = val; changed = true; }
   }
+  // User-managed provider keys (Models page). These come from llm-providers.json,
+  // not process.env; stale refs (a deleted provider) are pruned so a removed key
+  // doesn't linger in the credentials file.
+  try {
+    const userLlm = await import("./llm-providers.js");
+    const userRefs = userLlm.credentialRefsForUserProviders();
+    const userRefNames = new Set(Object.keys(userRefs));
+    for (const [name, val] of Object.entries(userRefs)) {
+      if (doc.refs[name] !== val) { doc.refs[name] = val; changed = true; }
+    }
+    for (const name of Object.keys(doc.refs)) {
+      if (name.startsWith("LLM_PROVIDER_KEY_") && !userRefNames.has(name)) {
+        delete doc.refs[name];
+        changed = true;
+      }
+    }
+  } catch (e) {
+    console.warn(`[dsh-profile] user credential refs unavailable: ${e?.message || e}`);
+  }
   // Always (re)write on first run (file absent) so perms are set; otherwise
   // only write when a ref changed, to avoid needlessly tripping the watcher.
   const absent = !existsSync(CREDENTIALS_PATH);
@@ -215,7 +207,7 @@ export function ensureCredentialsStore() {
 // Build a dsh child env that inherits the parent env MINUS the upstream API
 // keys, so dsh-credentials-local's .credentials.yaml is the winning resolution
 // layer (the inherited-env layer would otherwise shadow it). The parent keeps
-// its own process.env for server-side consumers (documents RAG, LiteLLM login).
+// its own process.env for server-side consumers (documents RAG).
 // Returns null when no upstream keys are configured (no scrubbing needed —
 // caller passes null and HarnessClient inherits process.env as before).
 export function buildScrubbedEnv() {
@@ -355,7 +347,7 @@ export function writeSkillsPatch(skillsDirs = [resolve("skills")]) {
   const tmp = SKILLS_PATCH_PATH + ".tmp";
   writeFileSync(tmp, yaml.dump([entry]), "utf8");
   renameSync(tmp, SKILLS_PATCH_PATH);
-  console.log(`[dsh-profile] wrote skills patch (customSkillDirs: ${skillsDir}) → ${SKILLS_PATCH_PATH}`);
+  console.log(`[dsh-profile] wrote skills patch (customSkillDirs: ${dirs.join(", ")}) → ${SKILLS_PATCH_PATH}`);
   return SKILLS_PATCH_PATH;
 }
 

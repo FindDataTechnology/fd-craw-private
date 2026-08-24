@@ -15,12 +15,8 @@ dist/
 build/
 resources/node/
 resources/openconnector/
-resources/python/
-resources/litellm/
-resources/postgres/
 # Keep original tarballs out of the repo
 resources/node/*.tar.gz
-resources/python/*.tar.xz
 
 # Local runtime stores
 chat-history-store/
@@ -32,14 +28,10 @@ test-results/
 # DB custom-skill materialization dir (runtime artifact; rebuilt from the DB)
 custom-skills/
 
-# Headless local-services launcher dev state (generated creds + seeded config,
-# written under PLATFORM_DATA_DIR / CWD by bootstrap/first-run.js). See local-services.js.
+# Headless local-services launcher dev state (generated creds, written under
+# PLATFORM_DATA_DIR / CWD by bootstrap/first-run.js).
 dev-settings.json
-litellm.yaml
 openconnector.db
-
-# Bundled Postgres data dir (dev)
-postgres-data/
 
 # Local Playwright CLI console logs (scratch)
 .playwright-cli/

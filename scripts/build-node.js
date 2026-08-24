@@ -16,7 +16,7 @@
 //
 // mac arm64/x64 + win x64 (the electron-builder targets) + linux x64 (Docker
 // image build) are built; the script exits 0 (no-op) elsewhere. Mirrors
-// scripts/build-python-litellm.js: uses `curl` + `tar` (both shipped on
+// scripts/build-openconnector.js: uses `curl` + `tar` (both shipped on
 // Windows 10+, macOS, and Linux) so no bash.
 
 import fs from "node:fs";

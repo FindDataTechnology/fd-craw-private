@@ -2,8 +2,8 @@ import { test, expect } from "@playwright/test";
 import { gotoChat } from "./helpers.js";
 
 // App shell: the React SPA is the sole frontend. `/` is served by the SPA
-// which routes to /chat; Documents/Dashboard/OpenConnector/LiteLLM
-// are React routes. No legacy vanilla page exists anymore.
+// which routes to /chat; Documents/Dashboard/OpenConnector are React routes.
+// No legacy vanilla page exists anymore.
 
 test.describe("app shell", () => {
   test("root serves the SPA and routes to /chat", async ({ page }) => {
@@ -23,13 +23,13 @@ test.describe("app shell", () => {
 
   test("sidebar shows the React nav entries", async ({ page }) => {
     await gotoChat(page);
-    for (const id of ["nav-chat", "nav-dashboard", "nav-documents", "nav-openconnector"]) {
+    for (const id of ["nav-chat", "nav-knowledge", "nav-agents", "nav-mcp", "nav-skills", "nav-models"]) {
       await expect(page.getByTestId(id)).toBeVisible();
     }
   });
 
   test("deep links resolve via the SPA fallback", async ({ page }) => {
     await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("system-status-page")).toBeVisible({ timeout: 15000 });
   });
 });

@@ -7,8 +7,7 @@
 //     tree-sitter) run on the bundled Node's standard ABI - no rebuild.
 //   - extraResources: resources/node → <app>/Resources/node  (the bundled Node)
 //   - mac arm64 + win x64 targets. The bundled-resource build (scripts/build-*.js)
-//     is cross-platform Node; build the .exe on a Windows host so Windows
-//     python-build-standalone + venv (venv/Scripts/litellm.exe) are produced.
+//     is cross-platform Node; only OpenConnector needs host-specific build steps.
 //
 // Bundle manifest: which heavyweight components ship is driven by
 // platform.bundle.json (+ the PLATFORM_BUNDLE_COMPONENTS override) via
@@ -56,65 +55,12 @@ if (sel.openconnector) {
   });
 }
 
-if (sel.litellm) {
-  // python/ exists only to run LiteLLM — both ship together.
-  extraResources.push(
-    {
-      from: "resources/python/",
-      to: "python/",
-      filter: [
-        "bin/**/*",
-        "lib/**/*",
-        "include/**/*",
-        "share/**/*",
-        "!**/__pycache__/**",
-        "!**/*.pyc",
-        "!**/test/**",
-        "!**/tests/**",
-        "!**/ensurepip",
-        "!**/idlelib",
-        "!**/turtledemo",
-        "!**/tkinter/test",
-        "!**/*.tar.xz",
-      ],
-    },
-    {
-      from: "resources/litellm/",
-      to: "litellm/",
-      filter: [
-        "default-config.yaml",
-        "venv/**/*",
-        "!venv/prisma-cache/**",
-        "!venv/**/__pycache__/**",
-        "!venv/**/*.pyc",
-        "!venv/**/*.dist-info/tests/**",
-        "!venv/**/test/**",
-        "!venv/**/tests/**",
-        "!venv/**/*.pyi.h",
-        "!venv/**/*.tar.gz",
-      ],
-    }
-  );
-}
-
-if (sel.postgres) {
-  extraResources.push({
-    from: "resources/postgres/",
-    to: "postgres/",
-    filter: ["bin/**/*", "lib/**/*", "share/**/*", "!**/*.tar.gz"],
-  });
-}
-
 /** @type {import('electron-builder').Configuration} */
 const config = {
   appId: "com.earendil.platform",
   productName: "Platform",
   directories: { output: "dist" },
   asar: false,
-  // Codesign bundled Postgres binaries + dylibs on mac after packing (ad-hoc,
-  // gated on CSC_LINK). No-ops when resources/postgres is absent (deselected).
-  // See scripts/sign-postgres.cjs.
-  afterPack: "scripts/sign-postgres.cjs",
   // Native addons (better-sqlite3, tree-sitter, fsevents) run under the BUNDLED
   // Node (resources/node), not Electron's Node - so do NOT rebuild them for
   // Electron's ABI. The prebuilt .node files (Node v25 arm64) are used as-is.

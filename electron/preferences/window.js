@@ -38,9 +38,9 @@ export function openPreferencesWindow() {
 // IPC handlers registered once when the app starts
 export function registerPreferencesIpc(supervisor) {
   // Allow only these keys to be read/written
-  const ALLOWED_VISIBLE_KEYS = ["LLM_API_KEY", "LLM_BASE_URL", "DEFAULT_MODEL", "DOCUMENTS_MODEL", "LITELLM_API_KEY"];
+  const ALLOWED_VISIBLE_KEYS = ["LLM_API_KEY", "LLM_BASE_URL", "DEFAULT_MODEL", "DOCUMENTS_MODEL"];
   const ALLOWED_WRITE_KEYS = ["LLM_API_KEY", "LLM_BASE_URL", "DEFAULT_MODEL", "DOCUMENTS_MODEL"];
-  const ALLOWED_SERVICE_RESTART = ["server-js", "litellm", "openconnector"];
+  const ALLOWED_SERVICE_RESTART = ["server-js", "openconnector"];
 
   // Get whitelisted visible settings
   ipcMain.handle("settings:get-visible", () => {
@@ -62,31 +62,6 @@ export function registerPreferencesIpc(supervisor) {
     current[key] = value;
     writeSettings(current);
     return { ok: true };
-  });
-
-  // Get full text of litellm.yaml from userData
-  ipcMain.handle("litellm:get-config", () => {
-    const dataDir = app.isPackaged ? app.getPath("userData") : "";
-    const configPath = dataDir ? path.join(dataDir, "litellm.yaml") : "litellm.yaml";
-    try {
-      return { ok: true, content: require("fs").readFileSync(configPath, "utf8") };
-    } catch (err) {
-      return { ok: false, error: String(err) };
-    }
-  });
-
-  // Write new text to litellm.yaml
-  ipcMain.handle("litellm:set-config", async (_event, { content }) => {
-    const dataDir = app.isPackaged ? app.getPath("userData") : "";
-    const configPath = dataDir ? path.join(dataDir, "litellm.yaml") : "litellm.yaml";
-    const tempPath = configPath + ".tmp";
-    try {
-      require("fs").writeFileSync(tempPath, content, "utf8");
-      require("fs").renameSync(tempPath, configPath);
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: String(err) };
-    }
   });
 
   // Rotate OpenConnector tokens (never return the new tokens to renderer)

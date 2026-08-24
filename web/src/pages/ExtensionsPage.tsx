@@ -1,16 +1,23 @@
-// ExtensionsPage.tsx
-// Main page for managing MCP servers and skills with a market tab.
+// ExtensionsPage.tsx — Dedicated page for managing MCP servers OR skills.
+// Accepts a `type` prop to determine whether to show MCP or Skills management.
+// Used by: /extensions/mcp (MCP), /extensions/skills (Skills).
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { InstalledTab } from "@/components/extensions/InstalledTab";
-import { MarketTab } from "@/components/extensions/MarketTab";
+import { McpInstalledView } from "@/components/extensions/McpInstalledView";
+import { McpMarketView } from "@/components/extensions/McpMarketView";
+import { SkillsInstalledView } from "@/components/extensions/SkillsInstalledView";
+import { SkillsMarketView } from "@/components/extensions/SkillsMarketView";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
 import { useEffect } from "react";
 
+export interface ExtensionsPageProps {
+  type: "mcp" | "skills";
+}
+
 type Tab = "installed" | "market";
 
-export function ExtensionsPage() {
+export function ExtensionsPage({ type }: ExtensionsPageProps) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<Tab>("installed");
   const { load, loading, error } = useExtensionsStore();
@@ -19,12 +26,15 @@ export function ExtensionsPage() {
     load();
   }, [load]);
 
+  const title = type === "mcp" ? t("extensions.mcp.title") : t("extensions.skills.title");
+  const description = type === "mcp" ? t("extensions.mcp.description") : t("extensions.skills.description");
+
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex flex-col h-full bg-background" data-testid="extensions-page" data-extensions-type={type}>
       {/* Header */}
       <div className="border-b border-border px-6 py-4">
-        <h1 className="text-2xl font-semibold text-foreground">{t("extensions.title")}</h1>
-        <p className="text-sm text-muted-foreground mt-1">{t("extensions.description")}</p>
+        <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
+        <p className="text-sm text-muted-foreground mt-1">{description}</p>
       </div>
 
       {/* Tabs */}
@@ -65,9 +75,15 @@ export function ExtensionsPage() {
             <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-md">{error}</div>
           </div>
         )}
-        {!loading && !error && activeTab === "installed" && <InstalledTab />}
+        {!loading && !error && activeTab === "installed" && (
+          type === "mcp" ? <McpInstalledView /> : <SkillsInstalledView />
+        )}
         {!loading && !error && activeTab === "market" && (
-          <MarketTab onInstalled={() => setActiveTab("installed")} />
+          type === "mcp" ? (
+            <McpMarketView onInstalled={() => setActiveTab("installed")} />
+          ) : (
+            <SkillsMarketView onInstalled={() => setActiveTab("installed")} />
+          )
         )}
       </div>
     </div>

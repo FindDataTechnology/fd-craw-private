@@ -2,9 +2,7 @@
 
 ## Purpose
 TBD - synced from change add-open-connector. Update Purpose after archive.
-
 ## Requirements
-
 ### Requirement: OpenConnector panel toggles alongside Chat and Knowledge
 The web UI SHALL provide an "OpenConnector" panel activated via the left sidebar navigation tab (governed by the `app-navigation` capability), replacing the former header toggle button. Selecting the OpenConnector tab SHALL show the OpenConnector panel and hide all other panels. When the panel is opened, the UI SHALL fetch `GET /api/openconnector/config` and `GET /api/openconnector/health` to determine whether the module is enabled and whether the runtime is reachable, and SHALL display that status to the user. The OpenConnector tab SHALL additionally host the embedded native web UI (governed by the `open-connector-web` capability) alongside the existing action-browse/execute panel.
 
@@ -82,3 +80,19 @@ The panel SHALL make all runtime calls through `/api/openconnector/*` only; it S
 - **WHEN** any panel operation is performed
 - **THEN** no request SHALL be sent to the runtime base URL directly
 - **AND** no token value SHALL appear in the DOM, console, or outgoing requests
+
+### Requirement: OpenConnector page moves into the Settings menu
+The OpenConnector management page (rendered as a same-origin iframe around `/oc-web`) SHALL remain mounted at the `/openconnector` route, but SHALL NO LONGER appear as a top-level sidebar tab. It SHALL be reachable from the Settings menu in the sidebar footer (see `app-navigation`). The page content, the iframe proxy behavior, the loading/blocked-frame fallback, and the not-configured placeholder are unchanged.
+
+#### Scenario: OpenConnector no longer in top-level nav
+- **WHEN** the user views the sidebar
+- **THEN** no top-level "OpenConnector" entry SHALL be present
+- **WHEN** the user opens the Settings menu (gear icon)
+- **THEN** an "OpenConnector" item SHALL appear
+- **WHEN** the user clicks that item
+- **THEN** the router SHALL navigate to `/openconnector` and the iframe page SHALL render
+
+#### Scenario: direct navigation still works
+- **WHEN** the user navigates directly to `/openconnector` (e.g. via a bookmark)
+- **THEN** the OpenConnector page SHALL render exactly as before this change
+

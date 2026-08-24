@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { gotoChat } from "./helpers.js";
+import { gotoChat, gotoKnowledge } from "./helpers.js";
 
 // In-app navigation preserves the WebSocket: navigating between React views
 // via the sidebar must not reload the page or drop the WS connection.
@@ -9,9 +9,9 @@ test.describe("navigation persistence", () => {
     await gotoChat(page);
     await expect(page.getByTestId("status-text")).toHaveText("Connected");
 
-    // Documents -> back to Chat via in-app nav.
-    await page.getByTestId("nav-documents").click();
-    await expect(page).toHaveURL(/\/documents/);
+    // Knowledge -> back to Chat via in-app nav.
+    await page.getByTestId("nav-knowledge").click();
+    await expect(page).toHaveURL(/\/knowledge/);
     await expect(page.getByTestId("documents-page")).toBeVisible();
     // WS still connected (no reload).
     await expect(page.getByTestId("status-text")).toHaveText("Connected");
@@ -25,9 +25,17 @@ test.describe("navigation persistence", () => {
     await gotoChat(page);
     let loads = 0;
     page.on("domcontentloaded", () => { loads++; });
-    await page.getByTestId("nav-dashboard").click();
+    await page.getByTestId("nav-knowledge").click();
     await page.getByTestId("nav-chat").click();
     // Only the initial load should have fired; in-app nav does not trigger DOMContentLoaded.
     expect(loads).toBe(0);
+  });
+
+  test("new tabs render their pages (MCP, Skills, Models, Agents)", async ({ page }) => {
+    await gotoChat(page);
+    for (const id of ["nav-mcp", "nav-skills", "nav-models", "nav-agents"]) {
+      await page.getByTestId(id).click();
+      await expect(page.getByTestId("status-text")).toHaveText("Connected");
+    }
   });
 });

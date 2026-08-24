@@ -2,7 +2,7 @@
 //
 // `platform.bundle.json` (repo root, shipped inside the packaged app) declares:
 //   - components:   which heavyweight services get built + bundled
-//                   (litellm / openconnector / postgres; postgres "auto" follows litellm)
+//                   (openconnector only; litellm/postgres removed — dsh handles LLM natively)
 //   - mcpServers:   MCP servers pre-installed at first run (origin "bundled")
 //   - skills:       names of skills/ entries marked as bundled at first run
 //   - permissions:  per-extension policy keyed "mcp:<name>" / "skill:<name>"
@@ -13,8 +13,8 @@
 // resolves through resolveBundle() — nobody else parses the JSON.
 //
 // Override component selection without editing the file:
-//   PLATFORM_BUNDLE_COMPONENTS=all | none | "openconnector,litellm"
-// (postgres auto-included whenever litellm is selected — bundled LiteLLM needs it.)
+//   PLATFORM_BUNDLE_COMPONENTS=all | none | openconnector
+// (postgres removed with litellm — dsh-llm manages models natively via .credentials.yaml)
 // Override the manifest file location (tests, side-by-side manifests):
 //   PLATFORM_BUNDLE_MANIFEST=/abs/path/to/manifest.json
 //
@@ -28,14 +28,14 @@ import path from "node:path";
 
 export const MANIFEST_FILENAME = "platform.bundle.json";
 
-const COMPONENT_NAMES = ["litellm", "openconnector", "postgres"];
+const COMPONENT_NAMES = ["openconnector"];
 const TOP_LEVEL_KEYS = ["components", "mcpServers", "skills", "permissions"];
 const PERMISSION_KEY_RE = /^(mcp|skill):[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-// Missing manifest = legacy behavior: every component bundled, no pre-installed
-// extensions, no locks.
+// Missing manifest = legacy behavior: openconnector bundled, no pre-installed
+// extensions, no locks. (litellm/postgres removed — dsh-llm manages LLM natively.)
 export const DEFAULTS = Object.freeze({
-  components: Object.freeze({ litellm: true, openconnector: true, postgres: true }),
+  components: Object.freeze({ openconnector: true }),
   mcpServers: Object.freeze({}),
   skills: Object.freeze([]),
   permissions: Object.freeze({}),
@@ -53,15 +53,14 @@ function fail(msg) {
 }
 
 function validateComponents(raw) {
-  if (raw === undefined) return { litellm: { include: true }, openconnector: { include: true }, postgres: { include: "auto" } };
+  if (raw === undefined) return { openconnector: { include: true } };
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) fail('"components" must be an object');
   for (const key of Object.keys(raw)) {
     if (!COMPONENT_NAMES.includes(key)) fail(`unknown component "${key}" (known: ${COMPONENT_NAMES.join(", ")})`);
     const include = raw[key]?.include;
-    if (include !== true && include !== false && include !== "auto") {
-      fail(`components.${key}.include must be true, false, or "auto"`);
+    if (include !== true && include !== false) {
+      fail(`components.${key}.include must be true or false`);
     }
-    if (include === "auto" && key !== "postgres") fail(`components.${key}.include: "auto" is only valid for postgres`);
   }
   return raw;
 }
@@ -102,24 +101,22 @@ function validatePermissions(raw) {
 }
 
 // Apply PLATFORM_BUNDLE_COMPONENTS to the manifest's component map and resolve
-// "auto"/absent postgres (bundled iff litellm is bundled — the LiteLLM child
-// stores its DB in the bundled Postgres).
+// components. No postgres auto-include — dsh-llm manages LLM natively via settings.yaml +
+// .credentials.yaml hot-reload, no bundled child processes needed (litellm/postgres removed).
 function resolveComponents(manifestComponents, env) {
   const override = (env.PLATFORM_BUNDLE_COMPONENTS ?? "").trim();
-  const selected = { litellm: true, openconnector: true, postgres: "auto" };
+  const selected = { openconnector: true };
   for (const [name, cfg] of Object.entries(manifestComponents)) selected[name] = cfg.include;
 
   let resolved;
   if (!override) {
     resolved = {
-      litellm: selected.litellm === true,
       openconnector: selected.openconnector === true,
-      postgres: selected.postgres === "auto" ? selected.litellm === true : selected.postgres === true,
     };
   } else if (override === "all") {
-    resolved = { litellm: true, openconnector: true, postgres: true };
+    resolved = { openconnector: true };
   } else if (override === "none") {
-    resolved = { litellm: false, openconnector: false, postgres: false };
+    resolved = { openconnector: false };
   } else {
     const names = override.split(",").map((s) => s.trim()).filter(Boolean);
     for (const name of names) {
@@ -128,14 +125,8 @@ function resolveComponents(manifestComponents, env) {
       }
     }
     resolved = {
-      litellm: names.includes("litellm"),
       openconnector: names.includes("openconnector"),
-      postgres: names.includes("postgres") || names.includes("litellm"),
     };
-  }
-  if (resolved.litellm && !resolved.postgres) {
-    // Allowed (external DATABASE_URL at runtime) but almost always a mistake.
-    console.warn("[bundle] WARNING: litellm is bundled without postgres — bundled LiteLLM needs an external DATABASE_URL at runtime");
   }
   return resolved;
 }
@@ -145,7 +136,7 @@ function resolveComponents(manifestComponents, env) {
  * @param {Object} opts
  * @param {Object} [opts.env] - environment (defaults to process.env)
  * @param {string} [opts.projectRoot] - dir containing platform.bundle.json (defaults to repo root)
- * @returns {{components: {litellm: boolean, openconnector: boolean, postgres: boolean},
+ * @returns {{components: {openconnector: boolean},
  *            mcpServers: Object, skills: string[], permissions: Object,
  *            manifestPath: string, manifestPresent: boolean}}
  */

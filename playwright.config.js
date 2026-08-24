@@ -90,6 +90,8 @@ export default defineConfig({
             DOCUMENTS_STORE_DIR: storeDirs.docs,
             SESSIONS_STORE_DIR: storeDirs.sessions,
             DB_PATH: storeDirs.db,
+            LLM_PROVIDERS_STORE: storeDirs.llmProviders,
+            LLM_DEFAULT_STORE: storeDirs.llmDefault,
           },
         },
       }),

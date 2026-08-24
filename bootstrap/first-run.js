@@ -3,12 +3,15 @@
 // Runs before the supervisor starts:
 // 1. Idempotent atomic seeding of <dataDir>/<settingsFileName>
 // 2. Generates OpenConnector runtime/admin tokens if missing (when bundled OC exists)
-// 3. Copies default litellm.yaml if missing (when bundled LiteLLM exists)
-// 4. All writes are temp+rename so interrupted writes leave the filesystem consistent
+// 3. All writes are temp+rename so interrupted writes leave the filesystem consistent
 //
 // Shared by the packaged Electron app (settings.json under userData) and the
 // headless local-services launcher (dev-settings.json under PLATFORM_DATA_DIR).
 // Takes a `dataDir` + `settingsFileName` instead of app.getPath("userData").
+//
+// LLM management is now handled natively by dsh-llm (no bundled LiteLLM child
+// process) and persistence is SQLite (no bundled Postgres); only OpenConnector
+// remains as a bundled service that needs bootstrap.
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -36,8 +39,6 @@ export function runFirstRun(opts) {
 
   // Paths
   const settingsPath = path.join(userDataDir, settingsFileName);
-  const litellmUserPath = path.join(userDataDir, "litellm.yaml");
-  const litellmDefaultPath = path.join(resourcesDir, "litellm", "default-config.yaml");
 
   // Step 1: Read/parse settings
   let settings = {};
@@ -61,7 +62,6 @@ export function runFirstRun(opts) {
   // supervisor/descriptors.js (hasBundledOpenConnector): the runtime runs from
   // src/server/index.ts via tsx - there is no emitted dist/index.js.
   const hasBundledOC = fs.existsSync(path.join(resourcesDir, "openconnector", "src", "server", "index.ts"));
-  const hasBundledLiteLLM = fs.existsSync(litellmDefaultPath) && fs.existsSync(path.join(resourcesDir, "python", "bin", "python3"));
 
   // Step 4: Generate OC tokens if missing and bundled
   if (hasBundledOC) {
@@ -75,44 +75,7 @@ export function runFirstRun(opts) {
     }
   }
 
-  // Step 5: Generate LiteLLM master key if missing and bundled
-  if (hasBundledLiteLLM) {
-    if (!merged.LITELLM_API_KEY) {
-      merged.LITELLM_API_KEY = "sk-" + crypto.randomBytes(32).toString("hex");
-      console.log("[bootstrap] Generated new LITELLM_API_KEY");
-    }
-    // LITELLM_SALT_KEY encrypts credentials stored in the LiteLLM Postgres DB.
-    // Generate ONCE and never overwrite - changing it orphans every encrypted
-    // value (API keys, model params) already stored in the DB.
-    if (!merged.LITELLM_SALT_KEY) {
-      merged.LITELLM_SALT_KEY = crypto.randomBytes(32).toString("hex");
-      console.log("[bootstrap] Generated new LITELLM_SALT_KEY");
-      console.warn("[bootstrap] ⚠️  LITELLM_SALT_KEY generated. DO NOT CHANGE - changing this value will prevent access to encrypted data in the database");
-    }
-    // LITELLM_MASTER_KEY is the env the admin UI checks for sign-in; reuse the
-    // proxy master key so there's one secret to manage.
-    if (!merged.LITELLM_MASTER_KEY && merged.LITELLM_API_KEY) {
-      merged.LITELLM_MASTER_KEY = merged.LITELLM_API_KEY;
-    }
-
-    // Step 6: Copy default litellm.yaml if missing
-    if (!fs.existsSync(litellmUserPath)) {
-      // atomic: temp -> rename
-      const tempPath = litellmUserPath + ".tmp";
-      fs.copyFileSync(litellmDefaultPath, tempPath);
-      fs.renameSync(tempPath, litellmUserPath);
-      console.log("[bootstrap] Seeded default litellm.yaml to", litellmUserPath);
-    }
-
-    // Step 6b: Make the bundled venv relocatable. `python -m venv` (run on the
-    // CI runner) bakes absolute runner paths into bin/python3 (symlink target)
-    // and pyvenv.cfg `home` - both break when the app is installed elsewhere.
-    // The `litellm` wrapper shebang is bypassed by the supervisor (it invokes
-    // litellm via the venv python), so only the symlink + pyvenv.cfg need fixing.
-    fixupBundledVenv(resourcesDir);
-  }
-
-  // Step 7: Write settings atomically if we changed it OR it didn't exist
+  // Step 5: Write settings atomically if we changed it OR it didn't exist
   if (!settingsExists || Object.keys(settings).length !== Object.keys(merged).length) {
     const tempPath = settingsPath + ".tmp";
     fs.writeFileSync(tempPath, JSON.stringify(merged, null, 2), "utf8");
@@ -121,40 +84,4 @@ export function runFirstRun(opts) {
   }
 
   return merged;
-}
-
-// Make the bundled LiteLLM venv relocatable (mac only; Windows venv copies
-// python.exe so there's no symlink/home issue). Idempotent + non-fatal.
-function fixupBundledVenv(resourcesDir) {
-  if (process.platform === "win32") return;
-  const venvDir = path.join(resourcesDir, "litellm", "venv");
-  const venvBin = path.join(venvDir, "bin");
-  const python3Link = path.join(venvBin, "python3");
-  // Relative from venv/bin/ to the bundled python: bin -> venv -> litellm -> resources -> python/bin
-  const relTarget = "../../../python/bin/python3";
-  try {
-    const cur = fs.existsSync(python3Link) && fs.readlinkSync(python3Link);
-    if (cur !== relTarget) {
-      fs.rmSync(python3Link, { force: true });
-      fs.symlinkSync(relTarget, python3Link);
-      console.log("[bootstrap] Repointed venv python3 -> relative bundled python");
-    }
-    // pyvenv.cfg `home` must be absolute (relative isn't supported by CPython)
-    // and points to the runner's python bin in a fresh build -> pin to the local
-    // bundled python. Re-pinned each launch (self-heals if the app is moved).
-    const pyvenvCfg = path.join(venvDir, "pyvenv.cfg");
-    if (fs.existsSync(pyvenvCfg)) {
-      const pyBin = path.join(resourcesDir, "python", "bin");
-      let cfg = fs.readFileSync(pyvenvCfg, "utf8");
-      const before = cfg;
-      cfg = cfg.replace(/^home = .*/m, `home = ${pyBin}`);
-      cfg = cfg.replace(/^executable = .*/m, `executable = ${path.join(pyBin, "python3.13")}`);
-      if (cfg !== before) {
-        fs.writeFileSync(pyvenvCfg, cfg);
-        console.log("[bootstrap] Pinned venv pyvenv.cfg home/executable -> local bundled python");
-      }
-    }
-  } catch (e) {
-    console.warn("[bootstrap] venv relocation fixup failed (non-fatal):", e.message);
-  }
 }

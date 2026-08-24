@@ -236,6 +236,16 @@ export function touchSession(id, updatedAt) {
   db.prepare("UPDATE chat_sessions SET updated_at = ? WHERE id = ?").run(updatedAt, id);
 }
 
+// Set a session's title and bump updated_at. Returns true if the row was
+// updated, false if no such session or the DB is unavailable.
+export function setTitle(id, title, updatedAt) {
+  if (!dbReady || !id) return false;
+  const result = db
+    .prepare("UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?")
+    .run(title || "New chat", updatedAt, id);
+  return result.changes > 0;
+}
+
 // Append a message with the next per-session seq. Returns the inserted seq.
 export function appendMessage(sessionId, role, content, createdAt) {
   if (!dbReady) return null;
@@ -270,6 +280,14 @@ export function getSessionPath(id) {
 export function sessionExists(id) {
   if (!dbReady) return false;
   return !!db.prepare("SELECT 1 FROM chat_sessions WHERE id = ?").get(id);
+}
+
+// Delete a session row (cascades to chat_messages via FK). Returns true if a row
+// was removed, false if no such session or the DB is unavailable.
+export function deleteSession(id) {
+  if (!dbReady || !id) return false;
+  const result = db.prepare("DELETE FROM chat_sessions WHERE id = ?").run(id);
+  return result.changes > 0;
 }
 
 export function getSessionMeta(id) {

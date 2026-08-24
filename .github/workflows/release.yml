@@ -4,11 +4,10 @@
 #   - push tag v*        -> build both, attach installers to a GitHub Release
 #   - workflow_dispatch  -> build both, upload as workflow artifacts (no release)
 #
-# Two-runner matrix (not cross-compile): the bundled LiteLLM venv is built by
-# `pip install` against the host interpreter, so a Windows venv cannot be
-# produced on macOS (and vice-versa). `build-node.js` auto-matches the bundled
-# standalone Node to the Node running the build (process.version), so the
-# native-addon ABI parity holds on whichever Node `setup-node` provides.
+# `build-node.js` auto-matches the bundled standalone Node to the Node running
+# the build (process.version), so the native-addon ABI parity holds on whichever
+# Node `setup-node` provides. OpenConnector's git-pinned SHA is the only
+# platform-specific build artifact (Node is cross-platform).
 #
 # Signing is gated on secrets: when CSC_LINK / WIN_CSC_LINK (+ notarization
 # secrets) are present the installers are signed/notarized; when absent the
@@ -31,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       components:
-        description: 'Components to bundle (comma-separated litellm,openconnector,postgres, or all/none). Empty = use platform.bundle.json as-is.'
+        description: 'Components to bundle (comma-separated openconnector, or all/none). Empty = use platform.bundle.json as-is.'
         required: false
         default: ''
         type: string
@@ -84,18 +83,12 @@ jobs:
           architecture: ${{ matrix.arch }}
           cache: 'npm'
 
-      # Cache the bundled resources (OpenConnector + Node + Python + LiteLLM
-      # venv + Prisma engine + Postgres). predist is idempotent and skips when
-      # present, so a cache hit turns the heaviest step (litellm pip install)
-      # into a no-op. Keyed by OS + arch + platformBundles (package.json) AND
-      # the build scripts - a build-logic change (e.g. adding the Prisma engine
-      # step) busts the cache so the new artifacts are rebuilt and persisted
-      # instead of an older partial cache being reused forever. ALSO keyed by
-      # platform.bundle.json + the resolved PLATFORM_BUNDLE_COMPONENTS, so a
-      # component-selection change never restores a stale all-components cache
-      # (openspec change `bundle-manifest`). restore-keys still falls back to
-      # the OS+arch prefix so a venv from a prior key is reused (only the
-      # missing piece is regenerated).
+      # Cache the bundled resources (OpenConnector + Node). predist is
+      # idempotent and skips when present, so a cache hit turns the heaviest
+      # step (OpenConnector git clone) into a no-op. Keyed by OS + arch +
+      # package.json + the build scripts + platform.bundle.json + the resolved
+      # PLATFORM_BUNDLE_COMPONENTS, so a component-selection change never
+      # restores a stale all-components cache (openspec change `bundle-manifest`).
       - name: Cache resources/
         uses: actions/cache@v4
         with:
@@ -103,11 +96,8 @@ jobs:
           key: resources-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'scripts/build-*.js', 'scripts/verify-bundle.js', 'platform.bundle.json') }}-${{ env.PLATFORM_BUNDLE_COMPONENTS }}
           # Same-arch only: do NOT fall back across arches (an arm64 cache
           # restored into the x64 job would skip the rebuild and ship arm64
-          # binaries in an x64 dmg). Also scoped to the component selection:
-          # a lean build must never restore an all-components cache (its
-          # resources/python + resources/litellm dirs would trip verify-bundle's
-          # deselected-dir CI guard) - the bare OS+arch prefix would do exactly
-          # that, so the selection suffix is part of the fallback prefix too.
+          # binaries in an x64 dmg). Scoped to the component selection too:
+          # a lean build must never restore an all-components cache.
           restore-keys: |
             resources-${{ matrix.os }}-${{ matrix.arch }}-${{ env.PLATFORM_BUNDLE_COMPONENTS }}-
 

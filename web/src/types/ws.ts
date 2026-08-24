@@ -30,6 +30,7 @@ export type ServerMessage =
   | { type: "sessions"; sessions: SessionMeta[]; current?: string }
   | { type: "session_changed"; id: string }
   | { type: "session_loaded"; id: string; title?: string; messages: ChatMessage[] }
+  | { type: "session_renamed"; id: string; title: string }
   | { type: "cron_jobs"; jobs: unknown[] }
   | { type: "cron_status"; job: unknown }
   | { type: "cron_removed"; id: string }
@@ -55,16 +56,29 @@ export interface AgentInfo {
   id: string;
   type: "agent-local" | "agent-remote";
   name?: string;
+  description?: string;  // purpose / capability summary
+  icon?: string;         // lucide icon name (resolved via <Icon name={icon} />)
   mode?: "chat" | "link";
   model?: string;
   url?: string;
+  tags?: string[];       // categorization badges
+  version?: string;      // semver for changelog reference
+  featured?: boolean;    // show on Agents dashboard first
 }
 
 export interface AppInfo {
   id: string;
   name?: string;
-  kind: "link" | "nango-connect";
+  description?: string;  // purpose / capability summary
+  icon?: string;         // lucide icon name
+  kind: "link" | "nango-connect" | "external-service";
   url?: string;
+  // external-service specific fields:
+  features?: string[];   // capability bullets shown in card detail
+  embedded?: boolean;    // true = embed in iframe via /external/:appId
+  tags?: string[];
+  version?: string;
+  featured?: boolean;
 }
 
 export interface SkillInfo {
@@ -74,7 +88,7 @@ export interface SkillInfo {
 
 export interface SessionMeta {
   id: string;
-  title?: string;
+  title: string;
   createdAt?: string | number;
   updatedAt?: string | number;
 }
@@ -95,4 +109,5 @@ export type ClientMessage =
   | { type: "list_skills" }
   | { type: "list_sessions" }
   | { type: "new_session" }
-  | { type: "switch_session"; id: string };
+  | { type: "switch_session"; id: string }
+  | { type: "rename_session"; id: string; title: string };

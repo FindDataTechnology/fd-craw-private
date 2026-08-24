@@ -25,7 +25,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/law-ai-official/law-private.git
-    targetRevision: embed-litellm-openconnector
+    targetRevision: embed-openconnector
     path: k8s
   destination:
     server: https://kubernetes.default.svc

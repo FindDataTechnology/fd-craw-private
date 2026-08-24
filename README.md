@@ -28,14 +28,14 @@ npm start          # http://localhost:3000（无头启动器）
 npm run web:dev    # Vite 开发服务器 :5173，HMR（后端需同时在 :3000 运行）
 ```
 
-`npm start` 运行无头启动器（`scripts/start.js`），在 `resources/` 已构建的前提下，把项目**内置的本地** LiteLLM（Python venv）和 OpenConnector（Node/tsx）作为 localhost 子进程拉起，再启动 `server.js`。
+`npm start` 运行无头启动器（`scripts/start.js`），在 `resources/` 已构建的前提下，把项目**内置的本地** OpenConnector（Node/tsx）作为 localhost 子进程拉起，再启动 `server.js`。LLM 管理由 dsh 自带的 `dsh-llm` 插件（`settings.yaml` + `.credentials.yaml` 热重载）负责。
 
-> 直接 `node server.js` 只会跑后端，不会拉起 OC/LiteLLM 子进程；此时 OpenConnector / LiteLLM 面板会退回"未配置"占位态。
+> 直接 `node server.js` 只会跑后端，不会拉起 OC 子进程；此时 OpenConnector 面板会退回"未配置"占位态。
 
 ### 先构建资源
 
 ```bash
-npm run predist   # 构建 OpenConnector、独立 Node、Python/LiteLLM venv
+npm run predist   # 构建 OpenConnector、独立 Node
 npm start         # 然后才能拉起本地服务
 ```
 
@@ -43,7 +43,7 @@ npm start         # 然后才能拉起本地服务
 
 ## 本地服务（npm start）
 
-- **本地模式：** `.env` 里设 `LITELLM_BASE_URL=http://localhost:4000`、`OPENCONNECTOR_BASE_URL=http://localhost:3001`——启动器会在对应端口拉起内置服务。
+- **本地模式：** `.env` 里设 `OPENCONNECTOR_BASE_URL=http://localhost:3001`——启动器会在该端口拉起内置服务。
 - **远程模式：** 把 URL 改成远程地址，启动器直接使用，不拉起本地进程。
 - **未打包：** 启动器退化为仅运行 `server.js`。
 
@@ -57,8 +57,7 @@ npm start         # 然后才能拉起本地服务
 
 | 变量 | 作用 |
 |---|---|
-| `LLM_API_KEY` / `LLM_BASE_URL` | 默认 LLM 提供商（火山引擎 Gateway）。`server.js` 内置回退 key。 |
-| `LITELLM_BASE_URL` / `LITELLM_API_KEY` | LiteLLM 代理。localhost → 启动器拉起内置服务；远程 → 走远程代理。 |
+| `LLM_API_KEY` / `LLM_BASE_URL` | 默认 LLM 提供商（OpenAI 兼容网关）。`server.js` 内置回退 key。 |
 | `OPENCONNECTOR_BASE_URL` (+ `TOKEN` 系列) | 启用 OpenConnector 面板与内嵌 UI（`/oc-web`）。未设 = 禁用。 |
 | `PORT` / `HOST` | 监听地址（默认 `3000` / `localhost`）。 |
 | `PLATFORM_DATA_DIR` | 磁盘存储根目录（SQLite、会话等）。 |
@@ -78,7 +77,7 @@ npm start         # 然后才能拉起本地服务
 - **`chat-history.js`** — 只读聊天持久化（每个 turn 镜像到 SQLite）。
 - **`open-connector.js`** — OpenConnector 反向代理。**token 留在服务端**。
 - **`electron/`** — 桌面 supervisor（进程管理，不跑业务逻辑）。
-- **`web/`** — 唯一前端（Vite + React 19 + TypeScript + Tailwind v4 + shadcn）。路由：`/chat`、`/documents`、`/dashboard`、`/extensions`、`/openconnector`、`/litellm`。
+- **`web/`** — 唯一前端（Vite + React 19 + TypeScript + Tailwind v4 + shadcn）。路由：`/chat`、`/documents`、`/dashboard`、`/extensions`、`/agents`、`/openconnector`。
 - **`skills/`** — 本地技能（`SKILL.md`），用 `/skill:<name>` 调用。
 
 ---
@@ -174,14 +173,14 @@ npm start          # http://localhost:3000 (headless launcher)
 npm run web:dev    # Vite on :5173 with HMR (backend must also run on :3000)
 ```
 
-`npm start` runs the headless launcher (`scripts/start.js`) to bring up the **bundled local** LiteLLM (Python venv) and OpenConnector (Node/tsx) as localhost child processes, then starts `server.js`.
+`npm start` runs the headless launcher (`scripts/start.js`) to bring up the **bundled local** OpenConnector (Node/tsx) as a localhost child process, then starts `server.js`. LLM management is handled natively by the bundled `dsh-llm` plugin (`settings.yaml` + `.credentials.yaml` hot-reload) — no LiteLLM child process.
 
-> Directly running `node server.js` will NOT spawn OC/LiteLLM; their panels will show "not configured".
+> Directly running `node server.js` will NOT spawn OC; the OpenConnector panel will show "not configured".
 
 ### Build resources first
 
 ```bash
-npm run predist   # build OpenConnector, standalone Node, Python/LiteLLM venv
+npm run predist   # build OpenConnector, standalone Node
 npm start         # then start the local services
 ```
 
@@ -193,8 +192,7 @@ Everything sensitive lives in **`.env`** and **`mcp.json`** (both gitignored; te
 
 | Variable | Purpose |
 |---|---|
-| `LLM_API_KEY` / `LLM_BASE_URL` | Default LLM provider (Volces Gateway). Fallback key baked into `server.js`. |
-| `LITELLM_BASE_URL` / `LITELLM_API_KEY` | LiteLLM proxy. localhost → launcher spawns bundled service; remote → use remote proxy. |
+| `LLM_API_KEY` / `LLM_BASE_URL` | Default LLM provider (OpenAI-compatible gateway). Fallback key baked into `server.js`. |
 | `OPENCONNECTOR_BASE_URL` (+ `TOKEN`s) | Enables the OpenConnector panel and embedded UI (`/oc-web`). Unset = disabled. |
 | `PORT` / `HOST` | Bind address (default `3000` / `localhost`). |
 | `PLATFORM_DATA_DIR` | Root for all on-disk stores (SQLite, sessions, cron). |
@@ -214,7 +212,7 @@ Everything sensitive lives in **`.env`** and **`mcp.json`** (both gitignored; te
 - **`chat-history.js`** — read-only chat persistence (mirrors each turn to SQLite).
 - **`open-connector.js`** — OpenConnector reverse proxy. **Tokens stay server-side.**
 - **`electron/`** — desktop supervisor (process management only).
-- **`web/`** — sole frontend (Vite + React 19 + TypeScript + Tailwind v4 + shadcn). Routes: `/chat`, `/documents`, `/dashboard`, `/extensions`, `/openconnector`, `/litellm`.
+- **`web/`** — sole frontend (Vite + React 19 + TypeScript + Tailwind v4 + shadcn). Routes: `/chat`, `/documents`, `/dashboard`, `/extensions`, `/agents`, `/openconnector`.
 - **`skills/`** — local skills (`SKILL.md`), invoked via `/skill:<name>`.
 
 ---

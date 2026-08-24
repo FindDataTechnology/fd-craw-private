@@ -32,10 +32,12 @@ export function prepareTempStoreDirs() {
   const docs = path.join(root, "documents-store");
   const sessions = path.join(root, "sessions-store");
   const db = path.join(root, "app.db");
+  const llmProviders = path.join(root, "llm-providers.json");
+  const llmDefault = path.join(root, "llm-default.json");
   fs.mkdirSync(chat, { recursive: true });
   fs.mkdirSync(docs, { recursive: true });
   fs.mkdirSync(sessions, { recursive: true });
-  return { chat, docs, sessions, db, root };
+  return { chat, docs, sessions, db, llmProviders, llmDefault, root };
 }
 
 export function cleanupTempStoreDirs() {
@@ -76,17 +78,55 @@ export async function gotoDocuments(page) {
   await expect(page.getByTestId("documents-page")).toBeVisible({ timeout: 15000 });
 }
 
-// Navigate to the React Dashboard page.
+// Navigate to the React Knowledge page (was /documents).
+export async function gotoKnowledge(page) {
+  await pinLocaleEn(page);
+  await page.goto("/knowledge");
+  await expect(page.getByTestId("documents-page")).toBeVisible({ timeout: 15000 });
+}
+
+// Navigate to the React System Status page (was Dashboard at /dashboard).
 export async function gotoDashboard(page) {
   await pinLocaleEn(page);
   await page.goto("/dashboard");
-  await expect(page.getByTestId("dashboard-page")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("system-status-page")).toBeVisible({ timeout: 15000 });
 }
 
-// Navigate to the React Extensions page.
+// Navigate to the React Agents page (with sub-tabs).
+export async function gotoAgents(page, tab) {
+  await pinLocaleEn(page);
+  const url = tab ? `/agents?tab=${tab}` : "/agents";
+  await page.goto(url);
+  await expect(page.getByTestId("agents-page")).toBeVisible({ timeout: 15000 });
+}
+
+// Navigate to the React MCP Servers page.
+export async function gotoMcp(page) {
+  await pinLocaleEn(page);
+  await page.goto("/mcp");
+  await expect(page.getByTestId("extensions-page")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("extensions-page")).toHaveAttribute("data-extensions-type", "mcp");
+}
+
+// Navigate to the React Skills page.
+export async function gotoSkills(page) {
+  await pinLocaleEn(page);
+  await page.goto("/skills");
+  await expect(page.getByTestId("extensions-page")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("extensions-page")).toHaveAttribute("data-extensions-type", "skills");
+}
+
+// Navigate to the React LLM Models page.
+export async function gotoModels(page) {
+  await pinLocaleEn(page);
+  await page.goto("/models");
+  await expect(page.getByTestId("models-page")).toBeVisible({ timeout: 15000 });
+}
+
+// Navigate to the React Extensions page (legacy URL — redirects to /mcp).
 export async function gotoExtensions(page) {
   await pinLocaleEn(page);
   await page.goto("/extensions");
-  // Wait for the page to load (check for the title)
-  await expect(page.getByRole("heading", { name: /extensions/i })).toBeVisible({ timeout: 15000 });
+  await expect(page).toHaveURL(/\/mcp$/);
+  await expect(page.getByTestId("extensions-page")).toBeVisible({ timeout: 15000 });
 }

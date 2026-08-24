@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ── Postinstall: build bundled LiteLLM + OpenConnector resources if missing ──
+// ── Postinstall: build bundled OpenConnector resources if missing ──
 //
 // So `npm install && npm start` works out of the box on a fresh clone: after
 // the web build (postinstall-web.js), build the bundled services if they aren't
@@ -15,6 +15,10 @@
 // re-check the manifest and exit 0 immediately, so this script stays correct
 // even when it guesses wrong. An unreadable manifest degrades to "all selected"
 // (legacy behavior) rather than failing `npm install`.
+//
+// LLM management is now handled natively by dsh-llm (no bundled LiteLLM child
+// process) and persistence is SQLite (no bundled Postgres); only OpenConnector
+// remains as a bundled resource.
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -37,16 +41,10 @@ if (!selected.length) {
   process.exit(0);
 }
 
-// Cross-platform binary paths (mirror supervisor/descriptors.js).
-const isWin = process.platform === "win32";
-const pythonBin = path.join(root, "resources", "python", isWin ? "python.exe" : "bin/python3");
-const litellmBin = path.join(root, "resources", "litellm", "venv", isWin ? "Scripts" : "bin", isWin ? "litellm.exe" : "litellm");
-const ocEntry = path.join(root, "resources", "openconnector", "src", "server", "index.ts");
-
 // Already built? Check only the SELECTED components (repeat installs don't rebuild).
-const litellmDone = !bundle.components.litellm || (existsSync(pythonBin) && existsSync(litellmBin));
+const ocEntry = path.join(root, "resources", "openconnector", "src", "server", "index.ts");
 const ocDone = !bundle.components.openconnector || existsSync(ocEntry);
-if (litellmDone && ocDone) {
+if (ocDone) {
   console.log("[postinstall] selected bundled resources already present, skipping build");
   process.exit(0);
 }
@@ -68,11 +66,10 @@ function run(file) {
 }
 let ok = true;
 if (bundle.components.openconnector) ok = run("build-openconnector.js") && ok;
-if (bundle.components.litellm) ok = run("build-python-litellm.js") && ok;
 if (!ok) {
   console.warn(
     "[postinstall] WARNING: bundled-resource build incomplete (network/git/curl missing?). " +
-      "`npm start` will run without local LiteLLM/OpenConnector. Run `npm run predist` to retry."
+      "`npm start` will run without local OpenConnector. Run `npm run predist` to retry."
   );
 }
 // Never fail the install - the app still starts (graceful degradation).

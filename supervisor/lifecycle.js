@@ -24,7 +24,7 @@ const START_TIMEOUT_MS = 120000; // how long to wait for a server to go green (s
 const RESTART_BACKOFFS = [1000, 2000, 5000, 10000, 15000];
 
 export class Supervisor {
-  constructor({ nodeBin, projectRoot, dataDir, agentEnv = {}, serverPort = null, litellmPort = null, ocPort = null, pgPort = null }) {
+  constructor({ nodeBin, projectRoot, dataDir, agentEnv = {}, serverPort = null, ocPort = null }) {
     this.nodeBin = nodeBin;
     this.projectRoot = projectRoot;
     this.dataDir = dataDir || "";
@@ -32,12 +32,11 @@ export class Supervisor {
     // When set (dev launcher), a server is pinned to this port instead of a free
     // port. server-js pins to PORT (default 3000) so the Vite dev proxy
     // (:5173 -> :3000) and the WS client (ws://localhost:3000) keep working.
-    // litellm/openconnector pin to the port parsed from a localhost *_BASE_URL in
+    // openconnector pins to the port parsed from a localhost *_BASE_URL in
     // .env (so the URL the user sees is the URL that's spawned). Null -> findFreePort.
+    // LiteLLM/Postgres removed — dsh-llm manages LLM natively, no child process.
     this.fixedServerPort = serverPort;
-    this.fixedLitellmPort = litellmPort;
     this.fixedOcPort = ocPort;
-    this.fixedPgPort = pgPort;
     this.servers = new Map(); // id -> state object
     this.logs = new LogStore();
     this.shuttingDown = false;
@@ -48,13 +47,9 @@ export class Supervisor {
   async start() {
     this.serverPort = this.fixedServerPort || (await findFreePort("127.0.0.1"));
     this.ocPort = this.fixedOcPort || (await findFreePort("127.0.0.1"));
-    this.litellmPort = this.fixedLitellmPort || (await findFreePort("127.0.0.1"));
-    this.pgPort = this.fixedPgPort || (await findFreePort("127.0.0.1"));
     const descriptors = getDescriptors({
       serverPort: this.serverPort,
       ocPort: this.ocPort,
-      litellmPort: this.litellmPort,
-      pgPort: this.pgPort,
       projectRoot: this.projectRoot,
       nodeBin: this.nodeBin,
       dataDir: this.dataDir,
@@ -68,8 +63,7 @@ export class Supervisor {
         port: d.transport === "http-port"
           ? (d.id === "server-js" ? this.serverPort
             : d.id === "openconnector" ? this.ocPort
-            : d.id === "postgres" ? this.pgPort
-            : this.litellmPort)
+            : null)
           : null,
         restartCount: 0,
         lastCheck: null,
@@ -81,14 +75,15 @@ export class Supervisor {
     // Ongoing health polling for all enabled servers.
     this.healthTimer = setInterval(() => this._pollAll(), HEALTH_POLL_MS);
 
-    // Spawn optional bundled sidecars (litellm, openconnector) FIRST, fire-and-
-    // forget, so they warm up while server.js starts. server.js connects to them
+    // Spawn optional bundled sidecar (openconnector) FIRST, fire-and-
+    // forget, so it warms up while server.js starts. server.js connects to it
     // (HTTP + MCP) at its own startup with retry; this head start avoids a race
-    // where server.js would reach them before they are ready. They are optional:
+    // where server.js would reach it before it is ready. It is optional:
     // a failure is non-fatal (tracked by health polling / restart-on-crash).
     // http-external / disabled sidecars are NOT spawned here - the main loop
     // below still handles them (health-probe external, mark disabled).
-    const SIDECARS = ["postgres", "litellm", "openconnector"];
+    // LiteLLM/Postgres removed — only openconnector remains as a sidecar.
+    const SIDECARS = ["openconnector"];
     const spawnedSidecars = new Set();
     for (const id of SIDECARS) {
       const s = this.servers.get(id);
@@ -154,7 +149,7 @@ export class Supervisor {
     });
     s.child = child;
     s.pid = child?.pid ?? null;
-    s.port = d.transport === "http-port" ? this.serverPort : null;
+    // ponytail: port already set at construction (lines 68–72); skip reassignment.
 
     if (d.transport === "http-port" && d.url) {
       const ok = await this._waitForHealthy(id, START_TIMEOUT_MS);

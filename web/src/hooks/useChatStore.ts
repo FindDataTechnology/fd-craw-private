@@ -61,6 +61,7 @@ interface State {
   // Local UI commands (never sent to server).
   addUserTurnOptimistic: (text: string) => void;
   clearView: () => void;
+  renameSession: (id: string, title: string) => void;
   toggleAllThinking: () => void;
   toggleBlock: (turnId: string, index: number) => void;
 }
@@ -235,6 +236,11 @@ export const useChatStore = create<State>((set) => ({
         case "session_changed":
           return { currentSessionId: m.id };
 
+        case "session_renamed":
+          return {
+            sessions: state.sessions.map((s) => (s.id === m.id ? { ...s, title: m.title } : s)),
+          };
+
         case "session_loaded":
           return {
             currentSessionId: m.id,
@@ -281,6 +287,13 @@ export const useChatStore = create<State>((set) => ({
 
   addUserTurnOptimistic: (text) =>
     set((state) => ({ turns: [...state.turns, { id: nextId(), role: "user", text }] })),
+
+  // Optimistic local rename; the broadcast `session_renamed` event reconciles
+  // every other open client (and ours, in case the server's value trims).
+  renameSession: (id, title) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) => (s.id === id ? { ...s, title } : s)),
+    })),
 
   clearView: () => set({ turns: [], isStreaming: false }),
 

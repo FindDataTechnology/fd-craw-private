@@ -10,13 +10,11 @@
   },
   "nav": {
     "chat": "💬 Chat",
-    "dashboard": "📊 Panel",
-    "documents": "📚 Documentos",
-    "extensions": "🧩 Extensiones",
-    "knowledge": "📚 Knowledge",
-    "openconnector": "🔌 OpenConnector",
-    "litellm": "🧭 LiteLLM",
-    "agents": "🤖 Agentes"
+    "knowledge": "📚 Conocimiento",
+    "agents": "🤖 Agentes",
+    "mcp": "🧩 Servidores MCP",
+    "skills": "📖 Habilidades",
+    "models": "⚡ Modelos"
   },
   "agentsPage": {
     "title": "Agentes y aplicaciones",
@@ -34,7 +32,49 @@
     "untitled": "Sin título",
     "loadingModels": "Cargando modelos…",
     "clearChat": "Borrar chat",
-    "language": "Idioma"
+    "language": "Idioma",
+    "modelChipHint": "Gestionar modelos"
+  },
+  "settingsMenu": {
+    "title": "Ajustes",
+    "status": "📊 Estado del sistema",
+    "models": "⚡ Modelos LLM",
+    "openconnector": "🔌 OpenConnector"
+  },
+  "modelsPage": {
+    "title": "Modelos",
+    "defaultLabel": "Predeterminado",
+    "addProvider": "Añadir proveedor",
+    "editProvider": "Editar proveedor",
+    "addHint": "Añade un proveedor LLM compatible con OpenAI.",
+    "editHint": "Deja la clave API en blanco para mantener la actual.",
+    "fieldName": "Nombre",
+    "fieldBaseUrl": "URL base",
+    "fieldApiKey": "Clave API",
+    "keyPlaceholder": "Clave API (dejar en blanco para mantener la actual)",
+    "keyMasked": "La clave API se almacena cifrada en el servidor y nunca se muestra.",
+    "apiKeyRequired": "Se requiere la clave API",
+    "keyPresent": "Clave API configurada",
+    "keyMissing": "Sin clave API",
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "deleteProvider": "Eliminar",
+    "confirmDeleteTitle": "¿Eliminar proveedor?",
+    "confirmDelete": "¿Eliminar «{{name}}»? Esta acción no se puede deshacer.",
+    "testConnection": "Probar conexión",
+    "setDefault": "Establecer como predeterminado",
+    "default": "Predeterminado",
+    "builtIn": "Incorporado",
+    "empty": "No hay proveedores configurados. Haz clic en «Añadir proveedor».",
+    "settingsUpdated": "Ajustes actualizados.",
+    "restartFailed": "No se pudieron aplicar los ajustes: {{message}}",
+    "anotherEditInProgress": "Hay otra edición de ajustes en curso. Inténtalo de nuevo.",
+    "lastTest": {
+      "never": "Sin probar",
+      "ok": "OK",
+      "failed": "Error"
+    }
   },
   "status": {
     "connected": "Conectado",
@@ -51,6 +91,12 @@
     "uploadFailed": "Error al subir: {{message}}",
     "attach": "Adjuntar un archivo",
     "removeAttachment": "Quitar adjunto",
+    "attachments": "{{count}} adjuntos",
+    "slashPicker": {
+      "sectionCommands": "Comandos",
+      "sectionSkills": "Habilidades",
+      "noMatches": "Ningún comando coincide"
+    },
     "cmd": {
       "model": "cambiar o mostrar el modelo activo",
       "new": "iniciar una nueva sesión de chat",
@@ -59,7 +105,21 @@
     }
   },
   "chat": {
-    "empty": "Envía un mensaje para empezar a chatear."
+    "empty": "Envía un mensaje para empezar a chatear.",
+    "welcome": {
+      "greeting": "¿En qué puedo ayudarte hoy?",
+      "suggestedPrompts": "Sugerencias",
+      "recentChats": "Chats recientes",
+      "viewAll": "Ver todo",
+      "modelFooter": "Modelo: {{model}}",
+      "agentFooter": "Agente: {{agent}}"
+    },
+    "header": {
+      "editTitle": "Renombrar sesión",
+      "titlePlaceholder": "Título de la sesión",
+      "rename": "Guardar nuevo título"
+    },
+    "titleTooLong": "El título debe tener 200 caracteres o menos"
   },
   "turn": {
     "assistantName": "Find Data Technology",
@@ -99,6 +159,40 @@
       "starting": "iniciando",
       "disabled": "deshabilitado"
     }
+  },
+  "systemStatus": {
+    "title": "Estado del sistema",
+    "refresh": "Actualizar",
+    "refreshing": "Actualizando…",
+    "loadFailed": "Error al cargar el estado: {{error}}",
+    "retry": "reintentar",
+    "none": "ninguno",
+    "health": "Salud",
+    "activeConfig": "Configuración activa",
+    "resources": "Recursos",
+    "activeAgent": "Agente activo",
+    "openconnector": "OpenConnector",
+    "enabled": "Habilitado",
+    "disabled": "Deshabilitado",
+    "documents": "Documentos",
+    "collections": "Colecciones: {{count}}",
+    "mcpTools": "Herramientas MCP",
+    "provider": "Proveedor: {{name}}",
+    "uptime": "Tiempo activo: {{sec}}s",
+    "manage": "Administrar",
+    "state": {
+      "healthy": "saludable",
+      "unhealthy": "en fallo",
+      "starting": "iniciando",
+      "disabled": "deshabilitado"
+    }
+  },
+  "sessionMenu": {
+    "delete": "Eliminar",
+    "confirmTitle": "¿Eliminar este chat?",
+    "confirmBody": "Esta acción no se puede deshacer.",
+    "cannotDeleteActive": "Cambia a otra sesión primero",
+    "deleteFailed": "Error al eliminar: {{error}}"
   },
   "documents": {
     "title": "Documentos",

@@ -10,7 +10,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import "dotenv/config"; // read .env for LITELLM_BASE_URL / OPENCONNECTOR_BASE_URL (dev)
+import "dotenv/config"; // read .env for OPENCONNECTOR_BASE_URL (dev)
 import { Supervisor } from "./supervisor/lifecycle.js";
 import { registerStatusIpc } from "./supervisor/status.js";
 import { resolveEnv } from "./config/settings.js";

@@ -87,7 +87,7 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => ({
 
   applyEvent: (msg) => {
     if (msg.type !== "documents_status") return;
-    const { id, status, error } = msg as { id: string; status: string; error?: string };
+    const { id, status, error } = msg as unknown as { id: string; status: string; error?: string };
     set((s) => ({
       documents: s.documents.map((d) =>
         d.id === id ? { ...d, status: status as DocMeta["status"], error } : d,

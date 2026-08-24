@@ -10,13 +10,11 @@
   },
   "nav": {
     "chat": "💬 チャット",
-    "dashboard": "📊 ダッシュボード",
-    "documents": "📚 ドキュメント",
-    "extensions": "🧩 拡張機能",
-    "knowledge": "📚 Knowledge",
-    "openconnector": "🔌 OpenConnector",
-    "litellm": "🧭 LiteLLM",
-    "agents": "🤖 エージェント"
+    "knowledge": "📚 ナレッジ",
+    "agents": "🤖 エージェント",
+    "mcp": "🧩 MCP サーバー",
+    "skills": "📖 スキル",
+    "models": "⚡ モデル"
   },
   "agentsPage": {
     "title": "エージェントとアプリ",
@@ -34,7 +32,49 @@
     "untitled": "無題",
     "loadingModels": "モデルを読み込み中…",
     "clearChat": "チャットを消去",
-    "language": "言語"
+    "language": "言語",
+    "modelChipHint": "モデルを管理"
+  },
+  "settingsMenu": {
+    "title": "設定",
+    "status": "📊 システム状態",
+    "models": "⚡ LLM モデル",
+    "openconnector": "🔌 OpenConnector"
+  },
+  "modelsPage": {
+    "title": "モデル",
+    "defaultLabel": "デフォルト",
+    "addProvider": "プロバイダーを追加",
+    "editProvider": "プロバイダーを編集",
+    "addHint": "OpenAI互換のLLMプロバイダーを追加します。",
+    "editHint": "APIキーは空欄のままにすると現在のキーを維持します。",
+    "fieldName": "名前",
+    "fieldBaseUrl": "ベースURL",
+    "fieldApiKey": "APIキー",
+    "keyPlaceholder": "APIキー（空欄で現在のキーを維持）",
+    "keyMasked": "APIキーはサーバーに暗号化して保存され、表示されません。",
+    "apiKeyRequired": "APIキーは必須です",
+    "keyPresent": "APIキーが設定されています",
+    "keyMissing": "APIキーがありません",
+    "cancel": "キャンセル",
+    "save": "保存",
+    "saving": "保存中…",
+    "deleteProvider": "削除",
+    "confirmDeleteTitle": "プロバイダーを削除しますか？",
+    "confirmDelete": "「{{name}}」を削除しますか？この操作は取り消せません。",
+    "testConnection": "接続テスト",
+    "setDefault": "デフォルトに設定",
+    "default": "デフォルト",
+    "builtIn": "組み込み",
+    "empty": "プロバイダーが設定されていません。「プロバイダーを追加」をクリックしてください。",
+    "settingsUpdated": "設定を更新しました。",
+    "restartFailed": "設定を適用できませんでした：{{message}}",
+    "anotherEditInProgress": "別の設定の編集中です。もう一度お試しください。",
+    "lastTest": {
+      "never": "未テスト",
+      "ok": "OK",
+      "failed": "失敗"
+    }
   },
   "status": {
     "connected": "接続済み",
@@ -51,6 +91,12 @@
     "uploadFailed": "アップロード失敗: {{message}}",
     "attach": "ファイルを添付",
     "removeAttachment": "添付を削除",
+    "attachments": "{{count}} 件添付中",
+    "slashPicker": {
+      "sectionCommands": "コマンド",
+      "sectionSkills": "スキル",
+      "noMatches": "一致するコマンドがありません"
+    },
     "cmd": {
       "model": "アクティブなモデルを切り替えまたは表示",
       "new": "新しいチャットセッションを開始",
@@ -59,7 +105,21 @@
     }
   },
   "chat": {
-    "empty": "メッセージを送信してチャットを開始してください。"
+    "empty": "メッセージを送信してチャットを開始してください。",
+    "welcome": {
+      "greeting": "今日はどんなお手伝いできますか？",
+      "suggestedPrompts": "おすすめのプロンプト",
+      "recentChats": "最近のチャット",
+      "viewAll": "すべて表示",
+      "modelFooter": "モデル：{{model}}",
+      "agentFooter": "エージェント：{{agent}}"
+    },
+    "header": {
+      "editTitle": "セッション名を変更",
+      "titlePlaceholder": "セッション名",
+      "rename": "新しい名前を保存"
+    },
+    "titleTooLong": "タイトルは 200 文字以下にしてください"
   },
   "turn": {
     "assistantName": "Find Data Technology",
@@ -99,6 +159,40 @@
       "starting": "起動中",
       "disabled": "無効"
     }
+  },
+  "systemStatus": {
+    "title": "システム状態",
+    "refresh": "更新",
+    "refreshing": "更新中…",
+    "loadFailed": "ステータスの読み込みに失敗しました: {{error}}",
+    "retry": "再試行",
+    "none": "なし",
+    "health": "ヘルス",
+    "activeConfig": "現在の設定",
+    "resources": "リソース",
+    "activeAgent": "現在のエージェント",
+    "openconnector": "OpenConnector",
+    "enabled": "有効",
+    "disabled": "無効",
+    "documents": "ドキュメント",
+    "collections": "コレクション: {{count}}",
+    "mcpTools": "MCP ツール",
+    "provider": "プロバイダー: {{name}}",
+    "uptime": "稼働時間: {{sec}}秒",
+    "manage": "管理",
+    "state": {
+      "healthy": "正常",
+      "unhealthy": "異常",
+      "starting": "起動中",
+      "disabled": "無効"
+    }
+  },
+  "sessionMenu": {
+    "delete": "削除",
+    "confirmTitle": "このチャットを削除しますか？",
+    "confirmBody": "この操作は取り消せません。",
+    "cannotDeleteActive": "まず別のセッションに切り替えてください",
+    "deleteFailed": "削除に失敗しました: {{error}}"
   },
   "documents": {
     "title": "ドキュメント",

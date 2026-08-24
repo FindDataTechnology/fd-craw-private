@@ -54,18 +54,12 @@ const LLM_BASE_URL = process.env.LLM_BASE_URL || "https://ark.cn-beijing.volces.
 // otherwise the first declared profile model is used. See initDshAgent().
 const DEFAULT_MODEL = process.env.DEFAULT_MODEL || "";
 
-// ── LiteLLM proxy config ─────────────────────────────────────────────────────
-// LITELLM_BASE_URL / LITELLM_API_KEY feed two consumers: the dsh LLM profile
-// (dsh-profile.js writeLlmProfile, loaded from .env by dotenv/config above) and
-// the LiteLLM management-UI reverse proxy (/litellm-web, /ui, …). When either is
-// missing the litellm route is skipped so the server falls back to the Volces
-// gateway (when LLM_API_KEY is set) or starts with no chat provider (logged).
-const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL?.trim();
-const LITELLM_API_KEY = process.env.LITELLM_API_KEY?.trim();
-const litellmEnabled = Boolean(LITELLM_BASE_URL && LITELLM_API_KEY);
-if (!litellmEnabled) {
-  console.warn("[litellm] LITELLM_BASE_URL or LITELLM_API_KEY not set; skipping litellm provider");
-}
+// LiteLLM proxy removed — dsh-llm manages LLM natively via settings.yaml +
+// .credentials.yaml hot-reload (no child process, no management-UI reverse
+// proxy). The dsh LLM profile (dsh-profile.js writeLlmProfile, loaded from .env
+// by dotenv/config above) now writes only the Volces route; chat falls back to
+// the Volces gateway (when LLM_API_KEY is set) or starts with no chat provider
+// (logged, graceful degrade).
 
 // ── Bundle manifest (packaged component selection + pre-installed extensions) ─
 // Resolved once at startup. In the packaged app platform.bundle.json sits next
@@ -337,7 +331,7 @@ async function initDshAgent() {
   const { writeLlmProfile, writeMcpPatch, writeSkillsPatch, ensureCredentialsStore, buildScrubbedEnv } = await import("./dsh-profile.js");
 
   // Write the dsh llm-adapter profile BEFORE spawning dsh so the runtime
-  // loads the Volces/LiteLLM routes at initialize. The generator's declared
+  // loads the Volces routes at initialize. The generator's declared
   // list IS the dsh model list (no stock listModels RPC); server.js sources
   // the selector from it (Task 3.3). Empty list = dormant (Task 3.6).
   const { models } = await writeLlmProfile();
@@ -345,7 +339,7 @@ async function initDshAgent() {
 
   // Seed the dsh-credentials-local store from process.env (design D3) and build
   // a scrubbed child env so the file is the winning key-resolution layer.
-  try { ensureCredentialsStore(); } catch (e) { console.warn(`[dsh] credentials store init failed: ${e?.message || e}`); }
+  try { await ensureCredentialsStore(); } catch (e) { console.warn(`[dsh] credentials store init failed: ${e?.message || e}`); }
   const dshChildEnv = buildScrubbedEnv();
 
   // Seed startup MCP configs into the extensions DB so the UI "Installed" tab
@@ -392,12 +386,17 @@ async function initDshAgent() {
   if (skillMaterializeDir) skillsDirs.push(skillMaterializeDir);
   const skillsPatchPath = writeSkillsPatch(skillsDirs);
 
-  // Default model: DEFAULT_MODEL env if declared, else first declared model.
+  // Default model: persisted Models-page pointer wins, else DEFAULT_MODEL env if
+  // declared, else first declared model.
   let provider = "deepseek-official";
   let model = "deepseek-v4-flash";
   if (dshModels.length) {
+    const llmProviders = await import("./llm-providers.js");
+    const saved = llmProviders.getDefault();
     const pick =
-      (DEFAULT_MODEL && dshModels.find((m) => m.id === DEFAULT_MODEL)) || dshModels[0];
+      (saved.modelId && dshModels.find((m) => m.id === saved.modelId)) ||
+      (DEFAULT_MODEL && dshModels.find((m) => m.id === DEFAULT_MODEL)) ||
+      dshModels[0];
     provider = pick.provider;
     model = pick.id;
   } else {
@@ -466,6 +465,7 @@ async function initDshAgent() {
     setSessionFile: () => {},
   };
   chatHistory.setSessionManager(dshSm);
+  chatHistory.setDshBridge(dshBridge);
   session = {
     prompt: async (text) => {
       isStreaming = true;
@@ -616,10 +616,10 @@ async function getAvailableModels() {
 }
 
 // Refresh the model list at runtime (design D3 / spike 2). Re-runs writeLlmProfile
-// so LiteLLM /v1/models is re-discovered and settings.yaml is rewritten; dsh-
-// settings-file hot-reloads the llm-pi-ai: section and dsh-llm-pi-ai's onChange
-// re-registers the adapter routes + model directory live (no restart). dshModels
-// is updated from the fresh declared list and clients are told to refetch.
+// so settings.yaml is rewritten; dsh-settings-file hot-reloads the
+// llm-pi-ai: section and dsh-llm-pi-ai's onChange re-registers the adapter
+// routes + model directory live (no restart). dshModels is updated from the
+// fresh declared list and clients are told to refetch.
 // ponytail: the active model is left as-is; a switch to a newly-appeared model
 // still goes through switchModelTo (which restarts — the per-session model is an
 // initialize arg, a genuine ceiling). This only refreshes the *selector*.
@@ -807,14 +807,8 @@ wss.on("connection", (ws, req) => {
   console.log(`Client connected (${clients.size} total)`);
 
   // Tell the client which model is currently active so the dropdown can sync.
-  // Broadcast the unprefixed id for litellm models to match what
-  // getAvailableModels sends to the model selector.
   const currentModelId = session?.model?.id || null;
-  const broadcastId =
-    currentModelId && currentModelId.startsWith("litellm/")
-      ? currentModelId.slice(8) // "litellm/".length = 8
-      : currentModelId;
-  ws.send(JSON.stringify({ type: "current_model", id: broadcastId }));
+  ws.send(JSON.stringify({ type: "current_model", id: currentModelId }));
   // Sync the agent switcher: active catalog agent + switchable agent list.
   ws.send(JSON.stringify({ type: "current_agent", id: currentAgentId }));
   ws.send(JSON.stringify({ type: "agents", agents: switchableAgents(ws.user) }));
@@ -1086,6 +1080,20 @@ wss.on("connection", (ws, req) => {
         }
         break;
       }
+
+      case "rename_session": {
+        try {
+          const title = chatHistory.setTitle(data.id, data.title);
+          broadcast({ type: "session_renamed", id: data.id, title });
+        } catch (err) {
+          if (err?.code) {
+            ws.send(JSON.stringify({ type: "rename_session_error", code: err.code, message: err.message }));
+          } else {
+            ws.send(JSON.stringify({ type: "error", message: err.message }));
+          }
+        }
+        break;
+      }
     }
   });
 
@@ -1243,19 +1251,19 @@ app.post("/api/collections/:id/query", async (req, res) => {
 //                   default: `/` redirects here.
 //   - `public/`  — legacy vanilla frontend, retained for the not-yet-ported
 //                   views. Reached via `/documents`, `/openconnector`,
-//                   `/dashboard`, `/litellm`, each of which serves the same
-//                   page; the vanilla client opens the matching tab from the
-//                   URL path on load.
+//                   `/dashboard`, each of which serves the same page; the
+//                   vanilla client opens the matching tab from the URL path
+//                   on load.
 // The React app's Vite `base` is `/chat/`, so its assets self-reference as
 // `/chat/assets/...` — no conflict with legacy `/assets/...` from OpenConnector.
 const webDist = path.resolve("web/dist");
 app.use(express.static(webDist));
 // SPA fallback: any GET that isn't an API route, proxy path, or static asset
 // serves index.html so the client router handles it. /v1/* is excluded so the
-// OpenConnector (and LiteLLM) /v1 reverse-proxy routes - registered below - are
-// not shadowed by this fallback (which would serve index.html for the embedded
-// SPA's API calls).
-app.get(/^\/(?!api\/|oc-web|litellm-web|assets\/|v1\/|v2\/|ui|key\/|spend\/|model\/|models|sso\/|login|logout|user\/|get_image|get_favicon|get\/|litellm-asset-prefix\/).*/, (_req, res) => {
+// OpenConnector /v1 reverse-proxy routes - registered below - are not shadowed
+// by this fallback (which would serve index.html for the embedded SPA's API
+// calls).
+app.get(/^\/(?!api\/|oc-web|external\/|assets\/|v1\/|v2\/|ui|key\/|spend\/|model\/|sso\/|login|logout|user\/|get_image|get_favicon|get\/).*/, (_req, res) => {
   res.sendFile(path.join(webDist, "index.html"));
 });
 
@@ -1323,20 +1331,18 @@ app.post("/api/apps/:id/connect", async (req, res) => {
   }
 });
 
-// ── Server config (e.g. LiteLLM management UI link) ──────────────────────────
+// ── Server config (e.g. openconnector / documents state) ──────────────────────
 app.get("/api/config", (_req, res) => {
   res.json({
-    litellmEnabled,
     openconnectorEnabled: openConnector.openConnectorEnabled,
     documentsEnabled: db.isDbReady(),
-    litellmManagementUrl: LITELLM_BASE_URL ? `${LITELLM_BASE_URL}/ui` : null,
   });
 });
 
-// Refresh the dsh model list at runtime (design D3 / spike 2). Re-discovers
-// LiteLLM models via writeLlmProfile; dsh-settings-file hot-reloads the
-// llm-pi-ai: section so new models reach the adapter without a restart. The
-// active model is untouched. Admin-gated under forward-auth (a config mutation).
+// Refresh the dsh model list at runtime (design D3 / spike 2). Re-runs
+// writeLlmProfile; dsh-settings-file hot-reloads the llm-pi-ai: section so new
+// models reach the adapter without a restart. The active model is untouched.
+// Admin-gated under forward-auth (a config mutation).
 app.post("/api/models/refresh", async (req, res) => {
   if (authEnabled && !req.user?.groups?.includes("admin")) {
     return res.status(403).json({ error: "Admin group required" });
@@ -1349,18 +1355,170 @@ app.post("/api/models/refresh", async (req, res) => {
   }
 });
 
-// LiteLLM management-UI access info. The master key is NEVER sent to the
-// browser (design D3 — tokens never reach the browser): local mode auto-logs
-// into the /ui iframe via the server-set cookie (see the /litellm-web proxy +
-// login below); remote mode uses the user's own credentials. apiBaseUrl is
-// non-secret (already derivable from /api/config's litellmManagementUrl) and
-// returned only when LiteLLM is local so the user knows the proxy address.
-app.get("/api/litellm/credentials", (_req, res) => {
-  const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(LITELLM_BASE_URL || "");
-  res.json({
-    masterKey: null,
-    apiBaseUrl: isLocal ? (LITELLM_BASE_URL || null) : null,
-  });
+// After a provider add/edit/delete: refresh the credentials file + the
+// llm-pi-ai profile. Both are Chokidar-watched by dsh (settings-file +
+// credentials-local), so the new route and key hot-reload with no dsh
+// restart — the same path /api/models/refresh relies on. Then update
+// dshModels and broadcast so the sidebar/model chip and the Models page
+// pick up the new model ids immediately.
+async function reloadLlmProviders() {
+  const dshProfile = await import("./dsh-profile.js");
+  await dshProfile.ensureCredentialsStore();
+  const { models } = await dshProfile.writeLlmProfile();
+  dshModels = models;
+  broadcast({ type: "models", models: await getAvailableModels() });
+}
+
+// In-process write mutex: serialize provider/credential mutations so two
+// concurrent UI edits can't race on llm-providers.json / settings.yaml. A
+// competing request is rejected with a 409 immediately (not queued), per the
+// llm-model-management spec.
+class BusyError extends Error {
+  constructor() { super("another edit in progress"); this.code = "busy"; }
+}
+let llmWriteInProgress = false;
+async function withLlmWriteLock(fn) {
+  if (llmWriteInProgress) throw new BusyError();
+  llmWriteInProgress = true;
+  try {
+    return await fn();
+  } finally {
+    llmWriteInProgress = false;
+  }
+}
+
+function requireAdmin(req, res) {
+  if (authEnabled && !req.user?.groups?.includes("admin")) {
+    res.status(403).json({ error: "Admin group required" });
+    return false;
+  }
+  return true;
+}
+
+// ── LLM provider management (Models page) ────────────────────────────────────
+
+app.get("/api/llm/providers", async (_req, res) => {
+  try {
+    const llmProviders = await import("./llm-providers.js");
+    // The env-generated Volces route is the reserved, always-present provider.
+    const envProviders = process.env.LLM_API_KEY?.trim()
+      ? [{
+          id: "volces",
+          name: "Volces",
+          baseUrl: process.env.LLM_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3",
+          type: "openai-completions",
+          hasKey: true,
+          reserved: true,
+          models: dshModels.filter((m) => m.provider === "volces").map((m) => m.id),
+          lastTest: null,
+        }]
+      : [];
+    res.json({ providers: [...envProviders, ...llmProviders.listUserProviders()] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/llm/providers", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const llmProviders = await import("./llm-providers.js");
+    const record = await withLlmWriteLock(async () => {
+      const created = llmProviders.createProvider(req.body || {});
+      await reloadLlmProviders();
+      return created;
+    });
+    res.status(201).json({ provider: record });
+  } catch (err) {
+    const status =
+      err?.code === "busy" ? 409 :
+      err?.code === "duplicate" ? 409 :
+      err?.code === "invalid" ? 400 : 500;
+    res.status(status).json({ error: err.message, code: err?.code });
+  }
+});
+
+app.put("/api/llm/providers/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const llmProviders = await import("./llm-providers.js");
+    const record = await withLlmWriteLock(async () => {
+      const updated = llmProviders.updateProvider(req.params.id, req.body || {});
+      await reloadLlmProviders();
+      return updated;
+    });
+    res.json({ provider: record });
+  } catch (err) {
+    const status =
+      err?.code === "busy" ? 409 :
+      err?.code === "not_found" ? 404 :
+      err?.code === "duplicate" ? 409 :
+      err?.code === "invalid" ? 400 : 500;
+    res.status(status).json({ error: err.message, code: err?.code });
+  }
+});
+
+app.delete("/api/llm/providers/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const llmProviders = await import("./llm-providers.js");
+    await withLlmWriteLock(async () => {
+      llmProviders.deleteProvider(req.params.id);
+      await reloadLlmProviders();
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    const status =
+      err?.code === "busy" ? 409 :
+      err?.code === "not_found" ? 404 :
+      err?.code === "only_provider" ? 409 :
+      err?.code === "invalid" ? 400 : 500;
+    res.status(status).json({ error: err.message, code: err?.code });
+  }
+});
+
+app.post("/api/llm/providers/:id/test", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const llmProviders = await import("./llm-providers.js");
+    const result = await llmProviders.testProvider(req.params.id);
+    res.json(result);
+  } catch (err) {
+    const status =
+      err?.code === "not_found" ? 404 :
+      err?.code === "invalid" ? 400 : 500;
+    res.status(status).json({ error: err.message, code: err?.code });
+  }
+});
+
+app.get("/api/llm/default", async (_req, res) => {
+  try {
+    const llmProviders = await import("./llm-providers.js");
+    const saved = llmProviders.getDefault();
+    res.json({
+      providerId: saved.providerId,
+      modelId: saved.modelId || defaultModel?.id || null,
+      activeModelId: session?.model?.id || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/llm/default", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const llmProviders = await import("./llm-providers.js");
+    const { modelId, providerId } = req.body || {};
+    const target = dshModels.find((m) => m.id === modelId);
+    if (!target) return res.status(400).json({ error: `Unknown model: ${modelId}` });
+    const saved = llmProviders.setDefault({ modelId, providerId: providerId || target.provider });
+    defaultModel = { id: target.id, provider: target.provider, name: target.name || target.id };
+    broadcast({ type: "model_changed", id: target.id });
+    res.json({ providerId: saved.providerId, modelId: saved.modelId });
+  } catch (err) {
+    res.status(err?.code === "invalid" ? 400 : 500).json({ error: err.message, code: err?.code });
+  }
 });
 
 // ── Supervisor / system status (for the Dashboard view) ──────────────────────
@@ -1380,13 +1538,6 @@ app.get("/api/supervisor/status", (_req, res) => {
         pid: process.pid,
         port: PORT,
         url: `http://localhost:${PORT}`,
-      },
-      {
-        id: "litellm",
-        name: "LiteLLM gateway",
-        kind: litellmEnabled ? "http-external" : "disabled",
-        state: litellmEnabled ? "healthy" : "disabled",
-        url: LITELLM_BASE_URL || null,
       },
       {
         id: "openconnector",
@@ -1713,6 +1864,48 @@ app.post("/api/chat-history/sessions", async (_req, res) => {
   }
 });
 
+// Hard-delete a session by id. 409 if the id is the currently-active session
+// (caller must switch first). 404 if the id does not exist. On success, the
+// refreshed `sessions` list is broadcast to all WS clients so the sidebar row
+// disappears without a manual refetch.
+app.delete("/api/chat-history/sessions/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    await chatHistory.deleteSession(id);
+    res.json({ ok: true });
+    chatHistory
+      .listSessions()
+      .then((sessions) =>
+        broadcast({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
+      )
+      .catch((e) => console.error("[chat-history] list after delete failed:", e.message));
+  } catch (err) {
+    if (err?.code === "active") return res.status(409).json({ error: err.message });
+    if (err?.code === "not_found") return res.status(404).json({ error: err.message });
+    console.error("[chat-history] delete error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Rename a session's title. 400 on validation (empty / overlong / control
+// chars); 404 if the id is unknown. Broadcasts a `session_renamed` event to
+// all WS clients so every open UI updates in lockstep.
+app.patch("/api/chat-history/sessions/:id", express.json(), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const title = chatHistory.setTitle(id, req.body?.title);
+    res.json({ id, title });
+    broadcast({ type: "session_renamed", id, title });
+  } catch (err) {
+    if (err?.code === "not_found") return res.status(404).json({ error: err.message, code: err.code });
+    if (err?.code === "empty" || err?.code === "too_long" || err?.code === "control_chars") {
+      return res.status(400).json({ error: err.message, code: err.code });
+    }
+    console.error("[chat-history] rename error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── OpenConnector endpoints ──────────────────────────────────────────────────
 // The runtime/admin tokens stay server-side; the browser only ever talks to
 // these /api/openconnector/* routes (never to the runtime URL directly). The
@@ -1749,7 +1942,7 @@ app.get("/api/openconnector/config", (_req, res) => {
 // HTML so relative assets resolve under the proxy prefix, rewrites Location
 // redirects to stay under <prefix>, and drops content-encoding/length (Node's
 // fetch decompresses the body; express recomputes length). Used by OpenConnector
-// (/oc-web) and LiteLLM (/litellm-web).
+// (/oc-web) and external-service apps (/external/:appId).
 function createWebProxy({ prefix, getBase, getToken, label = "Upstream" }) {
   const pathRe = new RegExp(`^${prefix}`);
   return async function webProxy(req, res) {
@@ -1759,12 +1952,11 @@ function createWebProxy({ prefix, getBase, getToken, label = "Upstream" }) {
     if (upstream === "") upstream = "/";
     const url = base + upstream;
 
-    // Forwarded headers: keep content-type. For Authorization: the embedded
-    // LiteLLM dashboard extracts a virtual key from its session JWT and sends it
-    // as Bearer - forward that so /user/info etc. authenticate as the session
-    // user (the master_key returns user_id=null). When no client Authorization
-    // is present (e.g. the app's own server-side calls, or the OC dashboard),
-    // inject the server-held token.
+    // Forwarded headers: keep content-type. For Authorization: any client-
+    // supplied header is forwarded (so upstream session tokens, virtual keys,
+    // etc. work end-to-end); when absent, the server-held token is injected
+    // (e.g. OC dashboard's /user/info, the agent's /v1/mcp). This keeps the
+    // server-held credential off the wire when a per-request token is provided.
     const ct = req.headers["content-type"];
     const reqHeaders = {};
     if (ct) reqHeaders["content-type"] = ct;
@@ -1855,131 +2047,6 @@ const openConnectorWebProxy = createWebProxy({
   label: "OpenConnector runtime",
 });
 
-// LiteLLM management UI proxy. Always authenticates with the server-held
-// LITELLM_API_KEY; mounted only when LiteLLM is configured (see below).
-const litellmWebProxy = createWebProxy({
-  prefix: "/litellm-web",
-  getBase: () => LITELLM_BASE_URL,
-  getToken: () => LITELLM_API_KEY,
-  label: "LiteLLM",
-});
-
-// Forward /ui/* -> LiteLLM /ui/* verbatim (the dashboard's basePath is /ui, so its
-// absolute /ui/_next/... asset refs must reach LiteLLM's /ui/_next/...). Unlike
-// createWebProxy this does NOT strip the prefix and does NOT inject a <base> tag
-// (the dashboard has its own basePath). Token-injected same as the other proxies.
-//
-// Auto-login: the dashboard's client-side auth gate reads the `token` cookie
-// (set by POST /login) and redirects to /sso/key/generate if absent. Since we
-// already hold the master key, we fetch that JWT once and Set-Cookie it on the
-// /ui response so the user never sees the login form.
-let litellmUiToken = null;
-let litellmUiUserId = null;
-let litellmUiTokenPromise = null;
-async function getLitellmUiToken() {
-  if (litellmUiToken) return litellmUiToken;
-  if (litellmUiTokenPromise) return litellmUiTokenPromise;
-  litellmUiTokenPromise = (async () => {
-    try {
-      const r = await fetch(`${LITELLM_BASE_URL}/login`, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ username: "admin", password: LITELLM_API_KEY }).toString(),
-        redirect: "manual",
-      });
-      const setCookie = r.headers.get("set-cookie") || "";
-      const m = setCookie.match(/token=([^;]+)/);
-      if (m) {
-        litellmUiToken = m[1];
-        // Extract user_id from the JWT payload for the ?userID= redirect target.
-        try {
-          const payload = litellmUiToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-          const decoded = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
-          if (decoded.user_id) litellmUiUserId = decoded.user_id;
-        } catch { /* leave null; falls back to default_user_id */ }
-      } else {
-        console.warn("[litellm] auto-login: no token cookie in /login response");
-      }
-    } catch (err) {
-      console.warn("[litellm] auto-login failed:", err.message);
-    }
-    litellmUiTokenPromise = null;
-    return litellmUiToken;
-  })();
-  return litellmUiTokenPromise;
-}
-
-async function proxyLitellmUi(req, res) {
-  // Auto-login (idempotent): the dashboard requires BOTH a `token` session cookie
-  // AND a `?userID=` query param. Without userID the app clears the cookie and
-  // bounces to /sso/key/generate. So EVERY /ui entry lacking ?userID= redirects to
-  // /ui/?userID=<userID> - a full 303 (Set-Cookie + Location) when no token cookie
-  // is present, or a plain 302 (Location only) when the cookie is already set.
-  // This prevents rapid re-navigations from landing on the login page.
-  const parsed = (() => { try { return new URL(req.originalUrl, "http://x"); } catch { return null; } })();
-  const isUiEntry = req.method === "GET" && parsed && /^\/ui\/?$/.test(parsed.pathname);
-  const hasUserId = Boolean(parsed && parsed.searchParams.has("userID"));
-  if (isUiEntry && !hasUserId && LITELLM_API_KEY) {
-    const token = await getLitellmUiToken();
-    if (token) {
-      const hasTokenCookie = /(^|;\s*)token=/.test(req.headers.cookie || "");
-      const userID = encodeURIComponent(litellmUiUserId || "default_user_id");
-      res.status(hasTokenCookie ? 302 : 303);
-      if (!hasTokenCookie) res.setHeader("Set-Cookie", `token=${token}; Path=/; SameSite=Lax`);
-      res.setHeader("Location", `/ui/?userID=${userID}`);
-      return res.end();
-    }
-  }
-  const url = LITELLM_BASE_URL + req.originalUrl;
-  const ct = req.headers["content-type"];
-  const reqHeaders = {};
-  if (ct) reqHeaders["content-type"] = ct;
-  // Forward the dashboard's virtual-key Authorization (extracted from its session
-  // JWT) when present; else inject the master key. Same rationale as createWebProxy.
-  if (req.headers.authorization) {
-    reqHeaders.authorization = req.headers.authorization;
-  } else if (LITELLM_API_KEY) {
-    reqHeaders.authorization = `Bearer ${LITELLM_API_KEY}`;
-  }
-  // Forward the client's token cookie so LiteLLM endpoints that read the session
-  // cookie (not just the Bearer header) authenticate correctly.
-  if (req.headers.cookie) reqHeaders.cookie = req.headers.cookie;
-  let body;
-  if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
-    const isJson = (ct || "").includes("application/json");
-    if (isJson && req.body !== undefined) {
-      body = JSON.stringify(req.body);
-    } else if (!isJson) {
-      const chunks = [];
-      await new Promise((resolve, reject) => {
-        req.on("data", (c) => chunks.push(c));
-        req.on("end", resolve);
-        req.on("error", reject);
-      });
-      body = Buffer.concat(chunks);
-    }
-  }
-  let upstreamRes;
-  try {
-    upstreamRes = await fetch(url, { method: req.method, headers: reqHeaders, body, redirect: "manual" });
-  } catch (err) {
-    return res.status(502).send(`LiteLLM UI unreachable: ${err.message}`);
-  }
-  res.status(upstreamRes.status);
-  const respType = upstreamRes.headers.get("content-type") || "";
-  if (respType) res.setHeader("content-type", respType);
-  const loc = upstreamRes.headers.get("location");
-  if (loc) {
-    try { const u = new URL(loc, LITELLM_BASE_URL); res.setHeader("location", u.pathname + u.search); }
-    catch { res.setHeader("location", loc); }
-  }
-  try {
-    res.send(Buffer.from(await upstreamRes.arrayBuffer()));
-  } catch (err) {
-    res.status(502).send(`LiteLLM UI response read failed: ${err.message}`);
-  }
-}
-
 if (openConnector.openConnectorEnabled) {
   // Embed the runtime's native web UI behind a token-injecting proxy.
   app.all("/oc-web", openConnectorWebProxy);
@@ -2044,56 +2111,53 @@ if (openConnector.openConnectorEnabled) {
   app.all("/api/*", openConnectorWebProxy);
 }
 
-// ── LiteLLM management UI reverse proxy (mirrors /oc-web) ────────────────────
-// Embeds the LiteLLM proxy's management UI behind a token-injecting proxy at
-// /litellm-web so the server-held LITELLM_API_KEY never reaches the browser.
-// The LiteLLM UI is a SPA that issues same-origin absolute requests for its API
-// (/v1/*, /key/*, /spend/*, /model/*, /api/*); those roots are proxied at the
-// server root ONLY when OpenConnector is not enabled (OpenConnector owns /v1/*
-// and /api/* when it is enabled). The /api/* catch-all is registered after the
-// app's own /api/* routes so those take precedence. When both are enabled the
-// LiteLLM view surfaces a fallback "open in new tab" link (see app.js).
-if (litellmEnabled) {
-  app.all("/litellm-web", litellmWebProxy);
-  app.all("/litellm-web/*", litellmWebProxy);
-  // Dashboard SPA assets (loaded by the embedded iframe src=/litellm-web/ui).
-  app.all("/ui", proxyLitellmUi);
-  app.all("/ui/*", proxyLitellmUi);
-  // LiteLLM dashboard Next.js assets are served at /litellm-asset-prefix/_next/...
-  // (the dashboard's assetPrefix). Forward verbatim - litellmWebProxy's /litellm-web
-  // prefix doesn't match, so originalUrl is passed through untouched to LiteLLM.
-  app.all("/litellm-asset-prefix/*", litellmWebProxy);
-  // LiteLLM-specific admin roots never conflict with the app or OpenConnector,
-  // so proxy them to LiteLLM whenever LiteLLM is configured (keeps the
-  // management UI's API reachable when accessed through the /litellm-web proxy
-  // or directly).
-  app.all("/key/*", litellmWebProxy);
-  app.all("/spend/*", litellmWebProxy);
-  app.all("/model/*", litellmWebProxy);
-  app.all("/models", litellmWebProxy);
-  app.all("/models/*", litellmWebProxy);
-  app.all("/user/*", litellmWebProxy);
-  app.all("/get_image", litellmWebProxy);
-  app.all("/get_favicon", litellmWebProxy);
-  // LiteLLM v2 admin API + the /get/* data roots (e.g. /get/litellm_model_cost_map)
-  // are used by the dashboard's Models page; proxy them so they return LiteLLM JSON
-  // instead of falling through to the SPA catch-all (which serves index.html and
-  // leaves the Models table empty).
-  app.all("/v2/*", litellmWebProxy);
-  app.all("/get/*", litellmWebProxy);
-  // LiteLLM dashboard auth flow: /ui/ redirects to /sso/key/generate (login).
-  // Proxy it so the redirect stays on the LiteLLM backend instead of falling
-  // through to the SPA catch-all (which would route the iframe to /chat).
-  app.all("/sso/*", litellmWebProxy);
-  // /login is the form-submit target (fallback if the auto-login token expires).
-  app.all("/login", litellmWebProxy);
-  app.all("/logout", litellmWebProxy);
-  // /v1/* and /api/* are contested with OpenConnector (and the app's own /api/*
-  // routes), so proxy them to LiteLLM only when OpenConnector is not enabled;
-  // otherwise the LiteLLM view surfaces a fallback "open in new tab" link.
-  if (!openConnector.openConnectorEnabled) {
-    app.all("/v1/*", litellmWebProxy);
-    app.all("/api/*", litellmWebProxy);
+// ── External-service proxy (NEW API-style embedded apps) ──────────────────────
+// Embeds external-service apps from the catalog (agents.json) behind a
+// token-injecting reverse proxy at /external/:appId. Mirrors the /oc-web
+// pattern: a server-held token is injected into the upstream request, the
+// browser never sees the upstream URL or its credentials. The app's catalog
+// entry determines whether to embed in an iframe (embedded !== false) or
+// open in a new tab.
+//
+// Per-app credentials resolution:
+//   - `apiKeyEnv` → process.env[apiKeyEnv] (preferred; never reaches the client)
+//   - `apiKey`    → literal value (NOT serialized to the client; only available
+//                    here on the server where the catalog is read at startup)
+//   - missing     → no Authorization header sent (public upstream)
+//
+// Authenticated by the same forward-auth gate as the rest of the app; the
+// embedded page lives on a same-origin /external/:appId path so the iframe
+// inherits the session cookie when applicable.
+const externalServiceApp = (id) => catalog.getExternalServices().find((a) => a.id === id);
+function buildExternalServiceProxy(appId) {
+  const app = externalServiceApp(appId);
+  if (!app) return null;
+  // Resolve the bearer token server-side. catalog.js never serializes apiKey/
+  // apiKeyEnv to the client (spec D5 — tokens never reach the browser), so this
+  // lookup runs on the server and never leaks to the client.
+  const apiKey =
+    (app.apiKeyEnv && process.env[app.apiKeyEnv]) ||
+    app.apiKey ||
+    null;
+  return createWebProxy({
+    prefix: `/external/${app.id}`,
+    getBase: () => app.url,
+    getToken: () => apiKey,
+    label: app.name || app.id,
+  });
+}
+
+// Register a /external/:appId proxy for every external-service in the catalog.
+// Catch-all registration AFTER the app's own /api/* routes (so those win on
+// conflict) and AFTER the OC roots (/v1/*, /api/*, /assets/*) so OC's
+// /v1/* and /api/* own their paths when both services are configured.
+// Unknown /external/:appId values 404 — agents.json's getExternalServices() is
+// the only source of truth, so a stale link in the browser fails fast.
+for (const app of catalog.getExternalServices()) {
+  const proxy = buildExternalServiceProxy(app.id);
+  if (proxy) {
+    app.all(`/external/${app.id}`, proxy);
+    app.all(`/external/${app.id}/*`, proxy);
   }
 }
 

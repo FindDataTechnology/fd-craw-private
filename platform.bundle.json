@@ -1,8 +1,6 @@
 {
   "components": {
-    "litellm":       { "include": true },
-    "openconnector": { "include": true },
-    "postgres":      { "include": "auto" }
+    "openconnector": { "include": true }
   },
   "mcpServers": {},
   "skills": [

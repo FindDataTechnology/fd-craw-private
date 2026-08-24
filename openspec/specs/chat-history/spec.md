@@ -91,3 +91,49 @@ The server SHALL broadcast a refreshed session list whenever an agent turn ends,
 - **THEN** the server SHALL broadcast a refreshed session list
 - **AND** any session created during that turn SHALL appear in the list
 
+### Requirement: Server exposes a session delete endpoint
+The server SHALL expose `DELETE /api/chat-history/sessions/:id` to remove a session by id. The server SHALL delete the on-disk session store file (atomic temp-file + rename, matching the existing write pattern) AND delete the mirror row in the project database (managed by `project-database`). After a successful delete, the server SHALL broadcast a refreshed `sessions` WebSocket event to all connected clients so every open UI sees the updated list. A request for a non-existent id SHALL return 404. A request for the current session id SHALL be rejected with 409 and a clear error (`Cannot delete the active session; switch first`). The dsh runtime's own session persistence (sessions stored by id on disk by dsh itself) SHALL also be removed so reopening the dsh session does not resurrect the deleted entry.
+
+#### Scenario: delete a non-active session
+- **WHEN** the client sends `DELETE /api/chat-history/sessions/<id>` for a session that is not the current one
+- **THEN** the server SHALL remove the on-disk file and the database row
+- **AND** broadcast a `sessions` event with the refreshed list
+- **AND** return HTTP 200 with `{ ok: true }`
+
+#### Scenario: delete the active session is rejected
+- **WHEN** the client sends `DELETE /api/chat-history/sessions/<id>` for the current session
+- **THEN** the server SHALL return HTTP 409 with `{ error: "Cannot delete the active session; switch first" }`
+- **AND** no data SHALL be removed
+
+#### Scenario: delete a non-existent session
+- **WHEN** the client sends `DELETE /api/chat-history/sessions/<id>` for an id that does not exist
+- **THEN** the server SHALL return HTTP 404 with `{ error: "session not found" }`
+
+#### Scenario: delete broadcasts refreshed list
+- **WHEN** a delete completes
+- **THEN** every connected WebSocket client SHALL receive a `sessions` event whose `sessions[]` array does not include the deleted id
+
+### Requirement: Sessions carry a title that the user can rename
+Each session SHALL have a `title` field that defaults to the first user message (truncated) but MAY be set by the user via a rename action. The server SHALL expose `PATCH /api/chat-history/sessions/:id` accepting `{ title }` (validated to a non-empty string ≤ 200 characters). On success, the server SHALL update the title in the project-database mirror and the on-disk store, and SHALL broadcast a `session_renamed` WebSocket event `{ id, title }` to all connected clients. The WS protocol SHALL also accept a `rename_session` client message with `{ id, title }` as an alternative to the REST route — both produce the same server-side effect. The existing title-derivation logic (truncate the first user message) is the default; the user can override it at any time.
+
+#### Scenario: rename via REST
+- **WHEN** the client sends `PATCH /api/chat-history/sessions/:id` with `{ title: "New name" }`
+- **THEN** the server SHALL update the title in the project database and the on-disk store
+- **AND** broadcast a `session_renamed` event
+- **AND** return HTTP 200 with `{ ok: true }`
+
+#### Scenario: rename via WS
+- **WHEN** the client sends `{ type: "rename_session", id, title }`
+- **THEN** the server SHALL perform the same update as the REST route
+- **AND** broadcast the same `session_renamed` event
+
+#### Scenario: empty title is rejected
+- **WHEN** the client sends a rename with `title: ""` (or whitespace only)
+- **THEN** the server SHALL return HTTP 400 with `{ error: "title must be non-empty" }`
+- **AND** no change SHALL be made
+
+#### Scenario: title too long is rejected
+- **WHEN** the client sends a rename with `title` longer than 200 characters
+- **THEN** the server SHALL return HTTP 400 with `{ error: "title must be 200 characters or fewer" }`
+- **AND** no change SHALL be made
+

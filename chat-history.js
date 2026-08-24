@@ -29,6 +29,10 @@ const TITLE_MAX = 60;
 let SESSIONS_DIR = storeDir("sessions-store");
 // The live agent's SessionManager (set by server.js once the agent is created).
 let sm = null;
+// The dsh bridge (set by server.js once the bridge is up). Optional — when
+// absent, deleteSession skips the dsh-side cleanup (still removes the SQLite
+// row and any on-disk JSONL).
+let dshBridge = null;
 
 export async function initChatHistory() {
   SESSIONS_DIR = storeDir("sessions-store", process.env.SESSIONS_STORE_DIR);
@@ -37,6 +41,10 @@ export async function initChatHistory() {
 
 export function setSessionManager(sessionManager) {
   sm = sessionManager;
+}
+
+export function setDshBridge(bridge) {
+  dshBridge = bridge;
 }
 
 export function getSessionsDir() {
@@ -157,6 +165,122 @@ export async function listSessions() {
 
 export function currentSessionId() {
   return sm?.getSessionId?.() ?? null;
+}
+
+// ── Title rename ─────────────────────────────────────────────────────────────
+//
+// Title validation is shared with the PATCH /api/chat-history/sessions/:id REST
+// route in server.js; both call sanitizeTitle() so the WS path and the REST
+// path have identical acceptance behavior. NOTE: distinct from the local
+// `TITLE_MAX` (60) used for truncating message-derived chat titles above.
+const RENAME_TITLE_MIN = 1;
+const RENAME_TITLE_MAX = 200;
+
+export class TitleError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code; // "empty" | "too_long" | "control_chars" | "not_found"
+  }
+}
+
+export function sanitizeTitle(raw) {
+  if (raw == null) {
+    return { error: new TitleError("empty", "Title must not be empty") };
+  }
+  const t = String(raw).trim();
+  if (t.length < RENAME_TITLE_MIN) {
+    return { error: new TitleError("empty", "Title must not be empty") };
+  }
+  if (t.length > RENAME_TITLE_MAX) {
+    return { error: new TitleError("too_long", `Title must be ≤ ${RENAME_TITLE_MAX} characters`) };
+  }
+  // Reject control characters (newlines, tabs, NULs). These are not user-visible
+  // in any chat UI and would break the sidebar layout.
+  if (/[\x00-\x1f\x7f]/.test(t)) {
+    return { error: new TitleError("control_chars", "Title must not contain control characters") };
+  }
+  return { value: t };
+}
+
+// Set a session's title by id. Returns the trimmed title on success; throws
+// TitleError for validation failures or "not_found" when the id is unknown.
+export function setTitle(id, rawTitle) {
+  if (!id) throw new TitleError("not_found", "missing id");
+  const r = sanitizeTitle(rawTitle);
+  if (r.error) throw r.error;
+  if (!db.isDbReady() || !db.sessionExists(id)) {
+    throw new TitleError("not_found", `session ${id} not found`);
+  }
+  const now = new Date().toISOString();
+  db.setTitle(id, r.value, now);
+  return r.value;
+}
+
+// ── Delete ───────────────────────────────────────────────────────────────────
+//
+// Per-session mutex: keyed by sessionId so deletes against the SAME id serialize,
+// but deletes against different ids run in parallel. The mutex covers both the
+// in-flight check and the on-disk + DB cleanup so a concurrent `recordMessage`
+// for the same id can never interleave with its own delete. The DB DELETE is
+// atomic (single statement, FK CASCADE handles chat_messages); the on-disk
+// unlink is atomic per file.
+const deleteLocks = new Map();
+
+export class DeleteSessionError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code; // "active" | "not_found"
+  }
+}
+
+// Delete a session by id. Throws DeleteSessionError when the id matches the
+// currently-active session ("active", 409) or when the session does not exist
+// ("not_found", 404). On success: removes the SQLite row, unlinks the on-disk
+// sessions-store/<id>.jsonl file (if any), and asks dsh to forget its own
+// persisted state (best-effort — dsh has no stock session/delete RPC, so a
+// method-not-found warning is logged and ignored).
+export async function deleteSession(id) {
+  if (!id) throw new DeleteSessionError("not_found", "missing id");
+
+  // Serialize concurrent deletes against the SAME id. Tail-call the prior
+  // promise so the second caller waits for the first to finish, then re-checks
+  // existence (the row may have been deleted by the prior call already).
+  const prior = deleteLocks.get(id) || Promise.resolve();
+  const next = prior.then(() => undefined).catch(() => undefined);
+  deleteLocks.set(id, next);
+  try {
+    await next;
+    if (id === currentSessionId()) {
+      throw new DeleteSessionError("active", "cannot delete the active session");
+    }
+    if (!db.isDbReady() || !db.sessionExists(id)) {
+      throw new DeleteSessionError("not_found", `session ${id} not found`);
+    }
+    // dsh-side delete first: a failure is logged & swallowed, so the host-side
+    // SQLite/file cleanup is always the winning delete. The dsh entry is just
+    // an orphaned persistence-layer row that no host code path will ever look
+    // up again (listSessions, getSession all hit the SQLite mirror).
+    try {
+      await dshBridge.deleteSession?.(id);
+    } catch (err) {
+      console.warn(`[chat-history] dsh deleteSession for ${id} failed (ignored): ${err.message}`);
+    }
+    // Host-side on-disk JSONL (if the legacy importer left one behind — under
+    // dsh the live session file is null and there is nothing to unlink).
+    const path = await getSessionPath(id);
+    if (path) {
+      try {
+        await fs.unlink(path);
+      } catch (err) {
+        if (err.code !== "ENOENT") {
+          console.warn(`[chat-history] unlink ${path} failed: ${err.message}`);
+        }
+      }
+    }
+    db.deleteSession(id);
+  } finally {
+    if (deleteLocks.get(id) === next) deleteLocks.delete(id);
+  }
 }
 
 // ── Read-only session access ─────────────────────────────────────────────────

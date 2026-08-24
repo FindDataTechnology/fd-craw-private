@@ -1,18 +1,17 @@
-// Embedded service views: OpenConnector + LiteLLM shown as same-origin iframes.
-// Both are third-party projects with their own native UIs - we embed, not
-// reimplement. Tokens are injected server-side by the /oc-web (and /litellm-web)
-// proxies; no secrets reach this renderer.
+// Embedded service views: OpenConnector + ExternalService apps (NEW API-style)
+// shown as same-origin iframes. These are third-party projects with their own
+// native UIs - we embed, not reimplement. Tokens are injected server-side by
+// the /oc-web (and /external/:appId) proxies; no secrets reach this renderer.
 //
 // Only the wrapper chrome (loading state, blocked-frame fallback, not-configured
 // message) is localized here; the iframe internals have their own i18n.
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 interface Config {
   openconnectorEnabled?: boolean;
-  litellmEnabled?: boolean;
-  litellmManagementUrl?: string | null;
 }
 
 function useConfig() {
@@ -85,19 +84,18 @@ export function OpenConnectorPage() {
   );
 }
 
-export function LiteLLMPage() {
-  const { t } = useTranslation();
-  const config = useConfig();
-  if (!config) return <div className="p-6 text-muted-foreground">{t("common.loading")}</div>;
-  if (!config.litellmEnabled || !config.litellmManagementUrl) {
-    return <Placeholder title="LiteLLM" testId="litellm-disabled" />;
+// ExternalServicePage — embedded iframe for any external-service catalog entry
+// (e.g. NEW API). The /external/:appId route is registered server-side based
+// on agents.json's external-service entries. Falls back to a placeholder if the
+// app id isn't in the catalog (stale link).
+export function ExternalServicePage() {
+  const { appId } = useParams<{ appId: string }>();
+  if (!appId) {
+    return <Placeholder title="External Service" testId="external-service-missing" />;
   }
-  // The LiteLLM dashboard is embedded in-page at /ui. The server's proxy
-  // auto-logs in (POST /login -> session cookie + ?userID= redirect), so the
-  // user never sees a sign-in form and no master key is surfaced here.
   return (
-    <main className="flex h-full min-w-0 flex-col" data-testid="litellm-page">
-      <EmbeddedFrame src="/ui" testId="litellm-iframe" />
+    <main className="flex h-full min-w-0 flex-col" data-testid={`external-service-page-${appId}`}>
+      <EmbeddedFrame src={`/external/${appId}`} testId={`external-service-iframe-${appId}`} />
     </main>
   );
 }

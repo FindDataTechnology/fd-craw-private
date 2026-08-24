@@ -10,13 +10,11 @@
   },
   "nav": {
     "chat": "💬 聊天",
-    "dashboard": "📊 仪表盘",
-    "documents": "📚 文档",
-    "extensions": "🧩 扩展",
-    "knowledge": "📚 Knowledge",
-    "openconnector": "🔌 OpenConnector",
-    "litellm": "🧭 LiteLLM",
-    "agents": "🤖 智能体"
+    "knowledge": "📚 知识库",
+    "agents": "🤖 智能体",
+    "mcp": "🧩 MCP 服务器",
+    "skills": "📖 技能",
+    "models": "⚡ 模型"
   },
   "agentsPage": {
     "title": "智能体与应用",
@@ -34,7 +32,49 @@
     "untitled": "未命名",
     "loadingModels": "正在加载模型…",
     "clearChat": "清空对话",
-    "language": "语言"
+    "language": "语言",
+    "modelChipHint": "管理模型"
+  },
+  "settingsMenu": {
+    "title": "设置",
+    "status": "📊 系统状态",
+    "models": "⚡ LLM 模型",
+    "openconnector": "🔌 OpenConnector"
+  },
+  "modelsPage": {
+    "title": "模型",
+    "defaultLabel": "默认模型",
+    "addProvider": "添加供应商",
+    "editProvider": "编辑供应商",
+    "addHint": "添加一个兼容 OpenAI 的 LLM 供应商。",
+    "editHint": "API 密钥留空表示保持当前密钥不变。",
+    "fieldName": "名称",
+    "fieldBaseUrl": "Base URL",
+    "fieldApiKey": "API 密钥",
+    "keyPlaceholder": "API 密钥（留空保持不变）",
+    "keyMasked": "API 密钥加密存储在服务器上，不会显示。",
+    "apiKeyRequired": "请填写 API 密钥",
+    "keyPresent": "已配置 API 密钥",
+    "keyMissing": "未配置 API 密钥",
+    "cancel": "取消",
+    "save": "保存",
+    "saving": "保存中…",
+    "deleteProvider": "删除",
+    "confirmDeleteTitle": "删除供应商？",
+    "confirmDelete": "确定删除“{{name}}”吗？此操作无法撤销。",
+    "testConnection": "测试连接",
+    "setDefault": "设为默认",
+    "default": "默认",
+    "builtIn": "内置",
+    "empty": "尚未配置供应商。点击“添加供应商”开始。",
+    "settingsUpdated": "设置已更新。",
+    "restartFailed": "无法应用设置：{{message}}",
+    "anotherEditInProgress": "另一个设置编辑正在进行中，请重试。",
+    "lastTest": {
+      "never": "未测试",
+      "ok": "正常",
+      "failed": "失败"
+    }
   },
   "status": {
     "connected": "已连接",
@@ -51,6 +91,12 @@
     "uploadFailed": "上传失败：{{message}}",
     "attach": "添加附件",
     "removeAttachment": "移除附件",
+    "attachments": "已附加 {{count}} 个",
+    "slashPicker": {
+      "sectionCommands": "命令",
+      "sectionSkills": "技能",
+      "noMatches": "没有匹配的命令"
+    },
     "cmd": {
       "model": "切换或显示当前模型",
       "new": "开始新对话",
@@ -59,7 +105,21 @@
     }
   },
   "chat": {
-    "empty": "发送消息开始对话。"
+    "empty": "发送消息开始对话。",
+    "welcome": {
+      "greeting": "今天我可以帮你什么？",
+      "suggestedPrompts": "推荐提示",
+      "recentChats": "最近对话",
+      "viewAll": "查看全部",
+      "modelFooter": "模型：{{model}}",
+      "agentFooter": "智能体：{{agent}}"
+    },
+    "header": {
+      "editTitle": "重命名对话",
+      "titlePlaceholder": "对话标题",
+      "rename": "保存新标题"
+    },
+    "titleTooLong": "标题不能超过 200 个字符"
   },
   "turn": {
     "assistantName": "Find Data Technology",
@@ -99,6 +159,40 @@
       "starting": "启动中",
       "disabled": "已禁用"
     }
+  },
+  "systemStatus": {
+    "title": "系统状态",
+    "refresh": "刷新",
+    "refreshing": "刷新中…",
+    "loadFailed": "加载状态失败：{{error}}",
+    "retry": "重试",
+    "none": "无",
+    "health": "健康",
+    "activeConfig": "当前配置",
+    "resources": "资源",
+    "activeAgent": "当前智能体",
+    "openconnector": "OpenConnector",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "documents": "文档",
+    "collections": "集合：{{count}}",
+    "mcpTools": "MCP 工具",
+    "provider": "提供商：{{name}}",
+    "uptime": "运行时间：{{sec}}秒",
+    "manage": "管理",
+    "state": {
+      "healthy": "健康",
+      "unhealthy": "异常",
+      "starting": "启动中",
+      "disabled": "已禁用"
+    }
+  },
+  "sessionMenu": {
+    "delete": "删除",
+    "confirmTitle": "删除此对话？",
+    "confirmBody": "此操作无法撤销。",
+    "cannotDeleteActive": "请先切换到其他会话",
+    "deleteFailed": "删除失败：{{error}}"
   },
   "documents": {
     "title": "文档",

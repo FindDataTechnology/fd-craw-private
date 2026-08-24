@@ -3,7 +3,7 @@
 // WebSocket stays connected). The active route is highlighted automatically.
 // All visible labels resolve through the i18n bundle (keys, not literals);
 // tab identity/ordering/icons are stable across locales.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
@@ -11,6 +11,8 @@ import { useLanguage } from "@/i18n/useLanguage";
 import type { Locale } from "@/i18n/config";
 import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
+import { SettingsMenu } from "@/components/SettingsMenu";
+import { ChatSessionMenu } from "@/components/ChatSessionMenu";
 
 interface Props {
   send: (m: ClientMessage) => void;
@@ -18,13 +20,12 @@ interface Props {
 
 const NAV_BASE = [
   { to: "/chat", key: "nav.chat", testId: "nav-chat" },
-  { to: "/dashboard", key: "nav.dashboard", testId: "nav-dashboard" },
-  { to: "/documents", key: "nav.documents", testId: "nav-documents" },
-  { to: "/extensions", key: "nav.extensions", testId: "nav-extensions" },
-  { to: "/openconnector", key: "nav.openconnector", testId: "nav-openconnector" },
+  { to: "/knowledge", key: "nav.knowledge", testId: "nav-knowledge" },
   { to: "/agents", key: "nav.agents", testId: "nav-agents" },
+  { to: "/mcp", key: "nav.mcp", testId: "nav-mcp" },
+  { to: "/skills", key: "nav.skills", testId: "nav-skills" },
+  { to: "/models", key: "nav.models", testId: "nav-models" },
 ];
-const LITELLM_NAV = { to: "/litellm", key: "nav.litellm", testId: "nav-litellm" };
 
 export function Sidebar({ send }: Props) {
   const { t, i18n } = useTranslation();
@@ -41,24 +42,31 @@ export function Sidebar({ send }: Props) {
   const catalogVersion = useChatStore((s) => s.catalogVersion);
   const navigate = useNavigate();
 
+  // Right-click context menu on session rows: one trigger ref per row, one
+  // popover anchored to the row that fired the event.
+  const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const [menuTarget, setMenuTarget] = useState<{ id: string; el: HTMLElement } | null>(null);
+
   // The server bumps catalogVersion via `catalog_changed`; refetch the
   // switchable agent list so catalog/role edits appear live.
   useEffect(() => {
     if (catalogVersion > 0) send({ type: "list_agents" });
   }, [catalogVersion, send]);
 
-  // Gate the LiteLLM link on server config. Hidden until /api/config resolves
-  // (matches how the legacy vanilla nav skips the link when unconfigured).
-  const [litellmEnabled, setLitellmEnabled] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/config")
-      .then((r) => r.json())
-      .then((c) => { if (!cancelled) setLitellmEnabled(Boolean(c?.litellmEnabled)); })
-      .catch(() => { /* graceful: link stays hidden */ });
-    return () => { cancelled = true; };
+  // LiteLLM nav removed — dsh-llm manages LLM natively, no LiteLLM UI to link to.
+  const nav = NAV_BASE;
+
+  const handleDeleteSession = useCallback(async (id: string) => {
+    const r = await fetch(`/api/chat-history/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.error || `HTTP ${r.status}`);
+    }
+    // The server broadcasts the refreshed `sessions` event; the store update
+    // removes the row from the sidebar. If the deleted session was the active
+    // one, the server would have 409'd; if a new session is required, the user
+    // can click "+ New".
   }, []);
-  const nav = litellmEnabled ? [...NAV_BASE, LITELLM_NAV] : NAV_BASE;
 
   return (
     <nav className="flex h-screen flex-col border-r border-border bg-card" data-testid="sidebar">
@@ -107,11 +115,27 @@ export function Sidebar({ send }: Props) {
           {sessions.map((s) => (
             <button
               key={s.id}
+              ref={(el) => {
+                if (el) rowRefs.current.set(s.id, el);
+                else rowRefs.current.delete(s.id);
+              }}
               data-testid="session-row"
               data-session-id={s.id}
               data-current={s.id === currentSessionId ? "true" : "false"}
               onClick={() => {
                 if (s.id !== currentSessionId) send({ type: "switch_session", id: s.id });
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                const el = rowRefs.current.get(s.id);
+                if (el) setMenuTarget({ id: s.id, el });
+              }}
+              onKeyDown={(e) => {
+                if (e.shiftKey && e.key === "F10") {
+                  e.preventDefault();
+                  const el = rowRefs.current.get(s.id);
+                  if (el) setMenuTarget({ id: s.id, el });
+                }
               }}
               className={cn(
                 "flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted",
@@ -128,6 +152,16 @@ export function Sidebar({ send }: Props) {
           ))}
         </div>
       </div>
+
+      {menuTarget && (
+        <ChatSessionMenu
+          sessionId={menuTarget.id}
+          isCurrent={menuTarget.id === currentSessionId}
+          onDelete={handleDeleteSession}
+          triggerRef={{ current: menuTarget.el }}
+          onClose={() => setMenuTarget(null)}
+        />
+      )}
 
       {/* Footer: agent + model select, status, clear */}
       <div className="flex flex-col gap-2 border-t border-border p-3">
@@ -149,24 +183,25 @@ export function Sidebar({ send }: Props) {
             </option>
           ))}
         </select>
-        <select
-          value={currentModel ?? ""}
-          disabled={isStreaming || models.length === 0}
-          onChange={(e) => send({ type: "set_model", id: e.target.value })}
-          data-testid="model-select"
+        {/* Model chip: read-only. The real configuration (add/edit/remove
+            providers, set the default) lives on the /models page; the chip
+            shows the current default model and navigates there on click. The
+            legacy in-sidebar <select> is removed per the model-selection spec. */}
+        <button
+          type="button"
+          onClick={() => navigate("/models")}
+          title={t("sidebar.modelChipHint")}
+          data-testid="model-chip"
           className={cn(
-            "w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs text-foreground",
-            "focus:border-primary focus:outline-none",
+            "w-full truncate rounded-md border border-input bg-background px-2 py-1.5 text-left text-xs text-foreground",
+            "hover:border-primary/60 hover:bg-accent",
             "disabled:cursor-not-allowed disabled:opacity-50",
           )}
         >
-          {models.length === 0 && <option>{t("sidebar.loadingModels")}</option>}
-          {models.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name || m.id}
-            </option>
-          ))}
-        </select>
+          {currentModel
+            ? models.find((m) => m.id === currentModel)?.name || currentModel
+            : t("sidebar.loadingModels")}
+        </button>
         <StatusRow status={status} />
         <button
           onClick={clearView}
@@ -191,6 +226,7 @@ export function Sidebar({ send }: Props) {
             </option>
           ))}
         </select>
+        <SettingsMenu />
       </div>
     </nav>
   );

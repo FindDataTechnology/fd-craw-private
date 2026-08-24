@@ -137,7 +137,7 @@ test.describe("AUTH_MODE=forward_auth", () => {
     });
     await new Promise((r) => fixtureServer.listen(fixturePort, "127.0.0.1", r));
 
-    // Second server.js with forward auth on; isolated stores; no OC/LiteLLM.
+    // Second server.js with forward auth on; isolated stores; no OC.
     AUTH_PORT = await freePort();
     BASE = `http://127.0.0.1:${AUTH_PORT}`;
     child = spawn(process.execPath, ["server.js"], {
@@ -152,7 +152,6 @@ test.describe("AUTH_MODE=forward_auth", () => {
         NANGO_SECRET_KEY: "test-nango-secret",
         REMOTE_AGENT_KEY: "test-remote-key",
         OPENCONNECTOR_BASE_URL: "",
-        LITELLM_BASE_URL: "",
         CHAT_HISTORY_STORE_DIR: path.join(tmpRoot, "chat"),
         DOCUMENTS_STORE_DIR: path.join(tmpRoot, "docs"),
         SESSIONS_STORE_DIR: path.join(tmpRoot, "sessions"),

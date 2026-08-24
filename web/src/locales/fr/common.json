@@ -10,13 +10,11 @@
   },
   "nav": {
     "chat": "💬 Discussion",
-    "dashboard": "📊 Tableau de bord",
-    "documents": "📚 Documents",
-    "extensions": "🧩 Extensions",
-    "knowledge": "📚 Knowledge",
-    "openconnector": "🔌 OpenConnector",
-    "litellm": "🧭 LiteLLM",
-    "agents": "🤖 Agents"
+    "knowledge": "📚 Connaissance",
+    "agents": "🤖 Agents",
+    "mcp": "🧩 Serveurs MCP",
+    "skills": "📖 Compétences",
+    "models": "⚡ Modèles"
   },
   "agentsPage": {
     "title": "Agents et applications",
@@ -34,7 +32,49 @@
     "untitled": "Sans titre",
     "loadingModels": "Chargement des modèles…",
     "clearChat": "Effacer la discussion",
-    "language": "Langue"
+    "language": "Langue",
+    "modelChipHint": "Gérer les modèles"
+  },
+  "settingsMenu": {
+    "title": "Paramètres",
+    "status": "📊 État du système",
+    "models": "⚡ Modèles LLM",
+    "openconnector": "🔌 OpenConnector"
+  },
+  "modelsPage": {
+    "title": "Modèles",
+    "defaultLabel": "Par défaut",
+    "addProvider": "Ajouter un fournisseur",
+    "editProvider": "Modifier le fournisseur",
+    "addHint": "Ajoutez un fournisseur LLM compatible OpenAI.",
+    "editHint": "Laissez la clé API vide pour conserver la clé actuelle.",
+    "fieldName": "Nom",
+    "fieldBaseUrl": "URL de base",
+    "fieldApiKey": "Clé API",
+    "keyPlaceholder": "Clé API (laisser vide pour conserver l'actuelle)",
+    "keyMasked": "La clé API est stockée chiffrée sur le serveur et n'est jamais affichée.",
+    "apiKeyRequired": "La clé API est requise",
+    "keyPresent": "Clé API configurée",
+    "keyMissing": "Aucune clé API",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "deleteProvider": "Supprimer",
+    "confirmDeleteTitle": "Supprimer le fournisseur ?",
+    "confirmDelete": "Supprimer « {{name}} » ? Cette action est irréversible.",
+    "testConnection": "Tester la connexion",
+    "setDefault": "Définir par défaut",
+    "default": "Par défaut",
+    "builtIn": "Intégré",
+    "empty": "Aucun fournisseur configuré. Cliquez sur « Ajouter un fournisseur ».",
+    "settingsUpdated": "Paramètres mis à jour.",
+    "restartFailed": "Impossible d'appliquer les paramètres : {{message}}",
+    "anotherEditInProgress": "Une autre modification des paramètres est en cours. Réessayez.",
+    "lastTest": {
+      "never": "Non testé",
+      "ok": "OK",
+      "failed": "Échec"
+    }
   },
   "status": {
     "connected": "Connecté",
@@ -51,6 +91,12 @@
     "uploadFailed": "Échec de l'envoi : {{message}}",
     "attach": "Joindre un fichier",
     "removeAttachment": "Retirer la pièce jointe",
+    "attachments": "{{count}} pièce(s) jointe(s)",
+    "slashPicker": {
+      "sectionCommands": "Commandes",
+      "sectionSkills": "Compétences",
+      "noMatches": "Aucune commande correspondante"
+    },
     "cmd": {
       "model": "changer ou afficher le modèle actif",
       "new": "démarrer une nouvelle session de discussion",
@@ -59,7 +105,21 @@
     }
   },
   "chat": {
-    "empty": "Envoyez un message pour commencer à discuter."
+    "empty": "Envoyez un message pour commencer à discuter.",
+    "welcome": {
+      "greeting": "Comment puis-je vous aider aujourd'hui ?",
+      "suggestedPrompts": "Suggestions",
+      "recentChats": "Discussions récentes",
+      "viewAll": "Tout voir",
+      "modelFooter": "Modèle : {{model}}",
+      "agentFooter": "Agent : {{agent}}"
+    },
+    "header": {
+      "editTitle": "Renommer la session",
+      "titlePlaceholder": "Titre de la session",
+      "rename": "Enregistrer le nouveau titre"
+    },
+    "titleTooLong": "Le titre doit comporter 200 caractères ou moins"
   },
   "turn": {
     "assistantName": "Find Data Technology",
@@ -99,6 +159,40 @@
       "starting": "démarrage",
       "disabled": "désactivé"
     }
+  },
+  "systemStatus": {
+    "title": "État du système",
+    "refresh": "Actualiser",
+    "refreshing": "Actualisation…",
+    "loadFailed": "Échec du chargement de l'état : {{error}}",
+    "retry": "réessayer",
+    "none": "aucun",
+    "health": "Santé",
+    "activeConfig": "Configuration active",
+    "resources": "Ressources",
+    "activeAgent": "Agent actif",
+    "openconnector": "OpenConnector",
+    "enabled": "Activé",
+    "disabled": "Désactivé",
+    "documents": "Documents",
+    "collections": "Collections : {{count}}",
+    "mcpTools": "Outils MCP",
+    "provider": "Fournisseur : {{name}}",
+    "uptime": "Disponibilité : {{sec}}s",
+    "manage": "Gérer",
+    "state": {
+      "healthy": "sain",
+      "unhealthy": "défaillant",
+      "starting": "démarrage",
+      "disabled": "désactivé"
+    }
+  },
+  "sessionMenu": {
+    "delete": "Supprimer",
+    "confirmTitle": "Supprimer cette discussion ?",
+    "confirmBody": "Cette action est irréversible.",
+    "cannotDeleteActive": "Basculez d'abord vers une autre session",
+    "deleteFailed": "Échec de la suppression : {{error}}"
   },
   "documents": {
     "title": "Documents",

@@ -29,7 +29,7 @@ export default defineConfig({
     proxy: {
       "/api": "http://localhost:3000",
       "/oc-web": "http://localhost:3000",
-      "/litellm-web": "http://localhost:3000",
+      "/external": "http://localhost:3000",
       "/ui": "http://localhost:3000",
       "/key": "http://localhost:3000",
       "/spend": "http://localhost:3000",
@@ -43,7 +43,6 @@ export default defineConfig({
       "/sso": "http://localhost:3000",
       "/login": "http://localhost:3000",
       "/logout": "http://localhost:3000",
-      "/litellm-asset-prefix": "http://localhost:3000",
       // OpenConnector web UI assets/API (both use root-level paths).
       // In dev Vite doesn't own /assets/ (that's a build output concept),
       // so these forward cleanly to the backend proxy.
