@@ -15,7 +15,7 @@
 
 - [x] 3.1 Create `.github/workflows/ci.yml`: `pull_request` + `push: main` triggers, ubuntu-latest, Node 25 via setup-node with npm cache, `PLATFORM_SKIP_WEB_BUILD=1 PLATFORM_SKIP_BUNDLE=1 npm ci`
 - [x] 3.2 Add sequential steps: `npm run lint` → `npm run typecheck` (or `npm --prefix web run typecheck`) → `npm run test:unit` → `npm run check:locales` → web deps + `npm run web:build` → `npx playwright install --with-deps chromium` → `npm run test:e2e` (fast project, e2e step timeout 15m)
-- [ ] 3.3 Validate the workflow via `workflow_dispatch` on a branch; confirm all steps green end-to-end on a clean runner (YAML validated; every step simulated green locally — lint 0 err / typecheck 0 / unit 30 pass 147ms / locales 5×235 / web:build 2.1s / e2e fast 76 pass + 2 skip 5m22s; remaining: push branch + dispatch on GitHub)
+- [x] 3.3 Validate the workflow end-to-end on a clean runner (11 iterations to green; final: run 33199985809 — all steps ✓ in 4m34s, e2e fast 95 passed + 1 skipped in 34s. Runner findings + fixes recorded in design.md addendum: staged-file miss, root-tsc fallback, dsh CLI install, full profile-bootstrap recipe incl. jsonrpc-server/patch, pnpm/bundle pins, 180s webServer timeout, hermetic suite repair + a real ChatSessionMenu delete-dialog bug)
 
 ## 4. Wrap-up
 
