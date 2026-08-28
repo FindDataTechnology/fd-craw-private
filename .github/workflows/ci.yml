@@ -60,11 +60,13 @@ jobs:
       # The e2e server spawns the dsh runtime child (dsh-bridge.js COMMAND);
       # pinned to the same rc line the homebrew/dev installs use. The server
       # only patches an existing profile, so bootstrap it like a fresh machine
-      # (dsh needs pnpm on PATH to manage profile plugins).
+      # (dsh needs pnpm on PATH to manage profile plugins). The bundle version
+      # must be pinned: the unpinned add resolves dsh-base 0.0.1-rc.1, whose
+      # dep dsh-user-interaction is not published (404).
       - name: Install dsh runtime CLI + platform profile
         run: |
           npm install -g @deepseek-ai/dsh@0.1.1-rc.2 pnpm
-          dsh plugin --profile platform add @deepseek-ai/dsh-base
+          dsh plugin --profile platform add @deepseek-ai/dsh-base@0.1.1-rc.2
 
       - name: E2E (fast project, offline)
         timeout-minutes: 15
