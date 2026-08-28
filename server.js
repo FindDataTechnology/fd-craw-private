@@ -145,7 +145,7 @@ function seedStartupMcpConfigs(mcpJsonServers, ocMcpConfig) {
       config,
       enabled,
       origin: "bundled",
-      ...splitPolicy(ctx.bundle.permissions[`mcp:${name}`]),
+      ...ctx.splitPolicy(ctx.bundle.permissions[`mcp:${name}`]),
     });
   }
 }
@@ -327,7 +327,7 @@ await db.initDb();
 // Initialize document store (PageIndex indexing, LlamaIndex framework)
 if (db.isDbReady()) {
   if (!ctx.LLM_API_KEY) {
-    console.warn("[documents] ctx.LLM_API_KEY not set; documents RAG indexing/query calls will fail at call time");
+    console.warn("[documents] LLM_API_KEY not set; documents RAG indexing/query calls will fail at call time");
   }
   await documents.initStore({
     baseUrl: ctx.LLM_BASE_URL,
