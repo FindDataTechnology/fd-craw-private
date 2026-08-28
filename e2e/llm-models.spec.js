@@ -85,14 +85,16 @@ test.describe("Models page", () => {
   test("Set as default updates the active default", async ({ page }) => {
     await gotoModels(page);
 
-    // The first card (built-in Volces) lists models. Find a row that is not
-    // already the default (has a visible "Set as default" button), click it.
-    const firstCard = page.getByTestId("llm-provider-card").first();
-    const setBtns = firstCard.getByTestId("llm-set-default");
-    const count = await setBtns.count();
+    // Find any model row that is not already the default — its "Set as
+    // default" button is enabled (the default's is disabled). Scan all
+    // cards: on a fresh store the built-in card's only model IS the default.
+    const enabledBtns = page.locator('[data-testid="llm-set-default"]:not([disabled])');
+    const count = await enabledBtns.count();
     test.skip(count === 0, "no set-default targets available");
-    await setBtns.first().click();
-    await expect(firstCard.getByTestId("llm-default-check").first()).toBeVisible({ timeout: 5000 });
+    const btn = enabledBtns.first();
+    await btn.click();
+    const card = page.getByTestId("llm-provider-card").filter({ has: btn }).first();
+    await expect(card.getByTestId("llm-default-check").first()).toBeVisible({ timeout: 5000 });
 
     // The default pointer persisted.
     const r = await page.request.get("/api/llm/default");
