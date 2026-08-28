@@ -19,6 +19,7 @@ import * as skillMaterialize from "./skill-materialize.js";
 import * as workdirStore from "./workdir-store.js";
 import * as catalog from "./catalog.js";
 import { resolveBundleSafe } from "./bundle-manifest.js";
+import { createAppContext } from "./server/context.js";
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "localhost";
@@ -28,8 +29,6 @@ const HOST = process.env.HOST || "localhost";
 // (Caddy forward_auth → oauth2-proxy → Logto). TRUST BOUNDARY: enabling this
 // asserts the server is reachable ONLY through the forward-auth proxy — bind
 // to localhost / firewall it, otherwise these headers are attacker-controlled.
-const AUTH_MODE = process.env.AUTH_MODE || "none";
-const authEnabled = AUTH_MODE === "forward_auth";
 
 function userFromHeaders(headers) {
   const email = headers["x-forwarded-email"];
@@ -47,12 +46,9 @@ function userFromHeaders(headers) {
 // provider is not registered and the server starts with no chat provider (chat
 // non-functional, logged), mirroring the LiteLLM graceful-degrade convention.
 // The documents RAG reads LLM_API_KEY separately via initStore().
-const LLM_API_KEY = process.env.LLM_API_KEY?.trim();
-const LLM_BASE_URL = process.env.LLM_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3";
 
 // Default chat model. When set, the dsh session starts on this model id;
 // otherwise the first declared profile model is used. See initDshAgent().
-const DEFAULT_MODEL = process.env.DEFAULT_MODEL || "";
 
 // LiteLLM proxy removed — dsh-llm manages LLM natively via settings.yaml +
 // .credentials.yaml hot-reload (no child process, no management-UI reverse
@@ -67,29 +63,37 @@ const DEFAULT_MODEL = process.env.DEFAULT_MODEL || "";
 // never throws — a corrupt manifest falls back to all-components defaults.
 const bundle = resolveBundleSafe();
 
-// Split a manifest permissions policy ("mcp:<name>"/"skill:<name>" →
-// { allow?, deny?, locked? }) into the extensions-DB columns: the locked flag
-// plus the stored permissions JSON ({ allow?, deny? } — locked has its own column).
-function splitPolicy(policy) {
-  if (!policy) return { locked: false, permissions: null };
-  const { allow, deny } = policy;
-  const permissions =
-    allow || deny ? { ...(allow ? { allow } : {}), ...(deny ? { deny } : {}) } : null;
-  return { locked: policy.locked === true, permissions };
-}
-
 const app = express();
 const server = http.createServer(app);
 // noServer + manual handleUpgrade so WS upgrades pass the same forward-auth
 // gate as HTTP requests (missing identity ⇒ handshake rejected with 401).
 const wss = new WebSocketServer({ noServer: true });
 server.on("upgrade", (req, socket, head) => {
-  if (authEnabled && !userFromHeaders(req.headers)) {
+  if (ctx.authEnabled && !userFromHeaders(req.headers)) {
     socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
     socket.destroy();
     return;
   }
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+});
+
+// Shared application context: config + services + agent-session state.
+// Every handler below reads/writes through ctx (see server/context.js).
+const ctx = createAppContext({
+  PORT,
+  HOST,
+  AUTH_MODE: process.env.AUTH_MODE || "none",
+  LLM_API_KEY: process.env.LLM_API_KEY?.trim(),
+  LLM_BASE_URL: process.env.LLM_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3",
+  DEFAULT_MODEL: process.env.DEFAULT_MODEL || "",
+  bundle,
+});
+ctx.app = app;
+ctx.server = server;
+ctx.wss = wss;
+ctx.upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
 // Document collection: JSON bodies for text/url submissions; multipart file
@@ -99,75 +103,12 @@ app.use(express.json());
 // Forward-auth gate: when enabled, every HTTP request needs a proxy-injected
 // identity; attaches req.user = { email, groups } for downstream handlers.
 app.use((req, res, next) => {
-  if (!authEnabled) return next();
+  if (!ctx.authEnabled) return next();
   const user = userFromHeaders(req.headers);
   if (!user) return res.status(401).json({ error: "Authentication required" });
   req.user = user;
   next();
 });
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 },
-});
-
-// ── Agent session (module-scoped for WS handlers) ────────────────────────────
-
-let session = null;
-let isStreaming = false;
-// Active catalog agent: "local" = the local dsh session; any other id = a
-// catalog agent-remote (chat mode) entry that prompts are forked to.
-let currentAgentId = "local";
-// The model the agent session starts on (set during async init; read by the
-// /api/supervisor/status route).
-let defaultModel = null;
-// dsh bridge + session id.
-let dshBridge = null;
-let dshSessionId = null;
-// dsh MCP live-reload: REST routes mutate the DB, then call this to rewrite the
-// watched mcp.patch.yml so cordis HMR hot-swaps dsh-mcp-client (no process restart).
-// Falls back to restart() only when PLATFORM_MCP_HOTSWAP=0.
-let dshUpdateMcp = null;
-// Declared model list from the profile generator. Populated by initDshAgent
-// from writeLlmProfile(); the generator's declared list IS the dsh model list —
-// dsh exposes no stock listModels RPC, so server.js sources the selector from
-// this (Task 3.3).
-let dshModels = [];
-// dsh→WS event-translation state (Task 2). dshToolNames carries callId→name from
-// tool/call across to tool/result (which has no name); dshTurnError carries an
-// assistant/chunk finish error to the turn/end error broadcast.
-const dshToolNames = new Map();
-let dshTurnError = null;
-
-const clients = new Set();
-
-function broadcast(data) {
-  const msg = JSON.stringify(data);
-  for (const ws of clients) {
-    if (ws.readyState === ws.OPEN) {
-      ws.send(msg);
-    }
-  }
-}
-
-// Mark the current agent turn finished: reset the streaming flag, broadcast
-// `done` (which re-enables the UI / model selector and finalizes tool blocks),
-// and refresh the sidebar session list. Idempotent per turn - it no-ops if the
-// turn is already finished - so it is safe to call from both the `agent_end`
-// event handler and the `prompt()` catch on failure, without risking a double
-// `done`. This is what unblocks model-switching / new-session creation after a
-// failed turn and keeps the sidebar in sync.
-function finishTurn() {
-  if (!isStreaming) return;
-  isStreaming = false;
-  broadcast({ type: "done" });
-  chatHistory
-    .listSessions()
-    .then((sessions) =>
-      broadcast({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
-    )
-    .catch((e) => console.error("[chat-history] list after done failed:", e.message));
-}
 
 // ── Skill helpers ────────────────────────────────────────────────────────────
 
@@ -276,23 +217,23 @@ function seedStartupMcpConfigs(mcpJsonServers, ocMcpConfig) {
     extensionStore.seedMcpServer({ name, config, enabled: true });
   }
   if (ocMcpConfig) {
-    const policy = splitPolicy(bundle.permissions["mcp:open-connector"]);
+    const policy = ctx.splitPolicy(ctx.bundle.permissions["mcp:open-connector"]);
     extensionStore.seedMcpServer({
       name: "open-connector",
       config: ocMcpConfig,
       enabled: true,
-      origin: bundle.components.openconnector ? "bundled" : "user",
+      origin: ctx.bundle.components.openconnector ? "bundled" : "user",
       ...policy,
     });
   }
-  for (const [name, entry] of Object.entries(bundle.mcpServers)) {
+  for (const [name, entry] of Object.entries(ctx.bundle.mcpServers)) {
     const { enabled = true, ...config } = entry;
     extensionStore.seedMcpServer({
       name,
       config,
       enabled,
       origin: "bundled",
-      ...splitPolicy(bundle.permissions[`mcp:${name}`]),
+      ...splitPolicy(ctx.bundle.permissions[`mcp:${name}`]),
     });
   }
 }
@@ -311,7 +252,7 @@ async function initDshAgent() {
   // list IS the dsh model list (no stock listModels RPC); server.js sources
   // the selector from it (Task 3.3). Empty list = dormant (Task 3.6).
   const { models } = await writeLlmProfile();
-  dshModels = models;
+  ctx.dshModels = models;
 
   // Seed the dsh-credentials-local store from process.env (design D3) and build
   // a scrubbed child env so the file is the winning key-resolution layer.
@@ -366,21 +307,21 @@ async function initDshAgent() {
   // declared, else first declared model.
   let provider = "deepseek-official";
   let model = "deepseek-v4-flash";
-  if (dshModels.length) {
+  if (ctx.dshModels.length) {
     const llmProviders = await import("./llm-providers.js");
     const saved = llmProviders.getDefault();
     const pick =
-      (saved.modelId && dshModels.find((m) => m.id === saved.modelId)) ||
-      (DEFAULT_MODEL && dshModels.find((m) => m.id === DEFAULT_MODEL)) ||
-      dshModels[0];
+      (saved.modelId && ctx.dshModels.find((m) => m.id === saved.modelId)) ||
+      (ctx.DEFAULT_MODEL && ctx.dshModels.find((m) => m.id === ctx.DEFAULT_MODEL)) ||
+      ctx.dshModels[0];
     provider = pick.provider;
     model = pick.id;
   } else {
     console.warn("[dsh] no LLM keys configured; chat non-functional (static + REST still served)");
   }
 
-  dshSessionId = "platform-" + randomUUID();
-  dshBridge = new DshBridge({
+  ctx.dshSessionId = "platform-" + randomUUID();
+  ctx.dshBridge = new DshBridge({
     provider,
     model,
     onEvent: handleDshEvent,
@@ -388,7 +329,7 @@ async function initDshAgent() {
     skillsPatchPath,
     env: dshChildEnv,
   });
-  await dshBridge.start();
+  await ctx.dshBridge.start();
   // MCP live-reload (design D1): the REST routes mutate the DB then call this to
   // rewrite mcp.patch.yml in place — cordis-plugin-include/hmr watches that file
   // (confirmed by source inspection; see design Open Question 1) and hot-swaps
@@ -398,7 +339,7 @@ async function initDshAgent() {
   let mcpChain = Promise.resolve();
   const hotswapEnabled = process.env.PLATFORM_MCP_HOTSWAP !== "0";
   const HOTSWAP_SETTLE_MS = Number(process.env.PLATFORM_MCP_HOTSWAP_SETTLE_MS || 800);
-  dshUpdateMcp = () => {
+  ctx.dshUpdateMcp = () => {
     const run = mcpChain.then(async () => {
       const patchPath = await writeMcpPatch();
       if (hotswapEnabled && patchPath) {
@@ -415,7 +356,7 @@ async function initDshAgent() {
       // the child with the new --patch; dsh persists sessions by id so the
       // conversation resumes from disk. Serialized behind mcpChain, so concurrent
       // mutations can't overlap-corrupt the restart.
-      if (patchPath !== undefined) await dshBridge.restart({ mcpPatchPath: patchPath });
+      if (patchPath !== undefined) await ctx.dshBridge.restart({ mcpPatchPath: patchPath });
     });
     mcpChain = run.then(() => {}, () => {});
     return run;
@@ -430,24 +371,24 @@ async function initDshAgent() {
   // sidebar reflects the live dsh session as current. recordMessage still
   // mirrors to SQLite; getSessionFile returns null (no JSONL under dsh).
   const dshSm = {
-    getSessionId: () => dshSessionId,
+    getSessionId: () => ctx.dshSessionId,
     getSessionFile: () => null,
     buildSessionContext: () => ({ messages: [] }),
-    newSession: () => { dshSessionId = "platform-" + randomUUID(); },
-    setSessionId: (id) => { dshSessionId = id; },
+    newSession: () => { ctx.dshSessionId = "platform-" + randomUUID(); },
+    setSessionId: (id) => { ctx.dshSessionId = id; },
     setSessionFile: () => {},
   };
   chatHistory.setSessionManager(dshSm);
-  chatHistory.setDshBridge(dshBridge);
-  session = {
+  chatHistory.setDshBridge(ctx.dshBridge);
+  ctx.session = {
     prompt: async (text) => {
-      isStreaming = true;
-      await dshBridge.prompt(dshSessionId, [{ type: "text", text }]);
+      ctx.isStreaming = true;
+      await ctx.dshBridge.prompt(ctx.dshSessionId, [{ type: "text", text }]);
     },
     model: { id: model },
     sessionManager: dshSm,
   };
-  defaultModel = { id: model, provider, name: model };
+  ctx.defaultModel = { id: model, provider, name: model };
   console.log(`[dsh] runtime ready (provider=${provider} model=${model})`);
 }
 
@@ -467,7 +408,7 @@ async function initDshAgent() {
 function handleDshEvent(notif) {
   const { method, params } = notif || {};
   if (method === "session.status") {
-    if (params?.status === "idle") finishTurn();
+    if (params?.status === "idle") ctx.finishTurn();
     return;
   }
   if (method !== "session.event") {
@@ -483,22 +424,22 @@ function handleDshEvent(notif) {
       // One agent_start per turn. isStreaming was already set synchronously at
       // prompt dispatch (see the WS prompt handler) so a concurrent prompt
       // observes it; re-affirm here idempotently.
-      isStreaming = true;
-      dshTurnError = null;
-      dshToolNames.clear();
-      broadcast({ type: "agent_start" });
+      ctx.isStreaming = true;
+      ctx.dshTurnError = null;
+      ctx.dshToolNames.clear();
+      ctx.broadcast({ type: "agent_start" });
       break;
     case "assistant/chunk": {
       const chunk = ev.data?.chunk;
       if (!chunk) break;
       if (chunk.type === "text-delta" && chunk.text) {
-        broadcast({ type: "text", delta: chunk.text });
+        ctx.broadcast({ type: "text", delta: chunk.text });
       } else if (chunk.type === "reasoning-delta" && chunk.text) {
-        broadcast({ type: "thinking", delta: chunk.text });
+        ctx.broadcast({ type: "thinking", delta: chunk.text });
       } else if (chunk.type === "finish" && chunk.reason?.kind === "error") {
         // Capture the LLM failure; broadcast on turn/end (the turn-completion
         // signal), then session.status idle → finishTurn → done.
-        dshTurnError = chunk.reason.failure?.message || "LLM request failed";
+        ctx.dshTurnError = chunk.reason.failure?.message || "LLM request failed";
       }
       break;
     }
@@ -513,8 +454,8 @@ function handleDshEvent(notif) {
       break;
     }
     case "tool/call":
-      dshToolNames.set(ev.data.callId, ev.data.name);
-      broadcast({
+      ctx.dshToolNames.set(ev.data.callId, ev.data.name);
+      ctx.broadcast({
         type: "tool_start",
         toolCallId: ev.data.callId,
         name: ev.data.name,
@@ -529,20 +470,20 @@ function handleDshEvent(notif) {
       const resultText = Array.isArray(resultBlocks)
         ? resultBlocks.filter((b) => b.type === "text").map((b) => b.text).join("") || null
         : null;
-      broadcast({
+      ctx.broadcast({
         type: "tool_end",
         toolCallId: callId,
-        name: dshToolNames.get(callId) ?? undefined,
+        name: ctx.dshToolNames.get(callId) ?? undefined,
         result: resultText,
         isError: !!ev.data?.error || !!ev.data?.message?.content?.[0]?.isError,
       });
       break;
     }
     case "turn/end":
-      if (ev.data?.reason?.kind === "error" && dshTurnError) {
-        broadcast({ type: "error", message: dshTurnError });
+      if (ev.data?.reason?.kind === "error" && ctx.dshTurnError) {
+        ctx.broadcast({ type: "error", message: ctx.dshTurnError });
       }
-      dshTurnError = null;
+      ctx.dshTurnError = null;
       break;
     default:
       if (process.env.DSH_DEBUG) console.debug("[dsh] unmapped event:", ev.type);
@@ -554,8 +495,8 @@ function handleDshEvent(notif) {
 // Start a new chat session: create a fresh SDK session and reset the agent's
 // in-memory messages. Rejected while streaming to avoid switching mid-turn.
 async function createNewSession() {
-  if (isStreaming) throw new Error("Cannot start a new chat while the agent is responding");
-  session.sessionManager.newSession();
+  if (ctx.isStreaming) throw new Error("Cannot start a new chat while the agent is responding");
+  ctx.session.sessionManager.newSession();
   // ponytail: dsh has no in-memory message state to reset — newSession() (shim)
   // already minted a fresh dshSessionId; the next prompt carries it.
   return chatHistory.currentSessionId();
@@ -565,12 +506,12 @@ async function createNewSession() {
 // that file and reload the agent's in-memory messages from it so the conversation
 // continues with full context. Rejected while streaming.
 async function switchToSession(id) {
-  if (isStreaming) throw new Error("Cannot switch chat while the agent is responding");
+  if (ctx.isStreaming) throw new Error("Cannot switch chat while the agent is responding");
   const currentId = chatHistory.currentSessionId();
   // ponytail: dsh has no in-memory message state to resync — switching the
   // session id is enough; the next prompt carries the new id, and chat-history
   // serves the sidebar's message list from SQLite.
-  if (id !== currentId) session.sessionManager.setSessionId(id);
+  if (id !== currentId) ctx.session.sessionManager.setSessionId(id);
   // Read the resumed transcript from SQLite so session_loaded carries the real
   // turns into the view (dsh keeps no in-memory message state to resync).
   const sess = await chatHistory.getSession(id);
@@ -583,7 +524,7 @@ async function switchToSession(id) {
 // model list (no stock listModels RPC). Sourced once at initDshAgent from
 // writeLlmProfile().
 async function getAvailableModels() {
-  return dshModels.map((m) => ({ id: m.id, name: m.name || m.id, provider: m.provider }));
+  return ctx.dshModels.map((m) => ({ id: m.id, name: m.name || m.id, provider: m.provider }));
 }
 
 // Refresh the model list at runtime (design D3 / spike 2). Re-runs writeLlmProfile
@@ -598,19 +539,19 @@ let dshProfileMod = null;
 async function refreshDshModels() {
   if (!dshProfileMod) dshProfileMod = await import("./dsh-profile.js");
   const { models } = await dshProfileMod.writeLlmProfile();
-  const before = dshModels.map((m) => m.id).join(",");
-  dshModels = models;
-  const after = dshModels.map((m) => m.id).join(",");
+  const before = ctx.dshModels.map((m) => m.id).join(",");
+  ctx.dshModels = models;
+  const after = ctx.dshModels.map((m) => m.id).join(",");
   if (before !== after) console.log(`[dsh] model list refreshed: ${after || "(none)"}`);
-  broadcast({ type: "models", models: await getAvailableModels() });
-  return dshModels.map((m) => ({ id: m.id, name: m.name || m.id, provider: m.provider }));
+  ctx.broadcast({ type: "models", models: await getAvailableModels() });
+  return ctx.dshModels.map((m) => ({ id: m.id, name: m.name || m.id, provider: m.provider }));
 }
 
 // Switch the active model by id, enforcing the streaming guard. Sends any error
 // to the requesting client and returns true on success. Shared by the
 // `set_model` WS handler and the `/model` command.
 async function switchModelTo(id, ws) {
-  if (isStreaming) {
+  if (ctx.isStreaming) {
     ws.send(JSON.stringify({ type: "error", message: "Cannot switch model while the agent is responding" }));
     return false;
   }
@@ -618,17 +559,17 @@ async function switchModelTo(id, ws) {
   // the new provider/model baked into initialize. This drops the child's
   // in-memory session state (v1 ceiling); a non-disruptive switch needs a
   // custom dsh RPC. Unknown model → "Unknown model" error.
-  const target = dshModels.find((m) => m.id === id);
+  const target = ctx.dshModels.find((m) => m.id === id);
   if (!target) {
     ws.send(JSON.stringify({ type: "error", message: `Unknown model: ${id}` }));
     return false;
   }
-  if (session?.model?.id === id) return true;
+  if (ctx.session?.model?.id === id) return true;
   try {
-    await dshBridge.restart({ provider: target.provider, model: target.id });
-    session.model = { id: target.id };
-    defaultModel = { id: target.id, provider: target.provider, name: target.name || target.id };
-    broadcast({ type: "model_changed", id });
+    await ctx.dshBridge.restart({ provider: target.provider, model: target.id });
+    ctx.session.model = { id: target.id };
+    ctx.defaultModel = { id: target.id, provider: target.provider, name: target.name || target.id };
+    ctx.broadcast({ type: "model_changed", id });
     return true;
   } catch (err) {
     console.error("[dsh] model switch failed:", err.message);
@@ -650,7 +591,7 @@ function switchableAgents(user) {
 // Switch the active catalog agent by id. Same contract as switchModelTo:
 // rejected while streaming, errors go to the requesting client only.
 function switchAgentTo(id, ws) {
-  if (isStreaming) {
+  if (ctx.isStreaming) {
     ws.send(JSON.stringify({ type: "error", message: "Cannot switch agent while the agent is responding" }));
     return false;
   }
@@ -659,9 +600,9 @@ function switchAgentTo(id, ws) {
     ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${id}` }));
     return false;
   }
-  if (id === currentAgentId) return true;
-  currentAgentId = id;
-  broadcast({ type: "agent_changed", id });
+  if (id === ctx.currentAgentId) return true;
+  ctx.currentAgentId = id;
+  ctx.broadcast({ type: "agent_changed", id });
   return true;
 }
 
@@ -671,8 +612,8 @@ function switchAgentTo(id, ws) {
 // turns are broadcast-only (no chat-history persistence) and one at a time — a
 // prompt while a remote turn is streaming is rejected instead of steered.
 async function streamRemoteChat(entry, text) {
-  isStreaming = true; // set synchronously (same contract as the local prompt path)
-  broadcast({ type: "agent_start" });
+  ctx.isStreaming = true; // set synchronously (same contract as the local prompt path)
+  ctx.broadcast({ type: "agent_start" });
   // Persist the user turn to the SQLite mirror (design D6) — closes the v1
   // ceiling where remote turns were broadcast-only and a browser close/reopen
   // left a dangling user message with no reply.
@@ -707,17 +648,17 @@ async function streamRemoteChat(entry, text) {
         }
         if (delta) {
           assistantText += delta;
-          broadcast({ type: "text", delta });
+          ctx.broadcast({ type: "text", delta });
         }
       }
     }
   } catch (err) {
     console.error(`Remote agent '${entry.id}' error:`, err.message);
-    broadcast({ type: "error", message: err.message });
+    ctx.broadcast({ type: "error", message: err.message });
   } finally {
     // Persist the assistant's final aggregated text (design D6).
     if (assistantText) chatHistory.recordMessage(chatHistory.currentSessionId(), "assistant", assistantText);
-    finishTurn();
+    ctx.finishTurn();
   }
 }
 
@@ -725,11 +666,11 @@ async function streamRemoteChat(entry, text) {
 // with an id, switch (via switchModelTo) and emit a command_use block describing the result.
 async function handleModelCommand(args, ws) {
   const id = (args || "").trim();
-  const current = session?.model?.id || "(none)";
+  const current = ctx.session?.model?.id || "(none)";
   if (!id) {
     const models = await getAvailableModels();
     const modelList = models.map((m) => `  ${m.id}${m.id === current ? " (active)" : ""}`).join("\n");
-    broadcast({
+    ctx.broadcast({
       type: "command_use",
       name: "model",
       args: "",
@@ -738,7 +679,7 @@ async function handleModelCommand(args, ws) {
     return;
   }
   const ok = await switchModelTo(id, ws);
-  broadcast({
+  ctx.broadcast({
     type: "command_use",
     name: "model",
     args: id,
@@ -751,10 +692,10 @@ async function handleModelCommand(args, ws) {
 // REST new-session route. Errors propagate to the caller.
 async function startNewSession() {
   const id = await createNewSession();
-  broadcast({ type: "session_changed", id });
-  broadcast({ type: "session_loaded", id, title: "New chat", messages: [], workdir: null });
+  ctx.broadcast({ type: "session_changed", id });
+  ctx.broadcast({ type: "session_loaded", id, title: "New chat", messages: [], workdir: null });
   const sessions = await chatHistory.listSessions();
-  broadcast({ type: "sessions", sessions, current: id });
+  ctx.broadcast({ type: "sessions", sessions, current: id });
   return id;
 }
 
@@ -763,7 +704,7 @@ async function startNewSession() {
 async function handleNewCommand(ws) {
   try {
     await startNewSession();
-    broadcast({ type: "command_use", name: "new", args: "", message: "Started a new chat" });
+    ctx.broadcast({ type: "command_use", name: "new", args: "", message: "Started a new chat" });
   } catch (err) {
     ws.send(JSON.stringify({ type: "error", message: err.message }));
   }
@@ -773,18 +714,18 @@ async function handleNewCommand(ws) {
 
 wss.on("connection", (ws, req) => {
   // Identity is fixed at upgrade time (v1 ceiling: no re-auth mid-connection).
-  ws.user = authEnabled ? userFromHeaders(req.headers) : null;
-  clients.add(ws);
-  console.log(`Client connected (${clients.size} total)`);
+  ws.user = ctx.authEnabled ? userFromHeaders(req.headers) : null;
+  ctx.clients.add(ws);
+  console.log(`Client connected (${ctx.clients.size} total)`);
 
   // Tell the client which model is currently active so the dropdown can sync.
-  const currentModelId = session?.model?.id || null;
+  const currentModelId = ctx.session?.model?.id || null;
   ws.send(JSON.stringify({ type: "current_model", id: currentModelId }));
   // Sync the agent switcher: active catalog agent + switchable agent list.
-  ws.send(JSON.stringify({ type: "current_agent", id: currentAgentId }));
+  ws.send(JSON.stringify({ type: "current_agent", id: ctx.currentAgentId }));
   ws.send(JSON.stringify({ type: "agents", agents: switchableAgents(ws.user) }));
   // Send the chat session list + current session so the sidebar syncs on connect.
-  if (session) {
+  if (ctx.session) {
     chatHistory
       .listSessions()
       .then((sessions) =>
@@ -818,7 +759,7 @@ wss.on("connection", (ws, req) => {
         if (cmd && cmd.command === "skill") {
           // Skill invocation: emit a skill_use block and suppress the raw
           // /skill:... text from being echoed as a normal user message.
-          broadcast({ type: "skill_use", name: cmd.name, args: cmd.args });
+          ctx.broadcast({ type: "skill_use", name: cmd.name, args: cmd.args });
           // Mirror the user's skill invocation into the SQLite project database.
           chatHistory.recordMessage(chatHistory.currentSessionId(), "user", text);
 
@@ -841,22 +782,22 @@ wss.on("connection", (ws, req) => {
 
           // No steer mechanism through the bridge; reject concurrent prompts
           // host-side (Task 2.7) rather than queueing a second turn.
-          if (isStreaming) {
+          if (ctx.isStreaming) {
             ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
             break;
           }
 
           // Set in-flight synchronously (before the first await) so a concurrent
           // prompt is rejected. agent_start sets it again later (idempotent).
-          isStreaming = true;
+          ctx.isStreaming = true;
           try {
-            await session.prompt(promptText);
+            await ctx.session.prompt(promptText);
           } catch (err) {
             console.error("Agent error:", err.message);
-            broadcast({ type: "error", message: err.message });
+            ctx.broadcast({ type: "error", message: err.message });
             // Finish the turn (reset streaming, emit done, refresh sessions) so a
             // failed turn does not wedge the UI or block model-switch/new-session.
-            finishTurn();
+            ctx.finishTurn();
           }
         } else if (cmd && cmd.command === "model") {
           await handleModelCommand(cmd.args, ws);
@@ -868,21 +809,21 @@ wss.on("connection", (ws, req) => {
         } else {
           // Normal prompt (includes unknown "/…" commands that fall through):
           // echo the user message and forward.
-          broadcast({ type: "user", text });
+          ctx.broadcast({ type: "user", text });
 
           // Remote-agent fork: when a chat-mode catalog agent is active, stream
           // from its OpenAI-compat endpoint instead of the local session. The
           // user message is echoed above; streamRemoteChat persists both the
           // user and assistant turns to chat-history (design D6).
-          if (currentAgentId !== "local") {
-            if (isStreaming) {
+          if (ctx.currentAgentId !== "local") {
+            if (ctx.isStreaming) {
               ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
               break;
             }
-            const entry = catalog.getAgentEntry(currentAgentId);
+            const entry = catalog.getAgentEntry(ctx.currentAgentId);
             if (!entry) {
               // Catalog changed under us (entry removed / no longer visible).
-              ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${currentAgentId}` }));
+              ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${ctx.currentAgentId}` }));
               break;
             }
             // Expand @doc:<id> attachment references for the remote agent too.
@@ -892,7 +833,7 @@ wss.on("connection", (ws, req) => {
 
           // No steer mechanism through the bridge; reject concurrent prompts
           // host-side (Task 2.7) rather than queueing a second turn.
-          if (isStreaming) {
+          if (ctx.isStreaming) {
             ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
             break;
           }
@@ -902,18 +843,18 @@ wss.on("connection", (ws, req) => {
 
           // Set in-flight synchronously (before the first await) so a concurrent
           // prompt is rejected. agent_start sets it again later (idempotent).
-          isStreaming = true;
+          ctx.isStreaming = true;
           // Expand @doc:<id> attachment references into the document content the
           // agent sees (design D4); the user message above keeps the raw refs.
           const promptWithDocs = await expandDocRefs(text);
           try {
-            await session.prompt(promptWithDocs);
+            await ctx.session.prompt(promptWithDocs);
           } catch (err) {
             console.error("Agent error:", err.message);
-            broadcast({ type: "error", message: err.message });
+            ctx.broadcast({ type: "error", message: err.message });
             // Finish the turn (reset streaming, emit done, refresh sessions) so a
             // failed turn does not wedge the UI or block model-switch/new-session.
-            finishTurn();
+            ctx.finishTurn();
           }
         }
         break;
@@ -1037,15 +978,15 @@ wss.on("connection", (ws, req) => {
       case "switch_session": {
         try {
           const result = await switchToSession(data.id);
-          broadcast({
+          ctx.broadcast({
             type: "session_loaded",
             id: result.id,
             title: result.title,
             messages: result.messages,
           });
-          broadcast({ type: "session_changed", id: result.id });
+          ctx.broadcast({ type: "session_changed", id: result.id });
           const sessions = await chatHistory.listSessions();
-          broadcast({ type: "sessions", sessions, current: result.id });
+          ctx.broadcast({ type: "sessions", sessions, current: result.id });
         } catch (err) {
           ws.send(JSON.stringify({ type: "error", message: err.message }));
         }
@@ -1055,7 +996,7 @@ wss.on("connection", (ws, req) => {
       case "rename_session": {
         try {
           const title = chatHistory.setTitle(data.id, data.title);
-          broadcast({ type: "session_renamed", id: data.id, title });
+          ctx.broadcast({ type: "session_renamed", id: data.id, title });
         } catch (err) {
           if (err?.code) {
             ws.send(JSON.stringify({ type: "rename_session_error", code: err.code, message: err.message }));
@@ -1069,13 +1010,13 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("close", () => {
-    clients.delete(ws);
-    console.log(`Client disconnected (${clients.size} total)`);
+    ctx.clients.delete(ws);
+    console.log(`Client disconnected (${ctx.clients.size} total)`);
   });
 
   ws.on("error", (err) => {
     console.error("WebSocket error:", err.message);
-    clients.delete(ws);
+    ctx.clients.delete(ws);
   });
 });
 
@@ -1084,7 +1025,7 @@ wss.on("connection", (ws, req) => {
 // via PageIndex through LlamaIndex.TS framework with SQLite persistence.
 // Status transitions broadcast as documents_status WS events.
 
-app.post("/api/documents", upload.single("file"), async (req, res) => {
+app.post("/api/documents", ctx.upload.single("file"), async (req, res) => {
   if (!db.isDbReady()) {
     return res.status(503).json({ error: "Document collection is disabled (database unavailable)" });
   }
@@ -1242,7 +1183,7 @@ app.get(/^\/(?!api\/|oc-web|external\/|assets\/|v1\/|v2\/|ui|key\/|spend\/|model
 // inspecting headers. email/groups are null when auth is off.
 app.get("/api/auth/me", (req, res) => {
   res.json({
-    mode: AUTH_MODE,
+    mode: ctx.AUTH_MODE,
     email: req.user?.email ?? null,
     groups: req.user?.groups ?? null,
   });
@@ -1256,7 +1197,7 @@ app.get("/api/catalog", (req, res) => {
 });
 
 app.post("/api/catalog/refresh", async (req, res) => {
-  if (authEnabled && !req.user?.groups?.includes("admin")) {
+  if (ctx.authEnabled && !req.user?.groups?.includes("admin")) {
     return res.status(403).json({ error: "Admin group required" });
   }
   try {
@@ -1272,8 +1213,8 @@ app.post("/api/catalog/refresh", async (req, res) => {
 // and hand back the Connect UI URL. Requires forward-auth — there is no
 // identity to tag otherwise. The Nango secret stays server-side.
 app.post("/api/apps/:id/connect", async (req, res) => {
-  if (!authEnabled || !req.user?.email) {
-    return res.status(400).json({ error: "Connect requires AUTH_MODE=forward_auth" });
+  if (!ctx.authEnabled || !req.user?.email) {
+    return res.status(400).json({ error: "Connect requires ctx.AUTH_MODE=forward_auth" });
   }
   const entry = catalog.getAppEntry(req.params.id);
   if (!entry || entry.kind !== "nango-connect") {
@@ -1315,7 +1256,7 @@ app.get("/api/config", (_req, res) => {
 // models reach the adapter without a restart. The active model is untouched.
 // Admin-gated under forward-auth (a config mutation).
 app.post("/api/models/refresh", async (req, res) => {
-  if (authEnabled && !req.user?.groups?.includes("admin")) {
+  if (ctx.authEnabled && !req.user?.groups?.includes("admin")) {
     return res.status(403).json({ error: "Admin group required" });
   }
   try {
@@ -1336,8 +1277,8 @@ async function reloadLlmProviders() {
   const dshProfile = await import("./dsh-profile.js");
   await dshProfile.ensureCredentialsStore();
   const { models } = await dshProfile.writeLlmProfile();
-  dshModels = models;
-  broadcast({ type: "models", models: await getAvailableModels() });
+  ctx.dshModels = models;
+  ctx.broadcast({ type: "models", models: await getAvailableModels() });
 }
 
 // In-process write mutex: serialize provider/credential mutations so two
@@ -1359,7 +1300,7 @@ async function withLlmWriteLock(fn) {
 }
 
 function requireAdmin(req, res) {
-  if (authEnabled && !req.user?.groups?.includes("admin")) {
+  if (ctx.authEnabled && !req.user?.groups?.includes("admin")) {
     res.status(403).json({ error: "Admin group required" });
     return false;
   }
@@ -1380,7 +1321,7 @@ app.get("/api/llm/providers", async (_req, res) => {
           type: "openai-completions",
           hasKey: true,
           reserved: true,
-          models: dshModels.filter((m) => m.provider === "volces").map((m) => m.id),
+          models: ctx.dshModels.filter((m) => m.provider === "volces").map((m) => m.id),
           lastTest: null,
         }]
       : [];
@@ -1468,8 +1409,8 @@ app.get("/api/llm/default", async (_req, res) => {
     const saved = llmProviders.getDefault();
     res.json({
       providerId: saved.providerId,
-      modelId: saved.modelId || defaultModel?.id || null,
-      activeModelId: session?.model?.id || null,
+      modelId: saved.modelId || ctx.defaultModel?.id || null,
+      activeModelId: ctx.session?.model?.id || null,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1481,11 +1422,11 @@ app.put("/api/llm/default", async (req, res) => {
   try {
     const llmProviders = await import("./llm-providers.js");
     const { modelId, providerId } = req.body || {};
-    const target = dshModels.find((m) => m.id === modelId);
+    const target = ctx.dshModels.find((m) => m.id === modelId);
     if (!target) return res.status(400).json({ error: `Unknown model: ${modelId}` });
     const saved = llmProviders.setDefault({ modelId, providerId: providerId || target.provider });
-    defaultModel = { id: target.id, provider: target.provider, name: target.name || target.id };
-    broadcast({ type: "model_changed", id: target.id });
+    ctx.defaultModel = { id: target.id, provider: target.provider, name: target.name || target.id };
+    ctx.broadcast({ type: "model_changed", id: target.id });
     res.json({ providerId: saved.providerId, modelId: saved.modelId });
   } catch (err) {
     res.status(err?.code === "invalid" ? 400 : 500).json({ error: err.message, code: err?.code });
@@ -1517,8 +1458,8 @@ app.get("/api/supervisor/status", (_req, res) => {
         url: openConnector.getRuntimeBase() || null,
       },
     ],
-    provider: defaultModel ? defaultModel.provider : null,
-    currentModel: defaultModel ? defaultModel.id : null,
+    provider: ctx.defaultModel ? ctx.defaultModel.provider : null,
+    currentModel: ctx.defaultModel ? ctx.defaultModel.id : null,
     uptimeMs: process.uptime() * 1000,
   });
 });
@@ -1569,9 +1510,9 @@ app.post("/api/extensions/mcp", async (req, res) => {
     // connect in the background. The connection attempt can take up to 10s
     // (timeout); we don't want to block the UI on it. The config is already
     // saved; the connection is best-effort.
-    broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
+    ctx.broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
     res.json(server);
-    dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+    ctx.dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
   } catch (err) {
     if (err.message?.includes("UNIQUE constraint")) {
       return res.status(409).json({ error: `MCP server "${name}" already exists` });
@@ -1602,8 +1543,8 @@ app.put("/api/extensions/mcp/:name", async (req, res) => {
     if (configChanged || enabledChanged) {
       // dsh owns MCP connections via the profile; rewrite the watched patch so
       // cordis HMR hot-swaps dsh-mcp-client (no restart on the primary path).
-      dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
-      broadcast({ type: "extensions_changed", resource: "mcp", action: "updated", name });
+      ctx.dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+      ctx.broadcast({ type: "extensions_changed", resource: "mcp", action: "updated", name });
     }
     res.json(server);
   } catch (err) {
@@ -1625,9 +1566,9 @@ app.delete("/api/extensions/mcp/:name", async (req, res) => {
     return res.status(400).json({ error: `MCP server "${name}" is locked (bundled) and cannot be removed` });
   }
   extensionStore.removeMcpServer(name);
-  broadcast({ type: "extensions_changed", resource: "mcp", action: "removed", name });
+  ctx.broadcast({ type: "extensions_changed", resource: "mcp", action: "removed", name });
   res.json({ ok: true });
-  dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+  ctx.dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
 });
 
 // Enable or disable an MCP server.
@@ -1649,9 +1590,9 @@ app.patch("/api/extensions/mcp/:name/enable", async (req, res) => {
   }
   const updated = extensionStore.toggleMcpServer(name, enabled);
   // broadcast + respond immediately; update (dsh hot-swap) in background.
-  broadcast({ type: "extensions_changed", resource: "mcp", action: "toggled", name, enabled });
+  ctx.broadcast({ type: "extensions_changed", resource: "mcp", action: "toggled", name, enabled });
   res.json(updated);
-  dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+  ctx.dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
 });
 
 // List all skills (file-based + custom from database).
@@ -1660,8 +1601,8 @@ app.patch("/api/extensions/mcp/:name/enable", async (req, res) => {
 // locked/permissions from the manifest's permissions map ("skill:<name>").
 app.get("/api/extensions/skills", async (_req, res) => {
   const fileSkills = getFileSkills().map((s) => {
-    const bundled = bundle.skills.includes(s.name);
-    const policy = bundled ? splitPolicy(bundle.permissions[`skill:${s.name}`]) : { locked: false, permissions: null };
+    const bundled = ctx.bundle.skills.includes(s.name);
+    const policy = bundled ? ctx.splitPolicy(ctx.bundle.permissions[`skill:${s.name}`]) : { locked: false, permissions: null };
     return {
       name: s.name,
       description: s.description,
@@ -1699,7 +1640,7 @@ app.post("/api/extensions/skills", (req, res) => {
     const skill = extensionStore.addCustomSkill({ name, description, content, enabled });
     // Materialize as SKILL.md so dsh-skill-filesystem hot-loads it (no restart).
     try { skillMaterialize.writeSkill(skill); } catch (e) { console.warn(`[skills] materialize write failed for "${name}": ${e.message}`); }
-    broadcast({ type: "extensions_changed", resource: "skill", action: "added", name });
+    ctx.broadcast({ type: "extensions_changed", resource: "skill", action: "added", name });
     res.json(skill);
   } catch (err) {
     if (err.message?.includes("UNIQUE constraint")) {
@@ -1718,8 +1659,8 @@ app.put("/api/extensions/skills/:name", (req, res) => {
   const { description, content, enabled } = req.body || {};
   // Locked bundled skills are immutable (D6) — the manifest lock wins over
   // any DB row sharing the name.
-  const updatePolicy = bundle.skills.includes(name)
-    ? splitPolicy(bundle.permissions[`skill:${name}`])
+  const updatePolicy = ctx.bundle.skills.includes(name)
+    ? ctx.splitPolicy(ctx.bundle.permissions[`skill:${name}`])
     : { locked: false };
   if (updatePolicy.locked) {
     return res.status(400).json({ error: `Skill "${name}" is locked (bundled) and cannot be modified` });
@@ -1732,7 +1673,7 @@ app.put("/api/extensions/skills/:name", (req, res) => {
   // Rewrite the materialized SKILL.md (atomic temp+rename) so the watcher
   // hot-reloads the new content; enabled=false removes the file instead.
   try { skillMaterialize.writeSkill(updated); } catch (e) { console.warn(`[skills] materialize rewrite failed for "${name}": ${e.message}`); }
-  broadcast({ type: "extensions_changed", resource: "skill", action: "updated", name });
+  ctx.broadcast({ type: "extensions_changed", resource: "skill", action: "updated", name });
   res.json(updated);
 });
 
@@ -1744,8 +1685,8 @@ app.delete("/api/extensions/skills/:name", (req, res) => {
   const { name } = req.params;
   // A name listed in the bundle manifest's skills is bundled; its lock policy
   // wins over any DB row with the same name (locked ⇒ immutable, D6).
-  const deletePolicy = bundle.skills.includes(name)
-    ? splitPolicy(bundle.permissions[`skill:${name}`])
+  const deletePolicy = ctx.bundle.skills.includes(name)
+    ? ctx.splitPolicy(ctx.bundle.permissions[`skill:${name}`])
     : { locked: false };
   if (deletePolicy.locked) {
     return res.status(400).json({ error: `Skill "${name}" is locked (bundled) and cannot be removed` });
@@ -1757,7 +1698,7 @@ app.delete("/api/extensions/skills/:name", (req, res) => {
   extensionStore.removeCustomSkill(name);
   // Remove the materialized SKILL.md so the watcher hot-unloads it.
   try { skillMaterialize.removeSkill(name); } catch (e) { console.warn(`[skills] materialize remove failed for "${name}": ${e.message}`); }
-  broadcast({ type: "extensions_changed", resource: "skill", action: "removed", name });
+  ctx.broadcast({ type: "extensions_changed", resource: "skill", action: "removed", name });
   res.json({ ok: true });
 });
 
@@ -1773,8 +1714,8 @@ app.patch("/api/extensions/skills/:name/enable", (req, res) => {
   }
   // Locked bundled skills cannot be disabled (D6). Lock state comes from the
   // manifest, not the DB — file skills are never custom_skills rows.
-  const togglePolicy = bundle.skills.includes(name)
-    ? splitPolicy(bundle.permissions[`skill:${name}`])
+  const togglePolicy = ctx.bundle.skills.includes(name)
+    ? ctx.splitPolicy(ctx.bundle.permissions[`skill:${name}`])
     : { locked: false };
   if (togglePolicy.locked) {
     return res.status(400).json({ error: `Skill "${name}" is locked (bundled) and cannot be disabled` });
@@ -1787,7 +1728,7 @@ app.patch("/api/extensions/skills/:name/enable", (req, res) => {
   // enabled → write SKILL.md (hot-load); disabled → remove it (hot-unload).
   try { enabled ? skillMaterialize.writeSkill(updated) : skillMaterialize.removeSkill(name); }
   catch (e) { console.warn(`[skills] materialize toggle failed for "${name}": ${e.message}`); }
-  broadcast({ type: "extensions_changed", resource: "skill", action: "toggled", name, enabled });
+  ctx.broadcast({ type: "extensions_changed", resource: "skill", action: "toggled", name, enabled });
   res.json(updated);
 });
 
@@ -1815,9 +1756,9 @@ app.get("/api/chat-history/sessions", async (_req, res) => {
 
 app.get("/api/chat-history/sessions/:id", async (req, res) => {
   try {
-    const session = await chatHistory.getSession(req.params.id);
-    if (!session) return res.status(404).json({ error: "Not found" });
-    res.json(session);
+    const sess = await chatHistory.getSession(req.params.id);
+    if (!sess) return res.status(404).json({ error: "Not found" });
+    res.json(sess);
   } catch (err) {
     console.error("[chat-history] get error:", err.message);
     res.status(500).json({ error: err.message });
@@ -1846,7 +1787,7 @@ app.delete("/api/chat-history/sessions/:id", async (req, res) => {
     chatHistory
       .listSessions()
       .then((sessions) =>
-        broadcast({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
+        ctx.broadcast({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
       )
       .catch((e) => console.error("[chat-history] list after delete failed:", e.message));
   } catch (err) {
@@ -1865,7 +1806,7 @@ app.patch("/api/chat-history/sessions/:id", express.json(), async (req, res) => 
   try {
     const title = chatHistory.setTitle(id, req.body?.title);
     res.json({ id, title });
-    broadcast({ type: "session_renamed", id, title });
+    ctx.broadcast({ type: "session_renamed", id, title });
   } catch (err) {
     if (err?.code === "not_found") return res.status(404).json({ error: err.message, code: err.code });
     if (err?.code === "empty" || err?.code === "too_long" || err?.code === "control_chars") {
@@ -2132,6 +2073,13 @@ for (const app of catalog.getExternalServices()) {
 }
 
 // ── Start ────────────────────────────────────────────────────────────────────
+// BOOT-ORDER INVARIANTS (behavioral contract, see the split-server-monolith
+// spec): initChatHistory resolves the sessions store dir BEFORE initDshAgent
+// (the session shim reads it); db.initDb opens BEFORE documents.initStore and
+// BEFORE runLegacyMigrations; documents.initStore's restart reconciliation
+// runs BEFORE migrate's legacy import enqueues re-indexing; initDshAgent
+// completes before anything prompts; listen() is LAST. Parallelizing any of
+// this is a semantic change (planned deliberately in optimize-hot-paths).
 
 openConnector.initOpenConnector();
 // initChatHistory must run before initDshAgent so the sessions store dir is
@@ -2144,14 +2092,14 @@ await workdirStore.initWorkdirStore();
 await db.initDb();
 // Initialize document store (PageIndex indexing, LlamaIndex framework)
 if (db.isDbReady()) {
-  if (!LLM_API_KEY) {
-    console.warn("[documents] LLM_API_KEY not set; documents RAG indexing/query calls will fail at call time");
+  if (!ctx.LLM_API_KEY) {
+    console.warn("[documents] ctx.LLM_API_KEY not set; documents RAG indexing/query calls will fail at call time");
   }
   await documents.initStore({
-    baseUrl: LLM_BASE_URL,
-    apiKey: LLM_API_KEY,
+    baseUrl: ctx.LLM_BASE_URL,
+    apiKey: ctx.LLM_API_KEY,
     model: documents.DOCUMENTS_MODEL,
-    broadcast,
+    broadcast: ctx.broadcast,
   });
 }
 await initDshAgent();
@@ -2161,17 +2109,17 @@ await initDshAgent();
 // chat formats directly with stdlib fs (no SDK dependency).
 await migrate.runLegacyMigrations();
 
-await catalog.initCatalog({ broadcast });
+await catalog.initCatalog({ broadcast: ctx.broadcast });
 
 // Initialize cron module
 await cron.initCron({
-  broadcast,
+  broadcast: ctx.broadcast,
   sessionPrompt: async (prompt) => {
-    if (session) {
-      return session.prompt(prompt);
+    if (ctx.session) {
+      return ctx.session.prompt(prompt);
     }
   },
-  isStreaming: () => isStreaming,
+  isStreaming: () => ctx.isStreaming,
 });
 
 server.listen(PORT, HOST, () => {
@@ -2184,7 +2132,7 @@ async function shutdown() {
   cron.shutdown();
   catalog.stopCatalog();
   try {
-    await dshBridge?.shutdown();
+    await ctx.dshBridge?.shutdown();
   } catch (err) {
     console.error("[shutdown] dsh bridge failed:", err.message);
   }
