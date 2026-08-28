@@ -35,6 +35,12 @@ jobs:
       - name: Lint (Biome)
         run: npm run lint
 
+      # Must precede typecheck/build: web's tsc (TS 5.7) resolves from
+      # web/node_modules — without this, npm falls back to the root
+      # typescript@7 devDep, which rejects web/tsconfig.json (baseUrl removed).
+      - name: Install web dependencies
+        run: npm run web:install
+
       - name: Typecheck (web)
         run: npm run typecheck
 
@@ -46,9 +52,7 @@ jobs:
 
       # e2e serves web/dist via express.static, so build the web app first.
       - name: Build web
-        run: |
-          npm run web:install
-          npm run web:build
+        run: npm run web:build
 
       - name: Install Playwright chromium
         run: npx playwright install --with-deps chromium
