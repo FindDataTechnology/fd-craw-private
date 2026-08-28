@@ -334,10 +334,9 @@ export const useChatStore = create<State>((set) => ({
 }));
 
 // Dev/test hook: expose the store on window so it can be driven without a real
-// WebSocket. Gated to dev builds (import.meta.env.DEV) so the Zustand store is
-// not globally readable/mutable in production. The e2e consumer that needed it
-// in the prod build is gone; a future prod-build e2e that needs it should use a
-// real WS or a dedicated test seam.
-if (typeof window !== "undefined" && import.meta.env.DEV) {
+// WebSocket. Gated to dev builds, or to e2e builds (VITE_E2E_SEAM=1, used only
+// for the Playwright dist — never in shipped/release builds) so the Zustand
+// store is not globally readable/mutable in production.
+if (typeof window !== "undefined" && (import.meta.env.DEV || import.meta.env.VITE_E2E_SEAM === "1")) {
   (window as unknown as { __chatStore?: typeof useChatStore }).__chatStore = useChatStore;
 }

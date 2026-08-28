@@ -38,10 +38,15 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
   }, [triggerRef]);
 
   useEffect(() => {
+    // While the confirm dialog is open, the dialog's own overlay/Escape
+    // handling dismisses it — an outside click here must not unmount the
+    // component out from under the dialog.
     const onDown = (e: MouseEvent) => {
+      if (confirmOpen) return;
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => {
+      if (confirmOpen) return;
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("mousedown", onDown);
@@ -50,15 +55,24 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [onClose]);
+  }, [onClose, confirmOpen]);
 
   if (!pos) return null;
 
   const handleDeleteClick = () => {
     if (isCurrent) return;
-    onClose();
+    // Do NOT call onClose() here: the parent unmounts this component on
+    // close, which would destroy the confirmOpen state before the dialog
+    // renders. The dropdown hides itself (confirmOpen) and onClose runs
+    // when the dialog finishes (dismissed or deleted).
     setError(null);
     setConfirmOpen(true);
+  };
+
+  const closeConfirm = () => {
+    setConfirmOpen(false);
+    setError(null);
+    onClose();
   };
 
   const handleConfirm = async () => {
@@ -67,6 +81,7 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
     try {
       await onDelete(sessionId);
       setConfirmOpen(false);
+      onClose();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -76,6 +91,7 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
 
   return (
     <>
+      {!confirmOpen && (
       <div
         ref={menuRef}
         role="menu"
@@ -100,8 +116,9 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
           {t("sessionMenu.delete")}
         </button>
       </div>
+      )}
 
-      <Dialog open={confirmOpen} onOpenChange={(o) => { if (!o) { setConfirmOpen(false); setError(null); } }}>
+      <Dialog open={confirmOpen} onOpenChange={(o) => { if (!o) closeConfirm(); }}>
         <DialogContent data-testid="session-delete-dialog">
           <DialogHeader>
             <DialogTitle>{t("sessionMenu.confirmTitle")}</DialogTitle>

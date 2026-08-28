@@ -1,6 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { gotoChat } from "./helpers.js";
 
+// The chat log only renders once a turn exists; a fresh session shows the
+// welcome screen. Seed one fake turn through the e2e build store seam so the
+// layout assertions have a real log to measure against (no LLM involved).
+
 // Regression: the chat page must fit the viewport. The message log is the only
 // vertical scroller; the composer stays pinned. See openspec/changes/archive/
 // (or openspec/changes/fix-chat-panel-height/) for the layout requirement in
@@ -11,6 +15,14 @@ import { gotoChat } from "./helpers.js";
 
 test("chat viewport pins composer regardless of log length", async ({ page }) => {
   await gotoChat(page);
+
+  await page.evaluate(() => {
+    const s = window.__chatStore;
+    s.getState().apply({ type: "agent_start" });
+    s.getState().apply({ type: "text", delta: "layout probe turn" });
+    s.getState().apply({ type: "done" });
+  });
+  await page.waitForTimeout(100);
 
   const composerSend = page.getByTestId("composer-send");
   const log = page.getByTestId("chat-log");

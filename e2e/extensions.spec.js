@@ -2,7 +2,7 @@
 // Tests MCP server and skill management UI with new naming (Enabled/Store tabs).
 
 import { test, expect } from "@playwright/test";
-import { baseURL, gotoExtensions } from "./helpers.js";
+import { baseURL, gotoExtensions, gotoSkills } from "./helpers.js";
 
 // Unique name generator to avoid collisions between tests
 function uniqueName(prefix) {
@@ -13,8 +13,8 @@ test.describe("Extensions Page - UI Rendering", () => {
   test("page loads with correct tab names (Enabled/Store)", async ({ page }) => {
     await gotoExtensions(page);
 
-    // Check main heading
-    await expect(page.getByRole("heading", { name: /extensions/i })).toBeVisible();
+    // Check main heading (the extensions page is split: /mcp shows "MCP")
+    await expect(page.getByRole("heading", { name: /^MCP$/i })).toBeVisible();
 
     // Check tab names (new naming)
     await expect(page.getByRole("button", { name: /enabled/i })).toBeVisible();
@@ -36,7 +36,7 @@ test.describe("Extensions Page - UI Rendering", () => {
   });
 
   test("Skills section shows correct title and button labels", async ({ page }) => {
-    await gotoExtensions(page);
+    await gotoSkills(page);
 
     // Section title
     await expect(page.getByTestId("skills-section").getByRole("heading", { name: /^Skills$/i })).toBeVisible();
@@ -86,9 +86,8 @@ test.describe("Extensions Page - UI Rendering", () => {
     await storeTab.click();
     await expect(storeTab).toHaveClass(/border-primary/);
 
-    // Store content should be visible
+    // Store content should be visible (skills moved to the /skills page)
     await expect(page.getByTestId("mcp-market-section")).toBeVisible();
-    await expect(page.getByTestId("skills-market-section")).toBeVisible();
 
     // Click back to Enabled
     await enabledTab.click();
@@ -117,7 +116,7 @@ test.describe("Extensions Page - Store Tab", () => {
   });
 
   test("Store tab shows Skills catalog items", async ({ page }) => {
-    await gotoExtensions(page);
+    await gotoSkills(page);
 
     // Switch to Store tab
     await page.getByRole("button", { name: /store/i }).click();
@@ -273,7 +272,7 @@ test.describe("Extensions Page - MCP Interaction Flow", () => {
 test.describe("Extensions Page - Skill Interaction Flow", () => {
   test("add custom skill via form → appears in Enabled → delete", async ({ page }) => {
     const testName = uniqueName("test-skill");
-    await gotoExtensions(page);
+    await gotoSkills(page);
 
     // Click Create Skill button
     await page.getByTestId("create-skill-btn").click();
@@ -310,7 +309,7 @@ test.describe("Extensions Page - Skill Interaction Flow", () => {
 
   test("toggle custom skill enable/disable", async ({ page }) => {
     const testName = uniqueName("test-skill-toggle");
-    await gotoExtensions(page);
+    await gotoSkills(page);
 
     // Add a skill first
     await page.getByTestId("create-skill-btn").click();

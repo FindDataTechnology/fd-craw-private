@@ -12,6 +12,11 @@ import path from "node:path";
 // is the sole frontend). `base: "/"` makes asset URLs `/assets/...`.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // E2E-only test seam (window.__chatStore): set VITE_E2E_SEAM=1 for the
+  // Playwright dist build; release/prod builds never set it.
+  define: {
+    "import.meta.env.VITE_E2E_SEAM": JSON.stringify(process.env.VITE_E2E_SEAM ?? "0"),
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),

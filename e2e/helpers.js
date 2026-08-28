@@ -64,6 +64,19 @@ export async function pinLocaleEn(page) {
   });
 }
 
+// Wait until no agent turn is streaming. Uses the e2e build's
+// window.__chatStore seam; on a plain prod build (no seam) it resolves
+// immediately — best effort only. Tests that send prompts should call this
+// before interacting again: while a turn streams, the composer's autogrow
+// re-runs every render and Playwright's click stability checks never settle.
+export async function waitForIdle(page, timeout = 20000) {
+  await page.waitForFunction(
+    () => !window.__chatStore || window.__chatStore.getState().isStreaming === false,
+    null,
+    { timeout },
+  );
+}
+
 // Navigate to the React chat and wait for the WS to connect.
 export async function gotoChat(page) {
   await pinLocaleEn(page);

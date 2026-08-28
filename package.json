@@ -23,6 +23,7 @@
     "typecheck": "npm --prefix web run typecheck",
     "web:install": "npm --prefix web install",
     "web:build": "npm run check:locales && npm --prefix web run build",
+    "web:build:e2e": "npm run check:locales && npm --prefix web run build:e2e",
     "web:dev": "npm --prefix web run dev",
     "postinstall": "node scripts/postinstall-web.js && node scripts/postinstall-bundle.js"
   },

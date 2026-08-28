@@ -50,9 +50,10 @@ jobs:
       - name: Locale parity
         run: npm run check:locales
 
-      # e2e serves web/dist via express.static, so build the web app first.
-      - name: Build web
-        run: npm run web:build
+      # e2e serves web/dist via express.static; build with the e2e test seam
+      # (window.__chatStore) — release builds never set VITE_E2E_SEAM.
+      - name: Build web (e2e seam)
+        run: npm run web:build:e2e
 
       - name: Install Playwright chromium
         run: npx playwright install --with-deps chromium

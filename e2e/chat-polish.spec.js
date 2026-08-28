@@ -13,7 +13,7 @@
 // don't wait for an actual assistant response.
 
 import { test, expect } from "@playwright/test";
-import { gotoChat } from "./helpers.js";
+import { gotoChat, waitForIdle } from "./helpers.js";
 
 test.describe("chat main-page polish", () => {
   test.beforeEach(async ({ page }) => {
@@ -30,37 +30,43 @@ test.describe("chat main-page polish", () => {
     await expect(cards).toHaveCount(4);
   });
 
-  test("8.2 clicking a suggested prompt fills the composer", async ({ page }) => {
+  test("8.2 clicking a suggested prompt starts the turn", async ({ page }) => {
     await page.getByTestId("new-chat-btn").click();
     await expect(page.getByTestId("chat-welcome")).toBeVisible();
     const firstCard = page.getByTestId("welcome-prompt-card").first();
+    // The card sends the prompt directly (no draft-fill): the turn starts,
+    // the welcome hides and the in-session chrome appears.
     await firstCard.click();
-    // The welcome sends a `prompt` message, which the store routes into the
-    // composer as a pending draft; the textarea reflects the text.
-    const input = page.getByTestId("composer-input");
-    await expect(input).toBeFocused();
-    const value = await input.inputValue();
-    expect(value.length, "suggested prompt should populate the composer").toBeGreaterThan(0);
+    await expect(page.getByTestId("chat-welcome")).toBeHidden({ timeout: 10000 });
+    await expect(page.getByTestId("chat-header")).toBeVisible({ timeout: 10000 });
+    // Leave the app idle for the next test (the LLM may be unreachable in CI).
+    await waitForIdle(page, 30000);
   });
 
   test("8.3 first message hides the welcome and shows the chat header + log", async ({ page }) => {
     await page.getByTestId("new-chat-btn").click();
     await expect(page.getByTestId("chat-welcome")).toBeVisible();
+    // A previous test's turn may still be streaming (composer unstable
+    // while autogrow re-runs per render) — wait for idle before typing.
+    await waitForIdle(page, 30000);
     const input = page.getByTestId("composer-input");
     await input.fill("hello polish-test");
     await page.getByTestId("composer-send").click();
     // The welcome vanishes and the in-session chrome (header + log) appears.
-    await expect(page.getByTestId("chat-welcome")).toBeHidden({ timeout: 5000 });
+    await expect(page.getByTestId("chat-welcome")).toBeHidden({ timeout: 10000 });
     await expect(page.getByTestId("chat-header")).toBeVisible();
     await expect(page.getByTestId("chat-log")).toBeVisible();
+    await waitForIdle(page, 30000);
   });
 
   test("8.4 in-session title rename updates the sidebar row", async ({ page }) => {
     await page.getByTestId("new-chat-btn").click();
     const input = page.getByTestId("composer-input");
     await input.fill("trigger in-session state");
+    await waitForIdle(page, 30000);
     await page.getByTestId("composer-send").click();
-    await expect(page.getByTestId("chat-header")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId("chat-header")).toBeVisible({ timeout: 10000 });
+    await waitForIdle(page, 30000);
 
     // The current session id is exposed by the sidebar's data-session-id.
     const currentId = await page

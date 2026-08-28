@@ -51,6 +51,9 @@ test.describe("Models page", () => {
 
   test("add → see in list → test (fails) → delete lifecycle", async ({ page }) => {
     await gotoModels(page);
+    // Wait for the built-in card before counting — on a slow machine the
+    // list may not have loaded yet and `before` would read 0.
+    await expect(page.getByTestId("llm-provider-card").first()).toBeVisible({ timeout: 10000 });
     const before = await page.getByTestId("llm-provider-card").count();
 
     // Add a provider (unreachable base URL).

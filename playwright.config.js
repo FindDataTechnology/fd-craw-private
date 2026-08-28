@@ -25,7 +25,8 @@ export default defineConfig({
   retries: 0,
   reporter: "list",
   timeout: 60_000,
-  // The live suite doesn't create temp dirs, so skip the cleanup teardown for it.
+  // The live suite doesn't create temp dirs and needs no fixtures; the fast
+  // suite seeds gitignored data files (agents.json / mcp.json) when absent.
   ...(PW_LIVE ? {} : { globalTeardown: "./e2e/teardown.js" }),
   use: {
     baseURL,
@@ -72,7 +73,7 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: "node server.js",
+          command: "node e2e/seed-fixtures.js && node server.js",
           port: E2E_PORT,
           // server.js listens only after dsh init completes; a cold first
           // spawn (fresh profile composition, e.g. on a CI runner) can
@@ -89,6 +90,10 @@ export default defineConfig({
             // OC). Disable OpenConnector so server.js doesn't spend ~30s retrying its
             // MCP connection. OC views are tested via stubConfig, not a real runtime.
             OPENCONNECTOR_BASE_URL: "",
+            // Hermetic-mode defaults: only fill gaps — dotenv keeps real .env values.
+            LLM_API_KEY: process.env.LLM_API_KEY || "sk-e2e-dummy-key",
+            LLM_BASE_URL: process.env.LLM_BASE_URL || "http://127.0.0.1:9/v1",
+            AGENTS_CONFIG_URL: "",
             CHAT_HISTORY_STORE_DIR: storeDirs.chat,
             DOCUMENTS_STORE_DIR: storeDirs.docs,
             SESSIONS_STORE_DIR: storeDirs.sessions,

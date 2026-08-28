@@ -15,8 +15,8 @@ test.describe("React dashboard view", () => {
     await gotoDashboard(page);
     // At least the server-js row renders.
     await expect(page.getByTestId("server-row").filter({ hasText: "Platform backend" })).toBeVisible();
-    // Current model is displayed (non-empty).
-    await expect(page.getByTestId("current-model")).not.toBeEmpty();
+    // Current model is displayed in the sidebar chip (non-empty).
+    await expect(page.getByTestId("model-chip")).not.toBeEmpty();
   });
 
   test("supervisor status response contains no secrets", async ({ page }) => {

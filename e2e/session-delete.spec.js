@@ -53,7 +53,7 @@ test.describe("session right-click delete", () => {
       .poll(async () => page.locator(`[data-testid="session-row"][data-session-id="${nonCurrentId}"]`).count(),
             { timeout: 5000 })
       .toBe(0);
-    await expect(page.locator('[data-testid="session-row"]').count()).toBeLessThan(beforeCount);
+    expect(await page.locator('[data-testid="session-row"]').count()).toBeLessThan(beforeCount);
   });
 
   test("DELETE endpoint returns 404 for missing id", async ({ request }) => {
@@ -61,7 +61,7 @@ test.describe("session right-click delete", () => {
     expect(r.status()).toBe(404);
   });
 
-  test("DELETE endpoint returns 409 for the current session", async ({ page }) => {
+  test("DELETE endpoint returns 409 for the current session", async ({ page, request }) => {
     await gotoChat(page);
     // Pick the current session id from the sidebar.
     const currentId = await page
