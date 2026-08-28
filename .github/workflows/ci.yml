@@ -66,10 +66,13 @@ jobs:
       - name: Install dsh runtime CLI + platform profile
         run: |
           npm install -g @deepseek-ai/dsh@0.1.1-rc.2 pnpm@10.18.3
-          # First add initializes the profile dir and records the bundle dep,
-          # but fails on pnpm 10's native build-script gate. Allowlist the
-          # builds via the profile's package.json (pnpm.onlyBuiltDependencies),
-          # then complete the install directly.
+          # Bootstrap a fresh-machine profile (verified recipe; the dev profile
+          # was hand-built and server.js only patches an existing profile):
+          # 1. bundle add initializes the profile but fails on pnpm 10's
+          #    native build gate -> allowlist the builds, complete the install
+          # 2. the jsonrpc-server plugin (what dsh-bridge talks to) is NOT in
+          #    the dsh-base bundle -> install it + insert via cordis.patch.yml;
+          #    it imports dsh-sdk-protocol without declaring it -> add that too
           dsh plugin --profile platform add @deepseek-ai/dsh-base@0.1.1-rc.2 || true
           node -e '
             const fs = require("fs");
@@ -85,7 +88,13 @@ jobs:
             ];
             fs.writeFileSync(p, JSON.stringify(j, null, 2));
           '
-          pnpm install --dir "$HOME/.dsh/profiles/platform"
+          pnpm --dir "$HOME/.dsh/profiles/platform" install
+          pnpm --dir "$HOME/.dsh/profiles/platform" add @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5 @deepseek-ai/dsh-sdk-protocol@0.1.1-rc.2
+          printf '%s\n' \
+            '- insert:' \
+            '    - id: sdk-jsonrpc-server' \
+            "      name: '@deepseek-ai/dsh-sdk-jsonrpc-server'" \
+            > "$HOME/.dsh/profiles/platform/cordis.patch.yml"
 
       - name: E2E (fast project, offline)
         timeout-minutes: 15
