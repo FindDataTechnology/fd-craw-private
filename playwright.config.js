@@ -74,7 +74,10 @@ export default defineConfig({
         webServer: {
           command: "node server.js",
           port: E2E_PORT,
-          timeout: 60_000,
+          // server.js listens only after dsh init completes; a cold first
+          // spawn (fresh profile composition, e.g. on a CI runner) can
+          // exceed 60s.
+          timeout: 180_000,
           reuseExistingServer: false,
           stdout: "pipe",
           stderr: "pipe",
