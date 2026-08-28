@@ -95,6 +95,8 @@ export function createAppContext(config) {
     clients: new Set(),
   };
 
+  // ctx.finishTurn is attached by server/dsh-events.js (attachDshEvents).
+
   ctx.broadcast = (data) => {
     const msg = JSON.stringify(data);
     for (const ws of ctx.clients) {
@@ -102,23 +104,6 @@ export function createAppContext(config) {
         ws.send(msg);
       }
     }
-  };
-
-  // Mark the current agent turn finished: reset the streaming flag, broadcast
-  // `done` (which re-enables the UI / model selector and finalizes tool
-  // blocks), and refresh the sidebar session list. Idempotent per turn — it
-  // no-ops if the turn is already finished — so it is safe to call from both
-  // the `agent_end` event handler and the `prompt()` catch on failure.
-  ctx.finishTurn = () => {
-    if (!ctx.isStreaming) return;
-    ctx.isStreaming = false;
-    ctx.broadcast({ type: "done" });
-    chatHistory
-      .listSessions()
-      .then((sessions) =>
-        ctx.broadcast({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
-      )
-      .catch((e) => console.error("[chat-history] list after done failed:", e.message));
   };
 
   return ctx;
