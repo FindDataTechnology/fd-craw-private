@@ -38,10 +38,6 @@ function manifestSelects(projectRoot, component) {
 //   python: mac/linux -> python/bin/python3 ; win -> python/python.exe
 // LiteLLM/Postgres removed — dsh-llm manages LLM natively via settings.yaml +
 // .credentials.yaml hot-reload, no bundled child processes needed.
-const IS_WIN = process.platform === "win32";
-const PYTHON_BIN_PARTS = IS_WIN ? ["python.exe"] : ["bin", "python3"];
-const pythonBinPath = (root) => path.join(root, "python", ...PYTHON_BIN_PARTS);
-
 // Check if bundled resources exist (relative to projectRoot in dev, process.resourcesPath when packaged)
 function getResourceRoot(projectRoot) {
   // Packaged: resources/ under app.getPath("resources") which is process.resourcesPath
@@ -96,7 +92,6 @@ export function getDescriptors({
   // Resolve openconnector descriptor
   let openconnectorDescriptor;
   if (bundledOpenConnector) {
-    const ocDir = process.env.PLATFORM_OC_BUNDLED_ROOT || path.join(resourceRoot, "openconnector");
     const ocCwd = process.env.PLATFORM_OC_BUNDLED_ROOT ? process.env.PLATFORM_OC_BUNDLED_ROOT : path.join(resourceRoot, "openconnector");
     // OC has no emitted dist - it runs from src/server/index.ts via tsx
     // (Node 25's type-stripping can't load .ts from node_modules, so tsx compiles it).

@@ -78,11 +78,11 @@ export function ChatWelcome({ prompts = DEFAULT_PROMPTS, send }: Props) {
             {t("chat.welcome.suggestedPrompts")}
           </h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {prompts.map((p, i) => {
+            {prompts.map((p) => {
               const Icon = p.icon;
               return (
                 <button
-                  key={i}
+                  key={p.prompt}
                   type="button"
                   data-testid="welcome-prompt-card"
                   onClick={() => {

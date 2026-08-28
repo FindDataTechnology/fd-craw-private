@@ -180,10 +180,8 @@ export async function main() {
   // start() spawns server-js (non-optional; throws if unhealthy) and the
   // optional openconnector (non-blocking: a failure marks them
   // unhealthy without aborting). So a successful return means server.js is up.
-  let serverUp = false;
   try {
     await supervisor.start();
-    serverUp = true;
   } catch (err) {
     console.warn("[local-services] startup error:", err.message);
   }

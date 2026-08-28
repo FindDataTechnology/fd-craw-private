@@ -7,8 +7,9 @@ Browser-driven E2E tests that boot the real server and drive the vanilla-JS UI.
 ```bash
 npm install
 npx playwright install chromium   # one-time; see "Proxy" below if it fails
-npm run test:e2e         # fast suite (no LLM call)
-npm run test:e2e:smoke   # full suite incl. the real chat-turn test (one LLM call)
+npm run test:e2e         # fast suite (offline, no LLM call)
+npm run test:e2e:smoke   # only the @smoke chat-turn project (real LLM calls)
+npm run test:e2e:live    # @live tests against the deployed service (opt-in)
 ```
 
 ## What it covers
@@ -28,9 +29,12 @@ so your real `chat-history-store/` and `documents-store/` are never touched. The
 server is shared across the suite (one agent session, matching production) and
 tests run sequentially.
 
-The `@smoke` chat-turn test lives in a separate Playwright project, excluded from
-`npm run test:e2e`, so the default run is fast and offline. `npm run
-test:e2e:smoke` runs both projects.
+Tests are split across three Playwright projects: `fast` (offline,
+deterministic — what `npm run test:e2e` and CI run), `smoke` (the `@smoke`
+chat-turn specs that spend real LLM tokens — `npm run test:e2e:smoke` selects
+ONLY this project), and `live` (tests against the deployed remote service,
+reachable only via the explicit `test:e2e:live*` scripts). No script except
+the `live` ones ever contacts the remote service.
 
 ## Proxy
 

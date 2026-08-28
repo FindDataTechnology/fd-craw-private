@@ -42,6 +42,7 @@ export function SkillForm({ open, onOpenChange, skill, initialSkill, onInstalled
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `open` is a deliberate trigger — reset the form fields each time the modal (re)opens
   useEffect(() => {
     if (skill) {
       setName(skill.name);

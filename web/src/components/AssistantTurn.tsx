@@ -77,6 +77,8 @@ export function AssistantTurn({ turn }: { turn: Extract<Turn, { role: "assistant
                   ⚠️ {b.message}
                 </div>
               );
+            default:
+              return null;
           }
         })}
         {turn.streaming && turn.blocks.length === 0 && (

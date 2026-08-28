@@ -44,14 +44,7 @@ export class DshBridge {
   #ready = false;
   #shuttingDown = false;
   #restarts = 0;
-  // Spawn generation. A restart closes the old subscription and spawns a new
-  // client; the old pump's pending next() rejects asynchronously and could
-  // fire its catch AFTER the new client is live. The epoch lets an old pump
-  // recognize its rejection belongs to a closed subscription and exit without
-  // touching the new client or signaling a false crash.
-  #epoch = 0;
   #onEvent = () => {};
-  #onCrash = () => {};
   #provider;
   #model;
   #cwd;

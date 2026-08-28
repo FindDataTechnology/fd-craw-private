@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { gotoChat, gotoKnowledge } from "./helpers.js";
+import { gotoChat } from "./helpers.js";
 
 // In-app navigation preserves the WebSocket: navigating between React views
 // via the sidebar must not reload the page or drop the WS connection.

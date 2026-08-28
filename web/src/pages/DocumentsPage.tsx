@@ -46,6 +46,7 @@ export function DocumentsPage() {
     return () => { cancelled = true; };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — `load` is redefined per render; refetching only on `enabled` transitions
   useEffect(() => {
     if (enabled) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps

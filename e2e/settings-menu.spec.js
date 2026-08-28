@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { gotoChat, gotoDashboard } from "./helpers.js";
+import { gotoChat } from "./helpers.js";
 
 // SettingsMenu (gear icon in sidebar footer) — popover opens, items navigate,
 // popover closes on item selection / outside click / Escape.

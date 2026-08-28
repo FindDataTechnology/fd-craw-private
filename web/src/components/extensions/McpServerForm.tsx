@@ -65,6 +65,7 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
   const [setupEnv, setSetupEnv] = useState<Record<string, string>>({});
   const [setupArgs, setSetupArgs] = useState<Record<number, string>>({});
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `open` is a deliberate trigger — reset the form fields each time the modal (re)opens
   useEffect(() => {
     if (server) {
       setName(server.name);
@@ -84,7 +85,9 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
       // Initialize fillable fields empty per template key / placeholder index.
       const envKeys = Object.keys(tmpl.env || {});
       const initEnv: Record<string, string> = {};
-      envKeys.forEach((k) => (initEnv[k] = ""));
+      envKeys.forEach((k) => {
+        initEnv[k] = "";
+      });
       setSetupEnv(initEnv);
       const argList = tmpl.args || [];
       const initArgs: Record<number, string> = {};
@@ -258,6 +261,7 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
               {/* Placeholder args: one labeled field per fillable arg, literals read-only. */}
               {tmplArgs.map((a, i) =>
                 isPlaceholderArg(a) ? (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: args are an ordered list where duplicate values are legal; position is the identity
                   <div key={`arg-${i}`} className="space-y-2">
                     <Label htmlFor={`arg-${i}`}>{a}</Label>
                     <Input
@@ -270,6 +274,7 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
                     />
                   </div>
                 ) : (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: see the placeholder branch above — position is the arg's identity
                   <div key={`arg-${i}`} className="space-y-2">
                     <Label>{t("extensions.mcp.fields.args")}</Label>
                     <div className="text-xs font-mono px-3 py-2 rounded-md bg-muted text-muted-foreground">

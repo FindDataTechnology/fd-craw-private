@@ -14,11 +14,13 @@
     "dist": "npm run web:build && node node_modules/electron-builder/cli.js --publish never",
     "clean:bundle": "rm -rf resources/openconnector",
     "test:e2e": "playwright test --project=fast",
-    "test:e2e:smoke": "playwright test",
+    "test:e2e:smoke": "playwright test --project=smoke",
     "test:e2e:live": "PW_LIVE=1 playwright test --project=live",
     "test:e2e:live:smoke": "PW_LIVE=1 LIVE_SMOKE=1 playwright test --project=live",
     "test:unit": "node --test scripts/test-*.mjs",
     "check:locales": "node scripts/check-locales.js",
+    "lint": "biome check .",
+    "typecheck": "npm --prefix web run typecheck",
     "web:install": "npm --prefix web install",
     "web:build": "npm run check:locales && npm --prefix web run build",
     "web:dev": "npm --prefix web run dev",
@@ -41,6 +43,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.11",
     "@playwright/test": "latest",
     "electron": "^43.1.1",
     "electron-builder": "^26.15.3",

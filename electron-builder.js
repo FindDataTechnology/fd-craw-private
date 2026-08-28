@@ -117,6 +117,7 @@ const config = {
     category: "public.app-category.developer-tools",
     // Force an arch suffix on every dmg so arm64 + x64 are distinguishable
     // (without this, the x64 dmg is named "Platform-1.0.0.dmg" - ambiguous).
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder substitutes ${version}/${arch}/${ext} itself — this is not a JS template
     artifactName: "Platform-${version}-${arch}.${ext}",
     target: [
       // No `arch` here: the arch is selected per CI job via `electron-builder

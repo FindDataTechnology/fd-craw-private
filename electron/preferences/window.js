@@ -2,10 +2,9 @@
 //
 // Opens the Preferences window as a singleton (only one open at a time).
 
-import { app, BrowserWindow, ipcMain } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
 import { readSettings, writeSettings } from "../config/settings.js";
-import { getSupervisor } from "./ipc.js";
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 

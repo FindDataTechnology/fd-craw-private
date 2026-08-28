@@ -36,6 +36,7 @@ function EmbeddedFrame({ src, testId }: { src: string; testId: string }) {
   // has NOT yet fired - otherwise a fast-loading iframe would be covered by the
   // overlay at 5s (the unconditional timer used to re-block after onLoad).
   const loadedRef = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `src` is the deliberate trigger — reset the overlay/block state when the iframe target changes
   useEffect(() => {
     loadedRef.current = false;
     setBlocked(false);

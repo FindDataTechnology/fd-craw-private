@@ -17,17 +17,6 @@ async function injectThinking(page, text = "reasoning") {
   }, text);
 }
 
-// Inject a tool block on the same assistant turn: agent_start, tool_start, tool_end, done.
-async function injectTool(page, name = "bash") {
-  await page.evaluate((n) => {
-    const store = window.__chatStore.getState();
-    store.apply({ type: "agent_start" });
-    store.apply({ type: "tool_start", toolCallId: "t1", name: n, args: {} });
-    store.apply({ type: "tool_end", toolCallId: "t1", name: n, result: "ok" });
-    store.apply({ type: "done" });
-  }, name);
-}
-
 test.describe("thinking blocks", () => {
   test.beforeEach(async ({ page }) => {
     await gotoChat(page);

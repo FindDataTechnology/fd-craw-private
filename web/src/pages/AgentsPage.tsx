@@ -45,6 +45,7 @@ export function AgentsPage() {
     }
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `catalogVersion` is the deliberate trigger — refetch when the catalog change broadcast bumps it
   useEffect(() => {
     refresh();
   }, [refresh, catalogVersion]);

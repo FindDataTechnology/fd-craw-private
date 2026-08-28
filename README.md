@@ -1,5 +1,7 @@
 # Platform
 
+[![CI](https://github.com/FindDataTechnology/fd-craw-private/actions/workflows/ci.yml/badge.svg)](https://github.com/FindDataTechnology/fd-craw-private/actions/workflows/ci.yml)
+
 > **当前版本 v1.3.0** · 基于 DeepSeek Harness (dsh) 运行时构建的浏览器聊天界面，支持第一方知识 RAG（Documents）与 OpenConnector SaaS 动作代理。
 
 本文档默认使用**中文**，英文版见文末 [English](#english)。

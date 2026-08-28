@@ -279,7 +279,7 @@ export class Supervisor {
     try {
       await this._startServer(id);
       return s.state === "healthy";
-    } catch (err) {
+    } catch {
       return false;
     }
   }

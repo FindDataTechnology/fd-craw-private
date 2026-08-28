@@ -42,6 +42,7 @@ export function ChatHeader({ send }: Props) {
 
   // Sync the draft with the store's current title whenever the active session
   // changes (e.g. the user switches via the sidebar).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `currentSessionId` is a deliberate trigger — draft must reset even when switching between sessions with identical titles
   useEffect(() => {
     setDraft(session?.title || "");
     setEditing(false);

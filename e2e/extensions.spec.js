@@ -2,7 +2,7 @@
 // Tests MCP server and skill management UI with new naming (Enabled/Store tabs).
 
 import { test, expect } from "@playwright/test";
-import { E2E_PORT, baseURL, gotoExtensions } from "./helpers.js";
+import { baseURL, gotoExtensions } from "./helpers.js";
 
 // Unique name generator to avoid collisions between tests
 function uniqueName(prefix) {
@@ -242,8 +242,6 @@ test.describe("Extensions Page - MCP Interaction Flow", () => {
 
     // Get the first MCP card's name
     const firstCard = page.getByTestId("mcp-market-card").first();
-    const marketName = await firstCard.getAttribute("data-market-name");
-
     // Click Install
     await firstCard.getByRole("button", { name: /install/i }).click();
 

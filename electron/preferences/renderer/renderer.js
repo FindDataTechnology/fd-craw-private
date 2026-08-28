@@ -3,8 +3,12 @@
 // Tabs
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => {
+  t.classList.remove('active');
+});
+    document.querySelectorAll('.tab-panel').forEach(p => {
+  p.classList.remove('active');
+});
     tab.classList.add('active');
     document.querySelector(`.tab-panel[data-panel="${tab.dataset.tab}"]`).classList.add('active');
   });

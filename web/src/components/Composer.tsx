@@ -69,6 +69,7 @@ export function Composer({ send }: Props) {
   }));
 
   // Autogrow.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `value` is the deliberate trigger — resize the textarea on every keystroke
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -187,6 +188,7 @@ export function Composer({ send }: Props) {
   }, [value, pickerDismissed]);
   // Reset the dismissed flag whenever the user edits the text (typing or
   // pasting), so the next `/` token re-opens the picker.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — resetting on `pickerDismissed` would immediately undo the Esc-dismiss; `value` is the reset trigger
   useEffect(() => {
     if (pickerDismissed) setPickerDismissed(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,7 +196,7 @@ export function Composer({ send }: Props) {
   const mergedItems = useMemo(() => {
     const m = value.match(/(^|\s)(\/[^/\s]*)$/);
     if (!m) return [];
-    const query = m[2].slice(1).toLowerCase();
+    const query = (m[2] ?? "").slice(1).toLowerCase();
     const cmds = commands
       .filter((c) => c.label.toLowerCase().includes(query))
       .slice(0, 8);

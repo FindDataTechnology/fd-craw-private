@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: lint → typecheck → unit → locales → build → e2e (fast)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 25
+          cache: npm
+
+      # npm 11 (bundled with Node 25) is required by the lockfile format;
+      # see release.yml and Dockerfile for the same pin.
+      - name: Install dependencies (skip resource bundling)
+        env:
+          PLATFORM_SKIP_WEB_BUILD: "1"
+          PLATFORM_SKIP_BUNDLE: "1"
+        run: npm ci
+
+      - name: Lint (Biome)
+        run: npm run lint
+
+      - name: Typecheck (web)
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Locale parity
+        run: npm run check:locales
+
+      # e2e serves web/dist via express.static, so build the web app first.
+      - name: Build web
+        run: |
+          npm run web:install
+          npm run web:build
+
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E (fast project, offline)
+        timeout-minutes: 15
+        run: npm run test:e2e

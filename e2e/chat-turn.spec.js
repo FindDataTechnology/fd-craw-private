@@ -29,7 +29,9 @@ test("@smoke chat turn saves history without duplicating text", async ({ page, r
     const clone = el.cloneNode(true);
     clone
       .querySelectorAll('[data-testid="thinking-block"]')
-      .forEach((n) => n.remove());
+      .forEach((n) => {
+        n.remove();
+      });
     return (clone.textContent || "").trim();
   });
 

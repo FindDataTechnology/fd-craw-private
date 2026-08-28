@@ -23,6 +23,7 @@ export function Chat() {
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `turns` is the deliberate trigger — scroll to bottom when a turn is added
   useEffect(() => {
     if (!stickToBottomRef.current) return;
     const el = containerRef.current;

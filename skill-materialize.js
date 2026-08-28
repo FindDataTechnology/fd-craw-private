@@ -9,7 +9,7 @@
 // Atomic writes (temp+rename) match documents.js / writeMcpPatch. The dir is a
 // runtime artifact under PLATFORM_DATA_DIR (gitignored), rebuilt idempotently
 // from the DB on startup.
-import { mkdirSync, writeFileSync, renameSync, readdirSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, writeFileSync, renameSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { storeDir } from "./paths.js";
 

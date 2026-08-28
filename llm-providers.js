@@ -16,8 +16,8 @@
 // (collisions get a numeric suffix). The Volces route id ("volces") is reserved
 // and cannot be added/edited/deleted through this module.
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { storeDir } from "./paths.js";
 
 const STORE_PATH = storeDir("llm-providers.json", process.env.LLM_PROVIDERS_STORE);

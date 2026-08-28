@@ -9,7 +9,7 @@ import { gotoChat } from "./helpers.js";
 //     409 case is what disables the menu entry)
 
 test.describe("session right-click delete", () => {
-  test("creates a new session then deletes a non-active one", async ({ page, request }) => {
+  test("creates a new session then deletes a non-active one", async ({ page }) => {
     await gotoChat(page);
 
     // Start with a fresh session ("+ New" makes it current).
@@ -61,7 +61,7 @@ test.describe("session right-click delete", () => {
     expect(r.status()).toBe(404);
   });
 
-  test("DELETE endpoint returns 409 for the current session", async ({ page, request }) => {
+  test("DELETE endpoint returns 409 for the current session", async ({ page }) => {
     await gotoChat(page);
     // Pick the current session id from the sidebar.
     const currentId = await page

@@ -95,14 +95,6 @@ function titleFromFirstUser(messages) {
   return truncateTitle(extractMessageText(first)) || "New chat";
 }
 
-function toIso(d) {
-  if (!d) return null;
-  if (typeof d === "string") return d;
-  if (d instanceof Date) return d.toISOString();
-  if (typeof d.toISOString === "function") return d.toISOString();
-  return String(d);
-}
-
 // ── Mirroring ────────────────────────────────────────────────────────────────
 
 // Mirror a single turn (user prompt or assistant response) for the current
@@ -196,6 +188,7 @@ export function sanitizeTitle(raw) {
   }
   // Reject control characters (newlines, tabs, NULs). These are not user-visible
   // in any chat UI and would break the sidebar layout.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional - this regex exists to reject control characters in titles
   if (/[\x00-\x1f\x7f]/.test(t)) {
     return { error: new TitleError("control_chars", "Title must not contain control characters") };
   }

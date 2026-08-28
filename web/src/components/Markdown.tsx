@@ -122,6 +122,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
 });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: react-markdown v9 passes an opaque, untyped props bag to custom code renderers
 function CodeRenderer(props: any) {
   const { className, children, inline } = props;
   const raw = String(children ?? "").replace(/\n$/, "");
@@ -193,6 +194,7 @@ function HighlightedCode({ code, lang }: { code: string; lang: string }) {
       {html ? (
         <div
           className="overflow-x-auto px-3 py-2 text-xs [&_pre]:!bg-transparent [&_pre]:!p-0"
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: `html` is shiki output — shiki escapes the source text, so this is rendered-highlight HTML, not user HTML
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (

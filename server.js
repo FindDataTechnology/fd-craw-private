@@ -118,11 +118,6 @@ let isStreaming = false;
 // Active catalog agent: "local" = the local dsh session; any other id = a
 // catalog agent-remote (chat mode) entry that prompts are forked to.
 let currentAgentId = "local";
-// True once any text_delta has been streamed during the current agent turn.
-// Used by the agent_end handler to avoid re-broadcasting the full assistant
-// text (which would duplicate what streaming already delivered), while still
-// emitting it once as a fallback for non-streaming model responses.
-let streamedTextThisTurn = false;
 // The model the agent session starts on (set during async init; read by the
 // /api/supervisor/status route).
 let defaultModel = null;
@@ -153,25 +148,6 @@ function broadcast(data) {
       ws.send(msg);
     }
   }
-}
-
-// Dashboard update throttling (max once every 2 seconds)
-let dashboardUpdateTimer = null;
-let pendingDashboardUpdate = false;
-
-function throttleDashboardUpdate() {
-  if (dashboardUpdateTimer) {
-    pendingDashboardUpdate = true;
-    return;
-  }
-  broadcast({ type: "dashboard_update", state: cron.getDashboardState() });
-  dashboardUpdateTimer = setTimeout(() => {
-    dashboardUpdateTimer = null;
-    if (pendingDashboardUpdate) {
-      pendingDashboardUpdate = false;
-      throttleDashboardUpdate();
-    }
-  }, 2000);
 }
 
 // Mark the current agent turn finished: reset the streaming flag, broadcast
@@ -420,13 +396,10 @@ async function initDshAgent() {
   // Single-flight mutex + debounce serialize overlapping mutations; restart() is
   // the documented fallback (PLATFORM_MCP_HOTSWAP=0, or hot-swap never settles).
   let mcpChain = Promise.resolve();
-  let mcpPending = false;
   const hotswapEnabled = process.env.PLATFORM_MCP_HOTSWAP !== "0";
   const HOTSWAP_SETTLE_MS = Number(process.env.PLATFORM_MCP_HOTSWAP_SETTLE_MS || 800);
   dshUpdateMcp = () => {
-    mcpPending = true;
     const run = mcpChain.then(async () => {
-      mcpPending = false;
       const patchPath = await writeMcpPatch();
       if (hotswapEnabled && patchPath) {
         // The patch file was rewritten atomically (temp+rename inside
@@ -511,7 +484,6 @@ function handleDshEvent(notif) {
       // prompt dispatch (see the WS prompt handler) so a concurrent prompt
       // observes it; re-affirm here idempotently.
       isStreaming = true;
-      streamedTextThisTurn = false;
       dshTurnError = null;
       dshToolNames.clear();
       broadcast({ type: "agent_start" });
@@ -520,7 +492,6 @@ function handleDshEvent(notif) {
       const chunk = ev.data?.chunk;
       if (!chunk) break;
       if (chunk.type === "text-delta" && chunk.text) {
-        streamedTextThisTurn = true;
         broadcast({ type: "text", delta: chunk.text });
       } else if (chunk.type === "reasoning-delta" && chunk.text) {
         broadcast({ type: "thinking", delta: chunk.text });
@@ -1138,7 +1109,7 @@ app.post("/api/documents", upload.single("file"), async (req, res) => {
   }
 });
 
-app.get("/api/documents", (req, res) => {
+app.get("/api/documents", (_req, res) => {
   res.json({ documents: documents.listDocuments() });
 });
 
@@ -1527,7 +1498,6 @@ app.put("/api/llm/default", async (req, res) => {
 // Electron app the Electron main process can override this via IPC (future); for
 // now it returns the same self-status which is sufficient for the dashboard.
 app.get("/api/supervisor/status", (_req, res) => {
-  const docByStatus = {};
   res.json({
     servers: [
       {
