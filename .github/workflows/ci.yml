@@ -65,7 +65,7 @@ jobs:
       # dep dsh-user-interaction is not published (404).
       - name: Install dsh runtime CLI + platform profile
         run: |
-          npm install -g @deepseek-ai/dsh@0.1.1-rc.2 pnpm
+          npm install -g @deepseek-ai/dsh@0.1.1-rc.2 pnpm@10.18.3
           # First add initializes the profile dir and records the bundle dep,
           # but fails on pnpm 10's native build-script gate. Allowlist the
           # builds via the profile's package.json (pnpm.onlyBuiltDependencies),
