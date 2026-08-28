@@ -4,7 +4,6 @@ import { WebSocketServer } from "ws";
 import http from "http";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
-import { readFileSync, readdirSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import multer from "multer";
 import * as chatHistory from "./chat-history.js";
@@ -20,6 +19,8 @@ import * as workdirStore from "./workdir-store.js";
 import * as catalog from "./catalog.js";
 import { resolveBundleSafe } from "./bundle-manifest.js";
 import { createAppContext } from "./server/context.js";
+import { userFromHeaders, registerAuth } from "./server/auth.js";
+import * as skills from "./server/skills.js";
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "localhost";
@@ -29,16 +30,6 @@ const HOST = process.env.HOST || "localhost";
 // (Caddy forward_auth → oauth2-proxy → Logto). TRUST BOUNDARY: enabling this
 // asserts the server is reachable ONLY through the forward-auth proxy — bind
 // to localhost / firewall it, otherwise these headers are attacker-controlled.
-
-function userFromHeaders(headers) {
-  const email = headers["x-forwarded-email"];
-  if (!email) return null;
-  const groups = String(headers["x-forwarded-groups"] || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return { email: String(email), groups };
-}
 
 // ── Custom provider config (Volces / 火山引擎) ────────────────────────────────
 
@@ -96,107 +87,12 @@ ctx.upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
+// Forward-auth HTTP gate + ctx.requireAdmin (WS upgrade gate below).
+registerAuth(ctx);
+
 // Document collection: JSON bodies for text/url submissions; multipart file
 // uploads are kept in memory (LlamaIndex readers read the buffer directly).
 app.use(express.json());
-
-// Forward-auth gate: when enabled, every HTTP request needs a proxy-injected
-// identity; attaches req.user = { email, groups } for downstream handlers.
-app.use((req, res, next) => {
-  if (!ctx.authEnabled) return next();
-  const user = userFromHeaders(req.headers);
-  if (!user) return res.status(401).json({ error: "Authentication required" });
-  req.user = user;
-  next();
-});
-
-// ── Skill helpers ────────────────────────────────────────────────────────────
-
-// Parse a leading slash-command from a prompt. Returns one of:
-//   { command: "skill", name, args }   - /skill:<name> [args]
-//   { command: "model", args }          - /model [id]
-//   { command: "new" | "clear" | "help", args: "" }
-//   { command: null }                   - a "/…" token that is NOT a recognised
-//                                         command (caller lets it fall through to
-//                                         the agent as a normal prompt)
-//   null                                - not a slash-command at all
-// `/clear` and `/help` are client-handled (the UI should not forward them); if
-// they reach the server they are treated as no-ops.
-function parseCommand(text) {
-  const t = text.trim();
-  if (!t.startsWith("/")) return null;
-  const skillMatch = t.match(/^\/skill:([^\s]+)(?:[\s]+([\s\S]*))?$/);
-  if (skillMatch) {
-    return { command: "skill", name: skillMatch[1], args: (skillMatch[2] || "").trim() };
-  }
-  const modelMatch = t.match(/^\/model(?:[\s]+([\s\S]*))?$/i);
-  if (modelMatch) {
-    return { command: "model", args: (modelMatch[1] || "").trim() };
-  }
-  const simpleMatch = t.match(/^\/(new|clear|help)\b/i);
-  if (simpleMatch) {
-    return { command: simpleMatch[1].toLowerCase(), args: "" };
-  }
-  return { command: null };
-}
-
-// Read a SKILL.md file, strip YAML frontmatter, and combine with the user's args.
-async function expandSkillContent(skill, args) {
-  const raw = await readFile(skill.filePath, "utf8");
-  const body = raw.replace(/^---[\s\S]*?---\s*/, "").trim();
-  const argSection = args ? `\n\n## Arguments\n${args}` : "";
-  return `${body}${argSection}`;
-}
-
-// Expand @doc:<id> reference tokens into the ingested document's source text so
-// the agent sees the attachment content in context (design D4). Mirrors how
-// /skill: tokens are expanded before session.prompt(). Unknown/missing ids are
-// replaced with a short note so the prompt stays coherent. No new dependency —
-// reuses documents.getDocumentContent (the same path /api/documents/:id serves).
-async function expandDocRefs(text) {
-  if (!text.includes("@doc:")) return text;
-  const refs = [...text.matchAll(/@doc:([A-Za-z0-9_-]+)/g)];
-  if (!refs.length) return text;
-  let out = text;
-  for (const m of refs) {
-    const id = m[1];
-    let body;
-    try { body = await documents.getDocumentContent(id); }
-    catch (e) { console.warn(`[doc] @doc:${id} lookup failed: ${e.message}`); }
-    const snippet = body && body.trim()
-      ? body.trim().slice(0, 12000)
-      : `(document ${id} is unavailable or empty)`;
-    out = out.replaceAll(m[0], `\n\n--- attached document ${id} ---\n${snippet}\n--- end document ${id} ---\n`);
-  }
-  return out;
-}
-
-// Scan the project skills/ dir (dir bundles `<name>/SKILL.md` + flat `<name>.md`)
-// for [{name, description, filePath}]. list_skills + /skill: expansion source
-// the same dir the skill-filesystem plugin's customSkillDirs points at (Task 5.3).
-// ponytail: regex frontmatter parse + no caching (4 files, called rarely); a
-// multi-line/quoted description or a hot list_skills path needs a real parser + cache.
-function getFileSkills(dir = path.resolve("skills")) {
-  let entries;
-  try { entries = readdirSync(dir); } catch { return []; }
-  const skills = [];
-  for (const entry of entries) {
-    const full = path.join(dir, entry);
-    let st;
-    try { st = statSync(full); } catch { continue; }
-    const filePath = st.isDirectory() ? path.join(full, "SKILL.md") : (entry.endsWith(".md") ? full : null);
-    if (!filePath) continue;
-    let raw;
-    try { raw = readFileSync(filePath, "utf8"); } catch { continue; }
-    const block = raw.match(/^---[\s\S]*?---/)?.[0];
-    if (!block) continue;
-    const name = block.match(/^name:\s*(.+)$/m)?.[1]?.trim();
-    const desc = block.match(/^description:\s*(.+)$/m)?.[1]?.trim();
-    if (!name) continue;
-    skills.push({ name, description: desc || "", filePath });
-  }
-  return skills;
-}
 
 // ── Agent session ────────────────────────────────────────────────────────────
 
@@ -754,7 +650,7 @@ wss.on("connection", (ws, req) => {
         if (!text) return;
 
         // Parse a leading slash-command (/skill, /model, /new, …) if present.
-        const cmd = parseCommand(text);
+        const cmd = skills.parseCommand(text);
 
         if (cmd && cmd.command === "skill") {
           // Skill invocation: emit a skill_use block and suppress the raw
@@ -767,18 +663,18 @@ wss.on("connection", (ws, req) => {
           // does not rely on session.prompt() expanding slash commands.
           // Scan the skills/ dir (same dir the skill-filesystem plugin's
           // customSkillDirs points at, Task 5.3).
-          const skills = getFileSkills();
-          const skill = skills.find((s) => s.name === cmd.name);
+          const fileSkills = skills.getFileSkills();
+          const skill = fileSkills.find((s) => s.name === cmd.name);
           let promptText = text;
           if (skill) {
             try {
-              promptText = await expandSkillContent(skill, cmd.args);
+              promptText = await skills.expandSkillContent(skill, cmd.args);
             } catch (err) {
               console.warn(`[skill] Failed to expand "${cmd.name}": ${err.message}`);
             }
           }
           // Expand @doc:<id> attachment references (design D4).
-          promptText = await expandDocRefs(promptText);
+          promptText = await skills.expandDocRefs(ctx, promptText);
 
           // No steer mechanism through the bridge; reject concurrent prompts
           // host-side (Task 2.7) rather than queueing a second turn.
@@ -827,7 +723,7 @@ wss.on("connection", (ws, req) => {
               break;
             }
             // Expand @doc:<id> attachment references for the remote agent too.
-            await streamRemoteChat(entry, await expandDocRefs(text));
+            await streamRemoteChat(entry, await skills.expandDocRefs(ctx, text));
             break;
           }
 
@@ -846,7 +742,7 @@ wss.on("connection", (ws, req) => {
           ctx.isStreaming = true;
           // Expand @doc:<id> attachment references into the document content the
           // agent sees (design D4); the user message above keeps the raw refs.
-          const promptWithDocs = await expandDocRefs(text);
+          const promptWithDocs = await skills.expandDocRefs(ctx, text);
           try {
             await ctx.session.prompt(promptWithDocs);
           } catch (err) {
@@ -883,7 +779,7 @@ wss.on("connection", (ws, req) => {
 
       case "list_skills": {
         const COMPUTER_USE_ENABLED = process.env.ENABLE_COMPUTER_USE === "true";
-        const skills = getFileSkills()
+        const fileSkills = skills.getFileSkills()
           .filter((s) => {
             if (!COMPUTER_USE_ENABLED && s.name.startsWith("computer-")) {
               return false;
@@ -894,7 +790,7 @@ wss.on("connection", (ws, req) => {
             name: s.name,
             description: s.description,
           }));
-        ws.send(JSON.stringify({ type: "skills", skills }));
+        ws.send(JSON.stringify({ type: "skills", skills: fileSkills }));
         break;
       }
 
@@ -1299,14 +1195,6 @@ async function withLlmWriteLock(fn) {
   }
 }
 
-function requireAdmin(req, res) {
-  if (ctx.authEnabled && !req.user?.groups?.includes("admin")) {
-    res.status(403).json({ error: "Admin group required" });
-    return false;
-  }
-  return true;
-}
-
 // ── LLM provider management (Models page) ────────────────────────────────────
 
 app.get("/api/llm/providers", async (_req, res) => {
@@ -1332,7 +1220,7 @@ app.get("/api/llm/providers", async (_req, res) => {
 });
 
 app.post("/api/llm/providers", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!ctx.requireAdmin(req, res)) return;
   try {
     const llmProviders = await import("./llm-providers.js");
     const record = await withLlmWriteLock(async () => {
@@ -1351,7 +1239,7 @@ app.post("/api/llm/providers", async (req, res) => {
 });
 
 app.put("/api/llm/providers/:id", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!ctx.requireAdmin(req, res)) return;
   try {
     const llmProviders = await import("./llm-providers.js");
     const record = await withLlmWriteLock(async () => {
@@ -1371,7 +1259,7 @@ app.put("/api/llm/providers/:id", async (req, res) => {
 });
 
 app.delete("/api/llm/providers/:id", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!ctx.requireAdmin(req, res)) return;
   try {
     const llmProviders = await import("./llm-providers.js");
     await withLlmWriteLock(async () => {
@@ -1390,7 +1278,7 @@ app.delete("/api/llm/providers/:id", async (req, res) => {
 });
 
 app.post("/api/llm/providers/:id/test", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!ctx.requireAdmin(req, res)) return;
   try {
     const llmProviders = await import("./llm-providers.js");
     const result = await llmProviders.testProvider(req.params.id);
@@ -1418,7 +1306,7 @@ app.get("/api/llm/default", async (_req, res) => {
 });
 
 app.put("/api/llm/default", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!ctx.requireAdmin(req, res)) return;
   try {
     const llmProviders = await import("./llm-providers.js");
     const { modelId, providerId } = req.body || {};
@@ -1600,7 +1488,7 @@ app.patch("/api/extensions/mcp/:name/enable", async (req, res) => {
 // bundle manifest: names in manifest `skills` are "bundled" and take
 // locked/permissions from the manifest's permissions map ("skill:<name>").
 app.get("/api/extensions/skills", async (_req, res) => {
-  const fileSkills = getFileSkills().map((s) => {
+  const fileSkills = skills.getFileSkills().map((s) => {
     const bundled = ctx.bundle.skills.includes(s.name);
     const policy = bundled ? ctx.splitPolicy(ctx.bundle.permissions[`skill:${s.name}`]) : { locked: false, permissions: null };
     return {

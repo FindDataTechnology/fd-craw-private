@@ -42,6 +42,10 @@ export function createAppContext(config) {
   const ctx = {
     // ── Config (parsed in server.js, the composition root) ──────────────────
     ...config,
+    // Derived: forward-auth gate enabled (see server/auth.js).
+    authEnabled: config.AUTH_MODE === "forward_auth",
+    // Bundle-manifest permissions splitter (extensions routes + MCP seeding).
+    splitPolicy,
 
     // ── Service singletons ──────────────────────────────────────────────────
     chatHistory,
