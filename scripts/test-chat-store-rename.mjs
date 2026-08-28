@@ -7,18 +7,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-// Polyfill Vite's `import.meta.env.DEV` for node:test.
-globalThis.import = globalThis.import || {};
-// We can't easily polyfill import.meta in plain node — instead, exercise the
-// store factory directly (the same code the React app uses).
-const { create } = await import("/Users/chengsishi/paas/web/node_modules/zustand/esm/vanilla.mjs");
-const { useChatStore } = await import("/Users/chengsishi/paas/web/src/hooks/useChatStore.ts")
-  .catch(() => {
-    // Fallback: dynamically import the TS source via the project's tsx loader
-    // if available; otherwise skip with a clear message.
-    return null;
-  });
-
 // We can't load TS in plain node. The reducer is pure; we can replicate its
 // essential behavior by importing the store factory from the source via a
 // require shim — but the simplest path is to mirror the cases here for
