@@ -82,7 +82,7 @@
     "disconnected": "Desconectado"
   },
   "composer": {
-    "placeholder": "Pregúntale a Find Data Technology lo que sea… (escribe / para comandos, Enter para enviar, Shift+Enter para salto de línea)",
+    "placeholder": "Pregúntale al Asistente de Platform lo que sea… (escribe / para comandos, Enter para enviar, Shift+Enter para salto de línea)",
     "placeholderDisabled": "Conectando…",
     "send": "Enviar",
     "helpHeader": "Comandos disponibles:",
@@ -102,7 +102,8 @@
       "new": "iniciar una nueva sesión de chat",
       "clear": "borrar la vista del chat",
       "help": "listar los comandos disponibles"
-    }
+    },
+    "stop": "Detener"
   },
   "chat": {
     "empty": "Envía un mensaje para empezar a chatear.",
@@ -119,10 +120,11 @@
       "titlePlaceholder": "Título de la sesión",
       "rename": "Guardar nuevo título"
     },
-    "titleTooLong": "El título debe tener 200 caracteres o menos"
+    "titleTooLong": "El título debe tener 200 caracteres o menos",
+    "connectionLost": "Conexión perdida — reconectando…"
   },
   "turn": {
-    "assistantName": "Find Data Technology",
+    "assistantName": "Asistente de Platform",
     "thinkingStreaming": "Pensando…",
     "thinking": "💭 Pensando",
     "statusRunning": "ejecutando…",

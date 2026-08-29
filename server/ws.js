@@ -210,7 +210,11 @@ ctx.wss.on("connection", (ws, req) => {
           ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
           break;
         }
-        await ctx.switchModelTo(data.id, ws);
+        // No run is open for a select-control switch, so a failure reaches the
+        // client as an orphan error — it renders as a toast, which is the
+        // right weight for a transient control action.
+        const r = await ctx.switchModelTo(data.id);
+        if (!r.ok && r.error) ws.send(JSON.stringify({ type: "error", message: r.error }));
         break;
       }
 

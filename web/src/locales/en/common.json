@@ -82,7 +82,7 @@
     "disconnected": "Disconnected"
   },
   "composer": {
-    "placeholder": "Ask Find Data Technology anything… (type / for commands, Enter to send, Shift+Enter for newline)",
+    "placeholder": "Ask Platform Assistant anything… (type / for commands, Enter to send, Shift+Enter for newline)",
     "placeholderDisabled": "Connecting…",
     "send": "Send",
     "helpHeader": "Available commands:",
@@ -102,7 +102,8 @@
       "new": "start a new chat session",
       "clear": "clear the chat view",
       "help": "list available commands"
-    }
+    },
+    "stop": "Stop"
   },
   "chat": {
     "empty": "Send a message to start chatting.",
@@ -119,10 +120,11 @@
       "titlePlaceholder": "Session title",
       "rename": "Save new title"
     },
-    "titleTooLong": "Title must be 200 characters or fewer"
+    "titleTooLong": "Title must be 200 characters or fewer",
+    "connectionLost": "Connection lost — reconnecting…"
   },
   "turn": {
-    "assistantName": "Find Data Technology",
+    "assistantName": "Platform Assistant",
     "thinkingStreaming": "Thinking…",
     "thinking": "💭 Thinking",
     "statusRunning": "running…",

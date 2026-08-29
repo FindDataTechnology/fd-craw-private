@@ -10,6 +10,7 @@
 // visual problem the vanilla app has.
 
 import { create } from "zustand";
+import { showToast } from "@/components/Toast";
 import type {
   AgentInfo,
   ChatMessage,
@@ -55,6 +56,11 @@ interface State {
   currentSessionId: string | null;
   turns: Turn[];
   isStreaming: boolean;
+  // True while the remainder of a dismissed run (user stop, or a socket drop
+  // mid-stream) must be ignored. dsh has no interrupt RPC, so "stop" is a
+  // view-level finalize; without this flag the orphaned run's late events
+  // would open a fresh streaming turn and re-disable the composer.
+  suppressed: boolean;
   // Setters used by the WS hook.
   setStatus: (s: ConnStatus) => void;
   apply: (m: ServerMessage) => void;
@@ -64,16 +70,28 @@ interface State {
   renameSession: (id: string, title: string) => void;
   toggleAllThinking: () => void;
   toggleBlock: (turnId: string, index: number) => void;
+  // Release an in-flight run locally: finalize the open turn, give the
+  // composer back, and swallow the run's remaining events until its `done`.
+  stopStreaming: () => void;
 }
 
 let uid = 0;
 const nextId = () => `t${++uid}`;
 
 // Grab-or-create the currently open assistant turn. If the tail of `turns`
-// isn't a streaming assistant, push a new one.
+// isn't a streaming assistant, push a new one. When it IS, return a shallow
+// CLONE substituted into the array: every block mutation below then writes to
+// a fresh object, so the memoized <AssistantTurn> re-renders the tail (new
+// prop reference) while every earlier turn keeps its reference and bails —
+// O(1) per streamed delta. Mutating the tail in place would leave the memo
+// comparing identical references and the streaming turn would never update.
 function currentAssistant(turns: Turn[]): Turn & { role: "assistant" } {
   const tail = turns[turns.length - 1];
-  if (tail && tail.role === "assistant" && tail.streaming) return tail;
+  if (tail && tail.role === "assistant" && tail.streaming) {
+    const clone = { ...tail, blocks: tail.blocks.slice() };
+    turns[turns.length - 1] = clone;
+    return clone;
+  }
   const fresh: Turn = { id: nextId(), role: "assistant", blocks: [], streaming: true };
   turns.push(fresh);
   return fresh;
@@ -147,6 +165,26 @@ function discardDeltas() {
   }
 }
 
+// Stream events that belong to one run. While `suppressed`, these are
+// dropped; everything else (models, sessions, …) still applies.
+const RUN_EVENT_TYPES = new Set([
+  "agent_start",
+  "text",
+  "thinking",
+  "tool_start",
+  "tool_update",
+  "tool_end",
+  "skill_use",
+  "command_use",
+  "error",
+]);
+
+// Close every open assistant turn. Returns a NEW array (no in-place mutation —
+// callers run inside set()).
+function finalizeOpenTurns(turns: Turn[]): Turn[] {
+  return turns.map((t) => (t.role === "assistant" && t.streaming ? { ...t, streaming: false } : t));
+}
+
 export const useChatStore = create<State>((set) => ({
   status: "connecting",
   models: [],
@@ -159,10 +197,30 @@ export const useChatStore = create<State>((set) => ({
   currentSessionId: null,
   turns: [],
   isStreaming: false,
+  suppressed: false,
 
-  setStatus: (s) => set({ status: s }),
+  setStatus: (s) =>
+    set((state) => {
+      if (s !== "disconnected") return { status: s };
+      // A dropped socket used to strand `isStreaming` forever (only
+      // done/session_loaded/clearView reset it) — the composer bricked until
+      // the view was wiped. Finalize the open turn and suppress the orphaned
+      // run's remaining events instead; the connection banner explains the
+      // truncation while the WS hook reconnects.
+      discardDeltas();
+      return {
+        status: s,
+        turns: finalizeOpenTurns(state.turns),
+        isStreaming: false,
+        suppressed: true,
+      };
+    }),
 
   apply: (m) => {
+    // A dismissed run's stream events are swallowed until the run's own
+    // `done` (or the next prompt's `user` echo) clears the flag. Checked
+    // before queueDelta so buffered text can't leak past the suppression.
+    if (useChatStore.getState().suppressed && RUN_EVENT_TYPES.has(m.type)) return;
     // Streamed deltas are buffered (see DELTA_FLUSH_MS above) — no commit
     // per token.
     if (m.type === "text" || m.type === "thinking") {
@@ -179,7 +237,8 @@ export const useChatStore = create<State>((set) => ({
       switch (m.type) {
         case "user":
           turns.push({ id: nextId(), role: "user", text: m.text });
-          return { turns };
+          // A new prompt's echo ends any suppression from a prior stop.
+          return { turns, suppressed: false };
 
         case "agent_start":
           // Fresh assistant turn only when there isn't already an open one.
@@ -243,13 +302,30 @@ export const useChatStore = create<State>((set) => ({
 
         case "done": {
           const tail = turns[turns.length - 1];
-          if (tail && tail.role === "assistant") tail.streaming = false;
-          return { turns, isStreaming: false };
+          // Clone (not mutate): the finalized turn needs a new reference so
+          // the memoized <AssistantTurn> re-renders its closed state.
+          if (tail && tail.role === "assistant" && tail.streaming) {
+            turns[turns.length - 1] = { ...tail, streaming: false };
+          }
+          // The dismissed run (if any) has ended; stop swallowing events.
+          return { turns, isStreaming: false, suppressed: false };
         }
 
         case "error": {
-          const a = currentAssistant(turns);
-          a.blocks.push({ kind: "error", message: m.message });
+          // An error with no run in flight (e.g. "Agent is still
+          // initializing" broadcast during cold boot, or a rejected
+          // concurrent prompt) must not fabricate an empty assistant turn —
+          // surface it as a toast instead. Errors during a live run still
+          // attach to that turn (as a clone, so the turn re-renders).
+          const tail = turns[turns.length - 1];
+          if (!tail || tail.role !== "assistant" || !tail.streaming) {
+            showToast(m.message);
+            return {};
+          }
+          turns[turns.length - 1] = {
+            ...tail,
+            blocks: [...tail.blocks, { kind: "error", message: m.message }],
+          };
           return { turns };
         }
 
@@ -301,6 +377,7 @@ export const useChatStore = create<State>((set) => ({
                   },
             ),
             isStreaming: false,
+            suppressed: false,
           };
 
         // Non-chat channels. Ignored for now — the owning views/stores
@@ -351,7 +428,21 @@ export const useChatStore = create<State>((set) => ({
 
   clearView: () => {
     discardDeltas();
-    set({ turns: [], isStreaming: false });
+    set({ turns: [], isStreaming: false, suppressed: false });
+  },
+
+  stopStreaming: () => {
+    // dsh's wire protocol has no interrupt RPC (initialize / session/prompt /
+    // shutdown only), so stop is local: close the turn where it stands, hand
+    // the composer back, and swallow the run's remaining events until `done`.
+    set((state) => {
+      discardDeltas();
+      return {
+        turns: finalizeOpenTurns(state.turns),
+        isStreaming: false,
+        suppressed: true,
+      };
+    });
   },
 
   toggleAllThinking: () =>

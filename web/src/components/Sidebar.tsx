@@ -82,7 +82,7 @@ export function Sidebar({ send }: Props) {
               cn(
                 "rounded-md px-3 py-2 text-left text-sm text-muted-foreground",
                 "hover:bg-muted hover:text-foreground",
-                isActive && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
+                isActive && "bg-primary-deep text-primary-foreground hover:bg-primary-deep hover:text-primary-foreground",
               )
             }
           >
@@ -238,7 +238,7 @@ function StatusRow({ status }: { status: "connecting" | "connected" | "disconnec
     status === "connected" ? "status.connected" : status === "connecting" ? "status.connecting" : "status.disconnected";
   const dot =
     status === "connected"
-      ? "bg-[color:var(--color-success)]"
+      ? "bg-success"
       : status === "disconnected"
         ? "bg-destructive"
         : "bg-warning";

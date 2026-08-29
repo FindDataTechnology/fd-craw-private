@@ -82,7 +82,7 @@
     "disconnected": "已断开"
   },
   "composer": {
-    "placeholder": "向 Find Data Technology 提问…（输入 / 查看命令，回车发送，Shift+回车换行）",
+    "placeholder": "向 Platform 助手提问…（输入 / 查看命令，回车发送，Shift+回车换行）",
     "placeholderDisabled": "连接中…",
     "send": "发送",
     "helpHeader": "可用命令：",
@@ -102,7 +102,8 @@
       "new": "开始新对话",
       "clear": "清空对话视图",
       "help": "列出可用命令"
-    }
+    },
+    "stop": "停止"
   },
   "chat": {
     "empty": "发送消息开始对话。",
@@ -119,10 +120,11 @@
       "titlePlaceholder": "对话标题",
       "rename": "保存新标题"
     },
-    "titleTooLong": "标题不能超过 200 个字符"
+    "titleTooLong": "标题不能超过 200 个字符",
+    "connectionLost": "连接已断开，正在自动重连…"
   },
   "turn": {
-    "assistantName": "Find Data Technology",
+    "assistantName": "Platform 助手",
     "thinkingStreaming": "思考中…",
     "thinking": "💭 思考",
     "statusRunning": "运行中…",

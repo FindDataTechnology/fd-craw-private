@@ -27,7 +27,7 @@ function ToolBlockBase({ block, onToggle }: Props) {
       ? "border-l-primary"
       : state === "error"
         ? "border-l-destructive"
-        : "border-l-[color:var(--color-success)]";
+        : "border-l-success";
   const statusKey =
     state === "running" ? "turn.statusRunning" : state === "error" ? "turn.statusError" : "turn.statusDone";
 
@@ -44,13 +44,13 @@ function ToolBlockBase({ block, onToggle }: Props) {
       >
         <ChevronRight className={cn("h-3 w-3 transition-transform", open && "rotate-90")} />
         <span className="font-mono text-muted-foreground">🔧</span>
-        <span className="font-mono font-semibold text-foreground">{name}</span>
+        <span className="min-w-0 truncate font-mono font-semibold text-foreground">{name}</span>
         <span
           className={cn(
             "ml-auto flex items-center gap-1 text-[11px] italic",
             state === "running" && "text-primary",
             state === "error" && "text-destructive",
-            state === "done" && "text-[color:var(--color-success)]",
+            state === "done" && "text-success",
           )}
         >
           {state === "running" && <Loader2 className="h-3 w-3 animate-spin" />}

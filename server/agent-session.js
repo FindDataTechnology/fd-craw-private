@@ -63,13 +63,14 @@ async function refreshDshModels() {
   return ctx.dshModels.map((m) => ({ id: m.id, name: m.name || m.id, provider: m.provider }));
 }
 
-// Switch the active model by id, enforcing the streaming guard. Sends any error
-// to the requesting client and returns true on success. Shared by the
-// `set_model` WS handler and the `/model` command.
-async function switchModelTo(id, ws) {
+// Switch the active model by id, enforcing the streaming guard. Returns
+// { ok, error? } — callers decide how to surface a failure: `/model` emits the
+// command_use block FIRST so the error attaches to that turn, while `set_model`
+// sends it bare (the client shows it as a toast: no run is open). Shared by
+// the `set_model` WS handler and the `/model` command.
+async function switchModelTo(id) {
   if (ctx.isStreaming) {
-    ws.send(JSON.stringify({ type: "error", message: "Cannot switch model while the agent is responding" }));
-    return false;
+    return { ok: false, error: "Cannot switch model while the agent is responding" };
   }
   // ponytail: no stock setModel RPC, so a live switch restarts the bridge with
   // the new provider/model baked into initialize. This drops the child's
@@ -77,20 +78,18 @@ async function switchModelTo(id, ws) {
   // custom dsh RPC. Unknown model → "Unknown model" error.
   const target = ctx.dshModels.find((m) => m.id === id);
   if (!target) {
-    ws.send(JSON.stringify({ type: "error", message: `Unknown model: ${id}` }));
-    return false;
+    return { ok: false, error: `Unknown model: ${id}` };
   }
-  if (ctx.session?.model?.id === id) return true;
+  if (ctx.session?.model?.id === id) return { ok: true };
   try {
     await ctx.dshBridge.restart({ provider: target.provider, model: target.id });
     ctx.session.model = { id: target.id };
     ctx.defaultModel = { id: target.id, provider: target.provider, name: target.name || target.id };
     ctx.broadcast({ type: "model_changed", id });
-    return true;
+    return { ok: true };
   } catch (err) {
     console.error("[dsh] model switch failed:", err.message);
-    ws.send(JSON.stringify({ type: "error", message: err.message }));
-    return false;
+    return { ok: false, error: err.message };
   }
 }
 
@@ -194,13 +193,19 @@ async function handleModelCommand(args, ws) {
     });
     return;
   }
-  const ok = await switchModelTo(id, ws);
+  const result = await switchModelTo(id);
   ctx.broadcast({
     type: "command_use",
     name: "model",
     args: id,
-    message: ok ? `Model switched to ${id}` : `Could not switch model to ${id}`,
+    message: result.ok ? `Model switched to ${id}` : `Could not switch model to ${id}`,
   });
+  // After the command_use block opens the turn, send the failure detail so it
+  // renders as an in-turn error block (an error sent BEFORE the block would be
+  // an orphan — the client would toast it and the transcript would lose it).
+  if (!result.ok && result.error) {
+    ws.send(JSON.stringify({ type: "error", message: result.error }));
+  }
 }
 
 // Create a new session and broadcast the session_changed/session_loaded/sessions

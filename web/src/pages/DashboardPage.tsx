@@ -34,14 +34,14 @@ interface Status {
 }
 
 const STATE_COLORS: Record<string, string> = {
-  healthy: "text-[color:var(--color-success)]",
+  healthy: "text-success",
   disabled: "text-muted-foreground",
   unhealthy: "text-destructive",
   starting: "text-warning",
 };
 
 const STATE_DOT: Record<string, string> = {
-  healthy: "bg-[color:var(--color-success)]",
+  healthy: "bg-success",
   disabled: "bg-muted-foreground",
   unhealthy: "bg-destructive",
   starting: "bg-warning",

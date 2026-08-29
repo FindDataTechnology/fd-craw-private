@@ -14,7 +14,7 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
-  ready: "bg-[color:var(--color-success)]/15 text-[color:var(--color-success)]",
+  ready: "bg-success/15 text-success",
   indexing: "bg-warning/15 text-warning",
   queued: "bg-muted text-muted-foreground",
   error: "bg-destructive/15 text-destructive",
@@ -88,7 +88,7 @@ export function DocumentsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {stats.ready > 0 && (
-            <span className="rounded-full bg-[color:var(--color-success)]/15 px-2.5 py-0.5 text-xs font-medium text-[color:var(--color-success)]" data-testid="stats-ready">
+            <span className="rounded-full bg-success/15 px-2.5 py-0.5 text-xs font-medium text-success" data-testid="stats-ready">
               {t("documents.status.ready")} {stats.ready}
             </span>
           )}

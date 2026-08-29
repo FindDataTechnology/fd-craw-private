@@ -14,7 +14,7 @@
 // tokens (/model, /new, …) are identifiers and stay literal.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Paperclip, X } from "lucide-react";
+import { ArrowUp, Paperclip, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import { SlashCommandPicker, type SlashCommand } from "@/components/SlashCommandPicker";
@@ -40,6 +40,7 @@ export function Composer({ send }: Props) {
   const { t } = useTranslation();
   const status = useChatStore((s) => s.status);
   const isStreaming = useChatStore((s) => s.isStreaming);
+  const stopStreaming = useChatStore((s) => s.stopStreaming);
   const skills = useChatStore((s) => s.skills);
   const clearView = useChatStore((s) => s.clearView);
 
@@ -138,6 +139,10 @@ export function Composer({ send }: Props) {
     setAttachments((a) => a.filter((x) => x.id !== id));
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // IME composition (pinyin, kana, …): Enter confirms the composition and
+    // arrows navigate the IME candidate list — neither may submit or drive
+    // the slash picker. isComposing misses some Safari versions, hence 229.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     // The slash picker derives "is open" from the text content, so we always
     // forward arrow / Enter / Tab / Esc when the picker is showing.
     if (pickerOpen) {
@@ -316,18 +321,32 @@ export function Composer({ send }: Props) {
               "placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
             )}
           />
-          <button
-            onClick={submit}
-            disabled={!trimmed || disabled || isStreaming}
-            aria-label={t("composer.send")}
-            data-testid="composer-send"
-            className={cn(
-              "grid h-8 w-8 place-items-center rounded-full bg-primary text-primary-foreground",
-              "hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
-            )}
-          >
-            <ArrowUp className="h-4 w-4" />
-          </button>
+          {isStreaming ? (
+            <button
+              onClick={stopStreaming}
+              aria-label={t("composer.stop")}
+              data-testid="composer-stop"
+              className={cn(
+                "grid h-8 w-8 place-items-center rounded-full bg-primary-deep text-primary-foreground",
+                "hover:opacity-90",
+              )}
+            >
+              <Square className="h-3 w-3 fill-current" />
+            </button>
+          ) : (
+            <button
+              onClick={submit}
+              disabled={!trimmed || disabled}
+              aria-label={t("composer.send")}
+              data-testid="composer-send"
+              className={cn(
+                "grid h-8 w-8 place-items-center rounded-full bg-primary-deep text-primary-foreground",
+                "hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
+              )}
+            >
+              <ArrowUp className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
       {drag && (

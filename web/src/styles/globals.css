@@ -30,9 +30,14 @@
   --color-input: oklch(0.28 0 0);
   --color-ring: oklch(0.55 0.15 250);
 
-  /* Accent (single blue). Assistant streaming, focus, selection. */
-  --color-primary: oklch(0.62 0.16 250);
+  /* Accent (single blue, two lightness steps — same hue 250, same chroma).
+   * primary is the bright step: text, focus borders, state edges, tints on
+   * dark surfaces. primary-deep is the fill step: surfaces under white text
+   * (user bubble, active nav, primary buttons) — oklch(0.99 0 0) on it is
+   * 5.2:1, on the bright step only 3.9:1 (AA fail). */
+  --color-primary: oklch(0.64 0.16 250);
   --color-primary-foreground: oklch(0.99 0 0);
+  --color-primary-deep: oklch(0.53 0.16 250);
 
   --color-secondary: oklch(0.24 0 0);
   --color-secondary-foreground: oklch(0.96 0 0);

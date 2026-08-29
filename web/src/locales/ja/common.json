@@ -82,7 +82,7 @@
     "disconnected": "切断済み"
   },
   "composer": {
-    "placeholder": "Find Data Technology に何でも質問…（/ でコマンド、Enter で送信、Shift+Enter で改行）",
+    "placeholder": "Platform アシスタントに何でも質問…（/ でコマンド、Enter で送信、Shift+Enter で改行）",
     "placeholderDisabled": "接続中…",
     "send": "送信",
     "helpHeader": "利用可能なコマンド:",
@@ -102,7 +102,8 @@
       "new": "新しいチャットセッションを開始",
       "clear": "チャットビューを消去",
       "help": "利用可能なコマンド一覧"
-    }
+    },
+    "stop": "停止"
   },
   "chat": {
     "empty": "メッセージを送信してチャットを開始してください。",
@@ -119,10 +120,11 @@
       "titlePlaceholder": "セッション名",
       "rename": "新しい名前を保存"
     },
-    "titleTooLong": "タイトルは 200 文字以下にしてください"
+    "titleTooLong": "タイトルは 200 文字以下にしてください",
+    "connectionLost": "接続が切断されました。自動的に再接続しています…"
   },
   "turn": {
-    "assistantName": "Find Data Technology",
+    "assistantName": "Platform アシスタント",
     "thinkingStreaming": "考え中…",
     "thinking": "💭 思考",
     "statusRunning": "実行中…",
