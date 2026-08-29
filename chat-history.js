@@ -23,6 +23,7 @@
 import { promises as fs } from "node:fs";
 import * as db from "./db.js";
 import { storeDir } from "./paths.js";
+import { truncateTitle as truncateTitleShared } from "./lib/persistence.js";
 
 const TITLE_MAX = 60;
 
@@ -84,11 +85,7 @@ export function messagesForClient(agentMessages) {
     .map((m) => ({ role: m.role, content: extractMessageText(m) }));
 }
 
-function truncateTitle(s) {
-  const t = (s || "").trim().replace(/[\r\n]+/g, " ");
-  if (!t) return "";
-  return t.length > TITLE_MAX ? t.slice(0, TITLE_MAX) + "…" : t;
-}
+const truncateTitle = (s) => truncateTitleShared(s, TITLE_MAX);
 
 function titleFromFirstUser(messages) {
   const first = messages.find((m) => m?.role === "user");

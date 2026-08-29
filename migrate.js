@@ -26,11 +26,9 @@ import { extractMessageText } from "./chat-history.js";
 
 const TITLE_MAX = 60;
 
-function truncateTitle(s) {
-  const t = (s || "").trim().replace(/[\r\n]+/g, " ");
-  if (!t) return "New chat";
-  return t.length > TITLE_MAX ? t.slice(0, TITLE_MAX) + "…" : t;
-}
+// migrate's variant falls back to "New chat" on empty (legacy rows without
+// any title content) — the shared helper returns "" there.
+const truncateTitle = (s) => truncateTitleShared(s, TITLE_MAX) || "New chat";
 
 function toIso(d) {
   if (!d) return new Date().toISOString();

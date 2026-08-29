@@ -17,7 +17,7 @@
 // and cannot be added/edited/deleted through this module.
 
 import { storeDir } from "./paths.js";
-import { readJsonOr, atomicWriteJsonSync, createWriteChain } from "./lib/persistence.js";
+import { readJsonOr, atomicWriteJsonSync, createWriteChain, normalizeBaseUrl } from "./lib/persistence.js";
 
 const STORE_PATH = storeDir("llm-providers.json", process.env.LLM_PROVIDERS_STORE);
 const DEFAULT_PATH = storeDir("llm-default.json", process.env.LLM_DEFAULT_STORE);
@@ -102,18 +102,6 @@ function validateInput({ name, baseUrl, apiKey }, { requireKey }) {
     baseUrl: normalizeBaseUrl(String(baseUrl).trim()),
     apiKey: String(apiKey || "").trim(),
   };
-}
-
-// Mirror of dsh-profile's normalizeBaseURL (kept local so this module has no
-// import cycle with dsh-profile). Bare host:port → append /v1.
-function normalizeBaseUrl(url) {
-  try {
-    const u = new URL(url);
-    if (!u.pathname || u.pathname === "/") u.pathname = "/v1";
-    return u.toString().replace(/\/+$/, "");
-  } catch {
-    return url;
-  }
 }
 
 // ── Public CRUD (returns the persisted, client-safe record) ──────────────────
