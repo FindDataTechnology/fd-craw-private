@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
+import { memo } from "react";
 
 interface Props {
   text: string;
@@ -8,7 +9,7 @@ interface Props {
   onToggle: () => void;
 }
 
-export function ThinkingBlock({ text, open, onToggle }: Props) {
+function ThinkingBlockBase({ text, open, onToggle }: Props) {
   const { t } = useTranslation();
   return (
     <div className="rounded-md border border-border bg-muted/40" data-testid="thinking-block" data-open={open ? "true" : "false"}>
@@ -27,3 +28,8 @@ export function ThinkingBlock({ text, open, onToggle }: Props) {
     </div>
   );
 }
+
+// Memoized: the store mutates turn objects in place and clones only the
+// turns array, so a streaming delta re-renders just the tail turn's
+// component instead of reconciling the whole transcript.
+export const ThinkingBlock = memo(ThinkingBlockBase);

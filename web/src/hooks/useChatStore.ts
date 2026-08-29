@@ -103,6 +103,50 @@ function appendThinking(turns: Turn[], delta: string) {
   }
 }
 
+// ── Streamed-delta batching ─────────────────────────────────────────────────
+// Every text/thinking delta used to commit its own set(): a new turns array
+// per token re-rendered the whole transcript and grew the streaming string
+// quadratically. Deltas now accumulate in a small buffer and flush as one
+// commit at most every DELTA_FLUSH_MS. Ordering is preserved exactly: any
+// non-delta event first folds the pending buffer into the same set() call
+// (tool blocks can never land before the text that preceded them), and
+// session swaps / view clears discard the buffer (those deltas belong to the
+// previous conversation).
+const DELTA_FLUSH_MS = 50;
+type PendingDeltas = { text: string | null; thinking: string | null };
+let pending: PendingDeltas = { text: null, thinking: null };
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function queueDelta(kind: "text" | "thinking", delta: string) {
+  pending[kind] = (pending[kind] ?? "") + delta;
+  if (!flushTimer) {
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      useChatStore.setState((state) => flushIntoTurns(state) ?? {});
+    }, DELTA_FLUSH_MS);
+  }
+}
+
+// Returns the turns patch for the buffered deltas (and clears the buffer),
+// or null when nothing is pending. Called inside a set()/setState() updater.
+function flushIntoTurns(state: State): { turns: Turn[] } | null {
+  if (!pending.text && !pending.thinking) return null;
+  const p = pending;
+  pending = { text: null, thinking: null };
+  const turns = state.turns.slice();
+  if (p.text) appendText(turns, p.text);
+  if (p.thinking) appendThinking(turns, p.thinking);
+  return { turns };
+}
+
+function discardDeltas() {
+  pending = { text: null, thinking: null };
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+}
+
 export const useChatStore = create<State>((set) => ({
   status: "connecting",
   models: [],
@@ -118,10 +162,20 @@ export const useChatStore = create<State>((set) => ({
 
   setStatus: (s) => set({ status: s }),
 
-  apply: (m) =>
+  apply: (m) => {
+    // Streamed deltas are buffered (see DELTA_FLUSH_MS above) — no commit
+    // per token.
+    if (m.type === "text" || m.type === "thinking") {
+      queueDelta(m.type, m.delta);
+      return;
+    }
+    // A session swap discards buffered deltas (previous conversation); every
+    // other message folds them in first, preserving event order exactly.
+    if (m.type === "session_loaded") discardDeltas();
+
     set((state) => {
-      // Mutate a shallow copy of turns for React's identity check.
-      const turns = state.turns.slice();
+      const pre = flushIntoTurns(state);
+      const turns = pre ? pre.turns : state.turns.slice();
       switch (m.type) {
         case "user":
           turns.push({ id: nextId(), role: "user", text: m.text });
@@ -131,14 +185,6 @@ export const useChatStore = create<State>((set) => ({
           // Fresh assistant turn only when there isn't already an open one.
           currentAssistant(turns);
           return { turns, isStreaming: true };
-
-        case "text":
-          appendText(turns, m.delta);
-          return { turns };
-
-        case "thinking":
-          appendThinking(turns, m.delta);
-          return { turns };
 
         case "tool_start": {
           const a = currentAssistant(turns);
@@ -283,10 +329,18 @@ export const useChatStore = create<State>((set) => ({
           // undefined"). Ignore unknown types instead.
           return {};
       }
-    }),
+    });
+  },
 
-  addUserTurnOptimistic: (text) =>
-    set((state) => ({ turns: [...state.turns, { id: nextId(), role: "user", text }] })),
+  addUserTurnOptimistic: (text) => {
+    // Fold any buffered assistant deltas first so the optimistic user turn
+    // lands after them in the transcript.
+    set((state) => {
+      const pre = flushIntoTurns(state);
+      const turns = pre ? pre.turns : state.turns;
+      return { turns: [...turns, { id: nextId(), role: "user", text }] };
+    });
+  },
 
   // Optimistic local rename; the broadcast `session_renamed` event reconciles
   // every other open client (and ours, in case the server's value trims).
@@ -295,7 +349,10 @@ export const useChatStore = create<State>((set) => ({
       sessions: state.sessions.map((s) => (s.id === id ? { ...s, title } : s)),
     })),
 
-  clearView: () => set({ turns: [], isStreaming: false }),
+  clearView: () => {
+    discardDeltas();
+    set({ turns: [], isStreaming: false });
+  },
 
   toggleAllThinking: () =>
     set((state) => {

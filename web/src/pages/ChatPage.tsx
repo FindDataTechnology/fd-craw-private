@@ -11,8 +11,9 @@ import type { ClientMessage } from "@/types/ws";
 // welcome is a "no turns" affordance, the header takes over once the user
 // starts or resumes a conversation. `clearView` flips back to the welcome.
 export function ChatPage({ send }: { send: (m: ClientMessage) => void }) {
-  const turns = useChatStore((s) => s.turns);
-  const isEmpty = turns.length === 0;
+  // Length-only subscription: this page branches on emptiness — subscribing
+  // to the whole turns array would re-render it per streamed token.
+  const isEmpty = useChatStore((s) => s.turns.length === 0);
 
   return (
     <main className="flex min-h-0 min-w-0 flex-col">

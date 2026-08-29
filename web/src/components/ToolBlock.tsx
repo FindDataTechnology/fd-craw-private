@@ -2,6 +2,7 @@ import { ChevronRight, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import type { Block } from "@/hooks/useChatStore";
+import { memo } from "react";
 
 interface Props {
   block: Extract<Block, { kind: "tool" }>;
@@ -18,7 +19,7 @@ function stringify(v: unknown): string {
   }
 }
 
-export function ToolBlock({ block, onToggle }: Props) {
+function ToolBlockBase({ block, onToggle }: Props) {
   const { t } = useTranslation();
   const { name, args, state, result, partial, open } = block;
   const accent =
@@ -94,3 +95,8 @@ function Section({ label, body, error }: { label: string; body: string; error?: 
     </div>
   );
 }
+
+// Memoized: the store mutates turn objects in place and clones only the
+// turns array, so a streaming delta re-renders just the tail turn's
+// component instead of reconciling the whole transcript.
+export const ToolBlock = memo(ToolBlockBase);

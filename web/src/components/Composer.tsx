@@ -62,11 +62,13 @@ export function Composer({ send }: Props) {
   const trimmed = value.trim();
 
   // Built-in commands (Commands section). Skills come from the store and are
-  // rendered as the Skills section inside <SlashCommandPicker>.
-  const commands: SlashCommand[] = CMD_META.map((c) => ({
-    label: c.label,
-    description: t(c.descKey),
-  }));
+  // rendered as the Skills section inside <SlashCommandPicker>. Memoized on
+  // the locale: a per-render rebuild changed `commands` identity every render
+  // and defeated the mergedItems memo below.
+  const commands: SlashCommand[] = useMemo(
+    () => CMD_META.map((c) => ({ label: c.label, description: t(c.descKey) })),
+    [t],
+  );
 
   // Autogrow.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `value` is the deliberate trigger — resize the textarea on every keystroke

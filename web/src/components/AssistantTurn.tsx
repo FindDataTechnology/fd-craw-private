@@ -1,3 +1,4 @@
+import { memo } from "react";
 // Full-width assistant turn. Blocks nest inside a left-rail so tool/thinking
 // visibly belong to the same turn as the text. This is the "not siblings"
 // design decision from proposal.md.
@@ -15,7 +16,7 @@ import { ToolBlock } from "@/components/ToolBlock";
 import { SkillBlock } from "@/components/SkillBlock";
 import { cn } from "@/lib/utils";
 
-export function AssistantTurn({ turn }: { turn: Extract<Turn, { role: "assistant" }> }) {
+function AssistantTurnBase({ turn }: { turn: Extract<Turn, { role: "assistant" }> }) {
   const { t } = useTranslation();
   const toggleBlock = useChatStore((s) => s.toggleBlock);
   return (
@@ -88,3 +89,8 @@ export function AssistantTurn({ turn }: { turn: Extract<Turn, { role: "assistant
     </article>
   );
 }
+
+// Memoized: the store mutates turn objects in place and clones only the
+// turns array, so a streaming delta re-renders just the tail turn's
+// component instead of reconciling the whole transcript.
+export const AssistantTurn = memo(AssistantTurnBase);
