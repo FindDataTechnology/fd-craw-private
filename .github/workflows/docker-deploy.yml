@@ -98,7 +98,7 @@ jobs:
           JUMP="sshpass -p '${{ secrets.JUMP_PASS }}' ssh -o StrictHostKeyChecking=no ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }}"
           # Long-lived cross-border SSH sessions get killed mid-flight, so the
           # transfer runs detached on the bridge and this job only polls it.
-          $JUMP "sudo pkill -f fetch-deploy.sh 2>/dev/null; sudo nohup fetch-deploy.sh ${{ needs.build-push.outputs.tag }} '${{ secrets.DEPLOY_SSH_PASS }}' > /tmp/fetch-deploy.log 2>&1 & echo started"
+          $JUMP "echo '${{ secrets.JUMP_PASS }}' | sudo -S bash -c 'pkill -f fetch-deploy.sh 2>/dev/null; setsid nohup /usr/local/bin/fetch-deploy.sh ${{ needs.build-push.outputs.tag }} \"${{ secrets.DEPLOY_SSH_PASS }}\" > /tmp/fetch-deploy.log 2>&1 &' ; echo started"
           for i in $(seq 1 60); do
             sleep 30
             OUT=$($JUMP "tail -3 /tmp/fetch-deploy.log" 2>/dev/null || true)

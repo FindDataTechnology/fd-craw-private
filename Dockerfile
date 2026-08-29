@@ -54,6 +54,12 @@ COPY . .
 RUN npm run web:build \
     && npm run predist
 
+# dsh CLI (the agent runtime server.js spawns by name). Pinned to the rc the
+# profiles were developed against — see ci(quality-gates) "pin dsh-base bundle
+# version" for why rc tags must not float. Installed into its own prefix so
+# the runtime stage can copy just the CLI + its deps.
+RUN npm install --prefix /opt/dsh @deepseek-ai/dsh@0.1.1-rc.2
+
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM node:25-bookworm-slim AS runtime
 
@@ -69,6 +75,8 @@ WORKDIR /app
 # Production deps (native addons already compiled in the builder), built frontend,
 # and the bundled resources (OpenConnector, Node).
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /opt/dsh /opt/dsh
+ENV PATH="/opt/dsh/bin:${PATH}"
 COPY --from=builder /app/web/dist ./web/dist
 COPY --from=builder /app/resources ./resources
 
