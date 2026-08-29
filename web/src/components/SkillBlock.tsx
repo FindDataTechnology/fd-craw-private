@@ -9,8 +9,12 @@ interface Props {
 }
 
 export function SkillBlock({ name, args, open, onToggle }: Props) {
+  // No state edge: unlike tool blocks (running/error/done), a skill
+  // invocation has no lifecycle to color-code — a 2px accent would claim a
+  // state that doesn't exist (and was a second accent hue). Command blocks
+  // share this neutral container; stateful work gets the colored edge.
   return (
-    <div className="overflow-hidden rounded-md border border-border border-l-2 border-l-[oklch(0.65_0.20_300)] bg-muted/40">
+    <div className="overflow-hidden rounded-md border border-border bg-muted/40">
       <button
         onClick={onToggle}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted"

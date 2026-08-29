@@ -162,9 +162,9 @@ export function ChatHeader({ send }: Props) {
           data-testid="chat-header-status-dot"
           className={cn(
             "inline-block h-2 w-2 shrink-0 rounded-full",
-            status === "connected" && "bg-emerald-500",
-            status === "connecting" && "bg-amber-500",
-            status === "disconnected" && "bg-red-500",
+            status === "connected" && "bg-success",
+            status === "connecting" && "bg-warning",
+            status === "disconnected" && "bg-destructive",
           )}
           aria-label={t(`status.${status}`)}
         />
