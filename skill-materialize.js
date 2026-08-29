@@ -9,8 +9,9 @@
 // Atomic writes (temp+rename) match documents.js / writeMcpPatch. The dir is a
 // runtime artifact under PLATFORM_DATA_DIR (gitignored), rebuilt idempotently
 // from the DB on startup.
-import { mkdirSync, writeFileSync, renameSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { atomicWriteTextSync } from "./lib/persistence.js";
 import { storeDir } from "./paths.js";
 
 const MATERIALIZE_DIR = storeDir("custom-skills");
@@ -41,11 +42,7 @@ export function writeSkill(skill) {
     return true;
   }
   const file = skillFilePath(skill.name);
-  const dir = join(file, "..");
-  mkdirSync(dir, { recursive: true });
-  const tmp = file + ".tmp";
-  writeFileSync(tmp, renderSkillMd(skill), "utf8");
-  renameSync(tmp, file);
+  atomicWriteTextSync(file, renderSkillMd(skill));
   return true;
 }
 

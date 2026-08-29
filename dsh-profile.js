@@ -20,11 +20,12 @@
 // Writes atomically (temp+rename) and returns the declared model list so server.js
 // can source its model selector without a dsh listModels RPC (dsh has none stock;
 // the generator's declared list IS the dsh list — dsh loads exactly this file).
-import { readFileSync, writeFileSync, mkdirSync, renameSync, chmodSync, existsSync } from "node:fs";
+import { readFileSync, mkdirSync, chmodSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
+import { atomicWriteTextSync, normalizeBaseUrl } from "./lib/persistence.js";
 
 const DSH_HOME = process.env.DSH_HOME || join(homedir(), ".dsh");
 const SETTINGS_PATH = join(DSH_HOME, "settings.yaml");
@@ -49,16 +50,7 @@ const VOLCES_MODELS = [
 // a path (e.g. /api/coding/v3, /v1) is left untouched.
 // ponytail: assumes /v1 for pathless origins; a gateway on /v2 must set the
 // full path in LLM_BASE_URL.
-function normalizeBaseURL(url) {
-  if (!url) return url;
-  try {
-    const u = new URL(url);
-    if (!u.pathname || u.pathname === "/") u.pathname = "/v1";
-    return u.toString().replace(/\/+$/, "");
-  } catch {
-    return url;
-  }
-}
+
 
 // Build the llm-pi-ai providers dict + a flat {id,name,provider} model list from
 // host env. No Volces key → empty providers (dormant); chat stays non-functional
@@ -81,7 +73,7 @@ export async function buildLlmProfile({
       apiKeyEnv: "LLM_API_KEY",
       displayName: "Volces",
       api: "openai-completions",
-      baseURL: normalizeBaseURL(llmBaseUrl),
+      baseURL: normalizeBaseUrl(llmBaseUrl),
       models: VOLCES_MODELS.map((m) => ({ ...m, input: ["text"] })),
     };
     for (const m of VOLCES_MODELS) models.push({ id: m.id, name: m.name, provider: route });
@@ -118,10 +110,7 @@ export async function writeLlmProfile() {
     if (err.code !== "ENOENT") console.warn("[dsh-profile] settings.yaml unreadable, recreating:", err.message);
   }
   doc["llm-pi-ai"] = { providers };
-  mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
-  const tmp = SETTINGS_PATH + ".tmp";
-  writeFileSync(tmp, yaml.dump(doc), "utf8");
-  renameSync(tmp, SETTINGS_PATH);
+  atomicWriteTextSync(SETTINGS_PATH, yaml.dump(doc));
 
   if (Object.keys(providers).length === 0) {
     console.warn("[dsh] no LLM keys configured; chat non-functional (static + REST still served)");
@@ -195,10 +184,7 @@ export async function ensureCredentialsStore() {
   // only write when a ref changed, to avoid needlessly tripping the watcher.
   const absent = !existsSync(CREDENTIALS_PATH);
   if (!changed && !absent) return { path: CREDENTIALS_PATH, changed: false };
-  mkdirSync(dirname(CREDENTIALS_PATH), { recursive: true });
-  const tmp = CREDENTIALS_PATH + ".tmp";
-  writeFileSync(tmp, yaml.dump(doc), "utf8");
-  renameSync(tmp, CREDENTIALS_PATH);
+  atomicWriteTextSync(CREDENTIALS_PATH, yaml.dump(doc));
   try { chmodSync(CREDENTIALS_PATH, 0o600); } catch { /* perms best-effort on some FS */ }
   console.log(`[dsh-profile] wrote credentials store (${Object.keys(doc.refs).join(", ") || "empty"}) → ${CREDENTIALS_PATH}`);
   return { path: CREDENTIALS_PATH, changed: true };
@@ -306,15 +292,13 @@ export async function writeMcpPatch() {
     return null;
   }
   mkdirSync(dirname(MCP_PATCH_PATH), { recursive: true });
-  const tmp = MCP_PATCH_PATH + ".tmp";
   // Wrap entries in an `insert` list — a bare `{id, config}` is treated by
   // cordis-plugin-include as an override-by-id on an EXISTING entry, and since
   // these mcp-client entries don't exist in the base bundle they'd be warned +
   // skipped ("patch: entry "mcp-x" not found"). `insert` tells cordis to add
   // them as new loader entries. (The skills patch differs: skill-filesystem
   // DOES exist in the base bundle, so its override-by-id shape is correct.)
-  writeFileSync(tmp, yaml.dump([{ insert: entries }]), "utf8");
-  renameSync(tmp, MCP_PATCH_PATH);
+  atomicWriteTextSync(MCP_PATCH_PATH, yaml.dump([{ insert: entries }]));
   console.log(
     `[dsh-profile] wrote ${entries.length} MCP server(s): ${entries.map((e) => e.config.serverName).join(", ")} → ${MCP_PATCH_PATH}`,
   );
@@ -343,10 +327,7 @@ export function writeSkillsPatch(skillsDirs = [resolve("skills")]) {
     name: "@deepseek-ai/dsh-skill-filesystem",
     config: { customSkillDirs: dirs },
   };
-  mkdirSync(dirname(SKILLS_PATCH_PATH), { recursive: true });
-  const tmp = SKILLS_PATCH_PATH + ".tmp";
-  writeFileSync(tmp, yaml.dump([entry]), "utf8");
-  renameSync(tmp, SKILLS_PATCH_PATH);
+  atomicWriteTextSync(SKILLS_PATCH_PATH, yaml.dump([entry]));
   console.log(`[dsh-profile] wrote skills patch (customSkillDirs: ${dirs.join(", ")}) → ${SKILLS_PATCH_PATH}`);
   return SKILLS_PATCH_PATH;
 }

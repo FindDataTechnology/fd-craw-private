@@ -14,6 +14,7 @@
 // remains as a bundled service that needs bootstrap.
 
 import crypto from "node:crypto";
+import { atomicWriteJsonSync } from "../lib/persistence.js";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -77,9 +78,7 @@ export function runFirstRun(opts) {
 
   // Step 5: Write settings atomically if we changed it OR it didn't exist
   if (!settingsExists || Object.keys(settings).length !== Object.keys(merged).length) {
-    const tempPath = settingsPath + ".tmp";
-    fs.writeFileSync(tempPath, JSON.stringify(merged, null, 2), "utf8");
-    fs.renameSync(tempPath, settingsPath);
+    atomicWriteJsonSync(settingsPath, merged);
     console.log("[bootstrap] Wrote updated", settingsFileName, "to", settingsPath);
   }
 

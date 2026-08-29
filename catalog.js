@@ -3,8 +3,8 @@
 // interval; a content change broadcasts `catalog_changed` so clients refetch
 // GET /api/catalog. Mirrors extension-store.js conventions: module state +
 // accessors, no DB, absent sources degrade to just the built-in local agent.
-import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { readJsonOr } from "./lib/persistence.js";
 
 const CATALOG_FILE = path.resolve("agents.json");
 const CLOUD_URL = process.env.AGENTS_CONFIG_URL?.trim() || null;
@@ -73,12 +73,12 @@ function validateDoc(doc, source) {
 }
 
 async function loadLocal() {
-  try {
-    localEntries = validateDoc(JSON.parse(await readFile(CATALOG_FILE, "utf8")), "agents.json");
-  } catch (err) {
-    if (err.code !== "ENOENT") console.warn(`[catalog] agents.json unreadable: ${err.message}`);
-    localEntries = { agents: [], apps: [] };
-  }
+  // readJsonOr: missing file is silent (fresh installs); an unreadable or
+  // unparsable file warns with the path and degrades to the empty catalog.
+  localEntries = validateDoc(
+    readJsonOr(CATALOG_FILE, { agents: [], apps: [] }, { label: "catalog" }),
+    "agents.json",
+  );
 }
 
 async function loadCloud() {

@@ -2,8 +2,8 @@
 // Business logic layer for managing MCP server configs and custom skills.
 // Wraps the db.js CRUD operations and provides market catalog loading.
 
-import { promises as fs } from "node:fs";
 import path from "node:path";
+import { readJsonOr } from "./lib/persistence.js";
 import * as db from "./db.js";
 
 const MARKET_CATALOG_PATH = path.resolve("market-catalog.json");
@@ -101,38 +101,18 @@ let marketCatalogSkillsCache = null;
 
 export async function loadMarketCatalog() {
   if (marketCatalogCache) return marketCatalogCache;
-  try {
-    const raw = await fs.readFile(MARKET_CATALOG_PATH, "utf8");
-    marketCatalogCache = JSON.parse(raw);
-    return marketCatalogCache;
-  } catch (err) {
-    if (err.code === "ENOENT") {
-      console.log("[extensions] No market-catalog.json found");
-      marketCatalogCache = { mcpServers: [] };
-    } else {
-      console.warn(`[extensions] Failed to read market catalog: ${err.message}`);
-      marketCatalogCache = { mcpServers: [] };
-    }
-    return marketCatalogCache;
-  }
+  const doc = readJsonOr(MARKET_CATALOG_PATH, null, { label: "extensions" });
+  // readJsonOr warns on parse errors; a missing/invalid file degrades to the
+  // empty catalog (fresh installs ship without market catalogs).
+  marketCatalogCache = doc ?? { mcpServers: [] };
+  return marketCatalogCache;
 }
 
 export async function loadMarketCatalogSkills() {
   if (marketCatalogSkillsCache) return marketCatalogSkillsCache;
-  try {
-    const raw = await fs.readFile(MARKET_CATALOG_SKILLS_PATH, "utf8");
-    marketCatalogSkillsCache = JSON.parse(raw);
-    return marketCatalogSkillsCache;
-  } catch (err) {
-    if (err.code === "ENOENT") {
-      console.log("[extensions] No market-catalog-skills.json found");
-      marketCatalogSkillsCache = { skills: [] };
-    } else {
-      console.warn(`[extensions] Failed to read market skills catalog: ${err.message}`);
-      marketCatalogSkillsCache = { skills: [] };
-    }
-    return marketCatalogSkillsCache;
-  }
+  const doc = readJsonOr(MARKET_CATALOG_SKILLS_PATH, null, { label: "extensions" });
+  marketCatalogSkillsCache = doc ?? { skills: [] };
+  return marketCatalogSkillsCache;
 }
 
 export async function getMarketCatalog() {

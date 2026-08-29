@@ -11,27 +11,26 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { storeDir } from "./paths.js";
+import { atomicWriteJson, readJsonOr, createWriteChain } from "./lib/persistence.js";
 
 let WORKDIRS_FILE = null;
 let workdirsCache = null;
 let dirty = false;
+const writeChain = createWriteChain();
 
 export async function initWorkdirStore() {
   WORKDIRS_FILE = path.join(storeDir("sessions-store"), "workdirs.json");
   await fs.mkdir(path.dirname(WORKDIRS_FILE), { recursive: true });
-  try {
-    workdirsCache = JSON.parse(await fs.readFile(WORKDIRS_FILE, "utf8"));
-  } catch {
-    workdirsCache = {};
-  }
+  workdirsCache = readJsonOr(WORKDIRS_FILE, {}, { label: "workdir" });
 }
 
-async function save() {
-  if (!dirty || !WORKDIRS_FILE) return;
+// Dirty-flag coalescing stays: only the actual disk write is serialized (and
+// atomic with a unique temp name) so overlapping flushes can't interleave.
+function save() {
+  if (!dirty || !WORKDIRS_FILE) return Promise.resolve();
   dirty = false;
-  const tmp = `${WORKDIRS_FILE}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(workdirsCache, null, 2), "utf8");
-  await fs.rename(tmp, WORKDIRS_FILE);
+  const snapshot = JSON.parse(JSON.stringify(workdirsCache));
+  return writeChain.mutate(() => atomicWriteJson(WORKDIRS_FILE, snapshot));
 }
 
 export async function getWorkdir(sessionId) {
