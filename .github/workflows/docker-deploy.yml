@@ -95,7 +95,10 @@ jobs:
       - name: Deploy via chengsi bridge (detached + polled)
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq sshpass >/dev/null
-          JUMP="sshpass -p '${{ secrets.JUMP_PASS }}' ssh -o StrictHostKeyChecking=no ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }}"
+          # Key auth — password SSH from runner IPs gets intermittently
+          # rejected by the provider's risk control.
+          printf '%s' "${{ secrets.JUMP_KEY }}" > /tmp/jump_key && chmod 600 /tmp/jump_key
+          JUMP="ssh -i /tmp/jump_key -o StrictHostKeyChecking=no ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }}"
           # Long-lived cross-border SSH sessions get killed mid-flight, so the
           # transfer runs detached on the bridge and this job only polls it.
           $JUMP "echo '${{ secrets.JUMP_PASS }}' | sudo -S bash -c 'pkill -f fetch-deploy.sh 2>/dev/null; setsid nohup /usr/local/bin/fetch-deploy.sh ${{ needs.build-push.outputs.tag }} \"${{ secrets.DEPLOY_SSH_PASS }}\" > /tmp/fetch-deploy.log 2>&1 &' ; echo started"
