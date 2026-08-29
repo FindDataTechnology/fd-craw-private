@@ -1,22 +1,26 @@
-# ── CI/CD: build image, ship via chengsi jump host, deploy on china-cheap-2 ───
+# ── CI/CD: build → America Harbor → chengsi bridge → cheap-2 deploy ───────────
 #
-# Network reality (verified 2026-08-29): the cheap servers
-# (103.236.89.174, SSH 20400 via sslh) are reachable ONLY from Chinese
-# IPs — GitHub runners (US) and the America server cannot SSH in, and
-# the cheap boxes cannot pull from any public registry (cross-border
-# egress times out). The user's Tencent box (china-tencent-chengsi,
-# 124.220.7.175) reaches both the runners and cheap-2 — it is the
-# delivery bridge.
+# Network reality (all verified 2026-08-29):
+#   - cheap-2 (103.236.89.174:20400) is reachable ONLY from Chinese IPs;
+#     GitHub runners and America cannot SSH in.
+#   - cheap-2 has no usable cross-border egress (every foreign registry
+#     times out) — images must be pushed to it over SSH from China.
+#   - chengsi box (124.220.7.175) reaches America at ~5.7 MB/s and can
+#     SSH into cheap-2 — it is the delivery bridge.
+#   - GitHub↔chengsi is GFW-throttled to ~27 KB/s, so the image must NOT
+#     travel that leg; it goes via America's Harbor instead.
 #
 # Pipeline:
-#   build  (GH runner): docker build → docker save | zstd → artifact
-#   deploy (GH runner): download artifact → stream via jump host into
-#                       cheap-2 docker load → /usr/local/bin/deploy-platform.sh
-#                       (health-gated blue/green swap; fails = keep old container)
+#   build  (GH runner): docker build → push to America Harbor (US→US, fast)
+#   deploy (GH runner): ssh chengsi → fetch-deploy.sh <tag>: pulls from
+#     America Harbor, pipes `docker save` into cheap-2 `docker load`, then
+#     runs cheap-2's health-gated blue/green swap (deploy-platform.sh;
+#     failure keeps the current container).
 #
 # Required GitHub Secrets:
-#   DEPLOY_SSH_HOST / DEPLOY_SSH_PORT / DEPLOY_SSH_USER / DEPLOY_SSH_PASS  (cheap-2)
-#   JUMP_HOST / JUMP_USER / JUMP_PASS                                      (bridge)
+#   HARBOR_HOST/USER/PASS    America Harbor (23.144.68.246:30880, HTTP)
+#   JUMP_HOST/USER/PASS      chengsi bridge (fetch-deploy.sh lives there)
+#   DEPLOY_SSH_PASS          cheap-2 password (passed to fetch-deploy.sh)
 
 name: docker-deploy
 
@@ -40,7 +44,7 @@ on:
   workflow_dispatch:
     inputs:
       skip_deploy:
-        description: 'Build image only, do NOT redeploy the container'
+        description: 'Build + push image only, do NOT redeploy the container'
         required: false
         type: boolean
         default: false
@@ -49,8 +53,11 @@ concurrency:
   group: docker-deploy-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  IMAGE: ${{ secrets.HARBOR_HOST }}/paas_private/platform
+
 jobs:
-  build:
+  build-push:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
@@ -61,41 +68,34 @@ jobs:
       - id: tag
         run: echo "tag=sha-$(echo "${{ github.sha }}" | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
-      - name: Build image
+      - name: Allow insecure (HTTP) Harbor
         run: |
-          docker build -f Dockerfile -t platform:${{ steps.tag.outputs.tag }} .
-          mkdir -p out
-          docker save platform:${{ steps.tag.outputs.tag }} | zstd -T0 -3 -o out/platform.tar.zst
-          ls -lh out/
+          echo '{"insecure-registries":["${{ secrets.HARBOR_HOST }}"]}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
 
-      - uses: actions/upload-artifact@v4
+      - uses: docker/login-action@v3
         with:
-          name: platform-image
-          path: out/platform.tar.zst
-          retention-days: 14
-          compression-level: 0 # already zstd-compressed
+          registry: ${{ secrets.HARBOR_HOST }}
+          username: ${{ secrets.HARBOR_USER }}
+          password: ${{ secrets.HARBOR_PASS }}
+
+      - name: Build & push image
+        run: |
+          TAG=${{ steps.tag.outputs.tag }}
+          docker build -f Dockerfile -t $IMAGE:$TAG -t $IMAGE:latest .
+          docker push $IMAGE:$TAG
+          docker push $IMAGE:latest
 
   deploy:
-    needs: build
+    needs: build-push
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_deploy }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: platform-image
-
-      - name: Stream image through jump host into cheap-2
+      - name: Deploy via chengsi bridge
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass zstd >/dev/null
-          zstd -dc < platform.tar.zst | \
-            sshpass -p "${{ secrets.JUMP_PASS }}" ssh -o StrictHostKeyChecking=no \
-              ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }} \
-              "sshpass -p '${{ secrets.DEPLOY_SSH_PASS }}' ssh -o StrictHostKeyChecking=no -p ${{ secrets.DEPLOY_SSH_PORT }} ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }} 'docker load'"
-
-      - name: Blue/green swap with health gate
-        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass >/dev/null
           sshpass -p "${{ secrets.JUMP_PASS }}" ssh -o StrictHostKeyChecking=no \
             ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }} \
-            "sshpass -p '${{ secrets.DEPLOY_SSH_PASS }}' ssh -o StrictHostKeyChecking=no -p ${{ secrets.DEPLOY_SSH_PORT }} ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }} 'deploy-platform.sh ${{ needs.build.outputs.tag }}'"
-          echo "Deployed ${{ needs.build.outputs.tag }} — verify: http://103.236.89.174:20400/api/config"
+            "sudo fetch-deploy.sh ${{ needs.build-push.outputs.tag }} '${{ secrets.DEPLOY_SSH_PASS }}'"
+          echo "Deployed ${{ needs.build-push.outputs.tag }} — verify http://103.236.89.174:20400/api/config"
