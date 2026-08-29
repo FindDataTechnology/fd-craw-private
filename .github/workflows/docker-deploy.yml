@@ -1,25 +1,22 @@
-# ── CI/CD: build the full-stack image, push to china-cheap-2 Harbor, deploy ────
+# ── CI/CD: build image, ship via chengsi jump host, deploy on china-cheap-2 ───
 #
-# Target infrastructure (since 2026-08-29):
-#   - The platform runs as a plain Docker container on china-cheap-2
-#     (103.236.89.174, SSH via sslh on port 20400, app on http://...:20400).
-#   - Harbor (docker compose, /opt/harbor) serves on cheap-2 at
-#     127.0.0.1:8088 — NOT publicly reachable. This workflow tunnels to it
-#     over SSH (runner → cheap-2:20400 → 127.0.0.1:8088) and pushes there.
-#   - Deploy = docker pull from the local registry on cheap-2 + container
-#     recreate. Data volume /opt/platform persists across deploys.
+# Network reality (verified 2026-08-29): the cheap servers
+# (103.236.89.174, SSH 20400 via sslh) are reachable ONLY from Chinese
+# IPs — GitHub runners (US) and the America server cannot SSH in, and
+# the cheap boxes cannot pull from any public registry (cross-border
+# egress times out). The user's Tencent box (china-tencent-chengsi,
+# 124.220.7.175) reaches both the runners and cheap-2 — it is the
+# delivery bridge.
 #
-# Required GitHub Secrets (Settings → Secrets and variables → Actions):
-#   DEPLOY_SSH_HOST     103.236.89.174
-#   DEPLOY_SSH_PORT     20400
-#   DEPLOY_SSH_USER     root
-#   DEPLOY_SSH_PASS     <server password>
-#   HARBOR_USER         admin
-#   HARBOR_PASS         <cheap-2 Harbor admin password>
-#   HARBOR_PROJECT      paas
+# Pipeline:
+#   build  (GH runner): docker build → docker save | zstd → artifact
+#   deploy (GH runner): download artifact → stream via jump host into
+#                       cheap-2 docker load → /usr/local/bin/deploy-platform.sh
+#                       (health-gated blue/green swap; fails = keep old container)
 #
-# The old America Harbor + ArgoCD GitOps pipeline was decommissioned with the
-# platform-private namespace (2026-08-29); k8s/ and argocd/ dirs are legacy.
+# Required GitHub Secrets:
+#   DEPLOY_SSH_HOST / DEPLOY_SSH_PORT / DEPLOY_SSH_USER / DEPLOY_SSH_PASS  (cheap-2)
+#   JUMP_HOST / JUMP_USER / JUMP_PASS                                      (bridge)
 
 name: docker-deploy
 
@@ -27,7 +24,6 @@ on:
   push:
     branches: [main]
     paths:
-      # Source the image is built from. Deliberately excludes k8s/** and docs.
       - 'server.js'
       - '*.js'
       - 'web/**'
@@ -44,7 +40,7 @@ on:
   workflow_dispatch:
     inputs:
       skip_deploy:
-        description: 'Build + push image only, do NOT redeploy the container'
+        description: 'Build image only, do NOT redeploy the container'
         required: false
         type: boolean
         default: false
@@ -53,81 +49,53 @@ concurrency:
   group: docker-deploy-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
-  SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
-  SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
-  TUNNEL_PORT: "5000" # runner-local forward to cheap-2 Harbor (127.0.0.1:8088)
-  REGISTRY: "127.0.0.1:8088"
-  IMAGE: 127.0.0.1:8088/${{ secrets.HARBOR_PROJECT }}/platform
-
 jobs:
-  build-push-deploy:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Open SSH tunnel to cheap-2 Harbor
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass >/dev/null
-          sshpass -p "${{ secrets.DEPLOY_SSH_PASS }}" ssh -o StrictHostKeyChecking=no \
-            -f -N -L ${TUNNEL_PORT}:127.0.0.1:8088 -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST}
-          # tunnelled registry is HTTP-only
-          echo "{\"insecure-registries\":[\"localhost:${TUNNEL_PORT}\",\"127.0.0.1:${TUNNEL_PORT}\"]}" | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
-          sleep 3
-          # docker restart kills the tunnel's connection? No (separate session), but re-verify:
-          curl -s -m 10 http://localhost:${TUNNEL_PORT}/api/v2.0/health
+      - id: tag
+        run: echo "tag=sha-$(echo "${{ github.sha }}" | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/login-action@v3
+      - name: Build image
+        run: |
+          docker build -f Dockerfile -t platform:${{ steps.tag.outputs.tag }} .
+          mkdir -p out
+          docker save platform:${{ steps.tag.outputs.tag }} | zstd -T0 -3 -o out/platform.tar.zst
+          ls -lh out/
+
+      - uses: actions/upload-artifact@v4
         with:
-          registry: localhost:${{ env.TUNNEL_PORT }}
-          username: ${{ secrets.HARBOR_USER }}
-          password: ${{ secrets.HARBOR_PASS }}
+          name: platform-image
+          path: out/platform.tar.zst
+          retention-days: 14
+          compression-level: 0 # already zstd-compressed
 
-      - name: Build & push image
-        run: |
-          TAG="sha-$(echo "${{ github.sha }}" | cut -c1-7)"
-          docker build \
-            --network host \
-            -t localhost:${TUNNEL_PORT}/${{ secrets.HARBOR_PROJECT }}/platform:${TAG} \
-            -t localhost:${TUNNEL_PORT}/${{ secrets.HARBOR_PROJECT }}/platform:latest \
-            -f Dockerfile .
-          docker push localhost:${TUNNEL_PORT}/${{ secrets.HARBOR_PROJECT }}/platform:${TAG}
-          docker push localhost:${TUNNEL_PORT}/${{ secrets.HARBOR_PROJECT }}/platform:latest
-          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+  deploy:
+    needs: build
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_deploy }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: platform-image
 
-      - name: Deploy on china-cheap-2
-        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_deploy }}
+      - name: Stream image through jump host into cheap-2
         run: |
-          TAG="sha-$(echo "${{ github.sha }}" | cut -c1-7)"
-          sshpass -p "${{ secrets.DEPLOY_SSH_PASS }}" ssh -o StrictHostKeyChecking=no \
-            -p ${SSH_PORT} ${SSH_USER}@${SSH_HOST} IMAGE_TAG=${TAG} REGISTRY=${REGISTRY} '
-            set -e
-            docker pull ${REGISTRY}/paas/platform:${IMAGE_TAG}
-            docker pull ${REGISTRY}/paas/platform:latest
-            docker rm -f platform-next 2>/dev/null || true
-            # run the new version beside the old one first (port 3010) to gate the switch
-            docker run -d --name platform-next \
-              -p 127.0.0.1:3010:3000 \
-              -v /opt/platform:/data \
-              -e NODE_ENV=production -e HOST=0.0.0.0 -e PORT=3000 -e PLATFORM_DATA_DIR=/data \
-              ${REGISTRY}/paas/platform:${IMAGE_TAG}
-            for i in $(seq 1 40); do
-              [ "$(curl -s -o /dev/null -w "%{http_code}" -m 3 http://127.0.0.1:3010/api/config)" = "200" ] && break
-              sleep 5
-            done
-            C=$(curl -s -o /dev/null -w "%{http_code}" -m 3 http://127.0.0.1:3010/api/config)
-            if [ "$C" != "200" ]; then
-              echo "new version failed health check ($C) — keeping old container"; docker rm -f platform-next; exit 1
-            fi
-            docker rm -f platform platform-next
-            docker run -d --name platform --restart unless-stopped \
-              -p 127.0.0.1:3000:3000 \
-              -v /opt/platform:/data \
-              -e NODE_ENV=production -e HOST=0.0.0.0 -e PORT=3000 -e PLATFORM_DATA_DIR=/data \
-              ${REGISTRY}/paas/platform:${IMAGE_TAG}
-            sleep 3
-            docker ps --filter name=platform --format "{{.Names}} {{.Status}} {{.Image}}"
-          '
+          sudo apt-get update -qq && sudo apt-get install -y -qq sshpass zstd >/dev/null
+          zstd -dc < platform.tar.zst | \
+            sshpass -p "${{ secrets.JUMP_PASS }}" ssh -o StrictHostKeyChecking=no \
+              ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }} \
+              "sshpass -p '${{ secrets.DEPLOY_SSH_PASS }}' ssh -o StrictHostKeyChecking=no -p ${{ secrets.DEPLOY_SSH_PORT }} ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }} 'docker load'"
+
+      - name: Blue/green swap with health gate
+        run: |
+          sshpass -p "${{ secrets.JUMP_PASS }}" ssh -o StrictHostKeyChecking=no \
+            ${{ secrets.JUMP_USER }}@${{ secrets.JUMP_HOST }} \
+            "sshpass -p '${{ secrets.DEPLOY_SSH_PASS }}' ssh -o StrictHostKeyChecking=no -p ${{ secrets.DEPLOY_SSH_PORT }} ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }} 'deploy-platform.sh ${{ needs.build.outputs.tag }}'"
+          echo "Deployed ${{ needs.build.outputs.tag }} — verify: http://103.236.89.174:20400/api/config"
