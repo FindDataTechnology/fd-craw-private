@@ -54,11 +54,13 @@ export async function expandDocRefs(ctx, text) {
   let out = text;
   for (const m of refs) {
     const id = m[1];
+    // Prefix fetch at the SQL layer (12k budget — same slice the caller
+    // applied before, without loading the full column).
     let body;
-    try { body = await ctx.documents.getDocumentContent(id); }
+    try { body = ctx.db.getDocumentPrefix(id, 12000); }
     catch (e) { console.warn(`[doc] @doc:${id} lookup failed: ${e.message}`); }
     const snippet = body && body.trim()
-      ? body.trim().slice(0, 12000)
+      ? body.trim()
       : `(document ${id} is unavailable or empty)`;
     out = out.replaceAll(m[0], `\n\n--- attached document ${id} ---\n${snippet}\n--- end document ${id} ---\n`);
   }

@@ -212,11 +212,26 @@ export function getIndexVersion() {
   return INDEX_VERSION;
 }
 
+// Prepared-statement registry: better-sqlite3 statements are reusable and
+// compiled per prepare() — caching them turns every helper call (hot path:
+// two per chat message) from a compile+run into a run only. Cache lives for
+// the process lifetime; db.js opens exactly once (initDb) and a failed open
+// nulls dbReady before any helper runs.
+const stmtCache = new Map();
+function stmt(sql) {
+  let s = stmtCache.get(sql);
+  if (!s) {
+    s = db.prepare(sql);
+    stmtCache.set(sql, s);
+  }
+  return s;
+}
+
 // ── Chat sessions & messages ─────────────────────────────────────────────────
 
 export function upsertSession(id, title, createdAt, updatedAt, path = null) {
   if (!dbReady) return;
-  db.prepare(
+  stmt(
     `INSERT INTO chat_sessions (id, title, created_at, updated_at, path)
      VALUES (@id, @title, @created_at, @updated_at, @path)
      ON CONFLICT(id) DO UPDATE SET
@@ -228,12 +243,12 @@ export function upsertSession(id, title, createdAt, updatedAt, path = null) {
 
 export function setSessionPath(id, path) {
   if (!dbReady) return;
-  db.prepare("UPDATE chat_sessions SET path = ? WHERE id = ?").run(path, id);
+  stmt("UPDATE chat_sessions SET path = ? WHERE id = ?").run(path, id);
 }
 
 export function touchSession(id, updatedAt) {
   if (!dbReady) return;
-  db.prepare("UPDATE chat_sessions SET updated_at = ? WHERE id = ?").run(updatedAt, id);
+  stmt("UPDATE chat_sessions SET updated_at = ? WHERE id = ?").run(updatedAt, id);
 }
 
 // Set a session's title and bump updated_at. Returns true if the row was
@@ -253,7 +268,7 @@ export function appendMessage(sessionId, role, content, createdAt) {
     .prepare("SELECT COALESCE(MAX(seq), 0) AS max_seq FROM chat_messages WHERE session_id = ?")
     .get(sessionId);
   const seq = (row?.max_seq ?? 0) + 1;
-  db.prepare(
+  stmt(
     `INSERT INTO chat_messages (session_id, role, content, seq, created_at)
      VALUES (?, ?, ?, ?, ?)`
   ).run(sessionId, role, content, seq, createdAt);
@@ -274,19 +289,19 @@ export function listChatSessions() {
 
 export function getSessionPath(id) {
   if (!dbReady) return null;
-  return db.prepare("SELECT path FROM chat_sessions WHERE id = ?").get(id)?.path ?? null;
+  return stmt("SELECT path FROM chat_sessions WHERE id = ?").get(id)?.path ?? null;
 }
 
 export function sessionExists(id) {
   if (!dbReady) return false;
-  return !!db.prepare("SELECT 1 FROM chat_sessions WHERE id = ?").get(id);
+  return !!stmt("SELECT 1 FROM chat_sessions WHERE id = ?").get(id);
 }
 
 // Delete a session row (cascades to chat_messages via FK). Returns true if a row
 // was removed, false if no such session or the DB is unavailable.
 export function deleteSession(id) {
   if (!dbReady || !id) return false;
-  const result = db.prepare("DELETE FROM chat_sessions WHERE id = ?").run(id);
+  const result = stmt("DELETE FROM chat_sessions WHERE id = ?").run(id);
   return result.changes > 0;
 }
 
@@ -310,7 +325,7 @@ export function getChatMessages(sessionId) {
 
 export function countChatSessions() {
   if (!dbReady) return 0;
-  return db.prepare("SELECT COUNT(*) AS n FROM chat_sessions").get()?.n ?? 0;
+  return stmt("SELECT COUNT(*) AS n FROM chat_sessions").get()?.n ?? 0;
 }
 
 // ── Documents ────────────────────────────────────────────────────────────────
@@ -318,7 +333,7 @@ export function countChatSessions() {
 export function upsertDocument(doc) {
   // doc: { id, name, type, status, added_at, error?, source_text? }
   if (!dbReady) return;
-  db.prepare(
+  stmt(
     `INSERT INTO documents (id, name, type, status, added_at, error, source_text)
      VALUES (@id, @name, @type, @status, @added_at, @error, @source_text)
      ON CONFLICT(id) DO UPDATE SET
@@ -340,7 +355,7 @@ export function upsertDocument(doc) {
 
 export function updateDocumentStatus(id, status, error = null) {
   if (!dbReady) return;
-  db.prepare("UPDATE documents SET status = ?, error = ? WHERE id = ?").run(
+  stmt("UPDATE documents SET status = ?, error = ? WHERE id = ?").run(
     status,
     error,
     id
@@ -349,7 +364,7 @@ export function updateDocumentStatus(id, status, error = null) {
 
 export function setDocumentSource(id, sourceText) {
   if (!dbReady) return;
-  db.prepare("UPDATE documents SET source_text = ? WHERE id = ?").run(sourceText, id);
+  stmt("UPDATE documents SET source_text = ? WHERE id = ?").run(sourceText, id);
 }
 
 export function listDocuments() {
@@ -363,18 +378,28 @@ export function listDocuments() {
 
 export function getDocument(id) {
   if (!dbReady) return null;
-  return db.prepare("SELECT * FROM documents WHERE id = ?").get(id);
+  return stmt("SELECT * FROM documents WHERE id = ?").get(id);
+}
+
+// Prefix-only fetch for @doc: prompt expansion: the caller slices to a fixed
+// character budget anyway, so selecting substr(source_text, 1, n) at the SQL
+// layer avoids dragging a potentially multi-megabyte column into memory (and
+// blocking the event loop) for every attachment reference.
+export function getDocumentPrefix(id, chars) {
+  if (!dbReady) return null;
+  return stmt("SELECT substr(source_text, 1, ?) AS source_text FROM documents WHERE id = ?")
+    .get(chars, id)?.source_text ?? null;
 }
 
 export function documentExists(id) {
   if (!dbReady) return false;
-  return !!db.prepare("SELECT 1 FROM documents WHERE id = ?").get(id);
+  return !!stmt("SELECT 1 FROM documents WHERE id = ?").get(id);
 }
 
 export function deleteDocument(id) {
   if (!dbReady) return;
   // ON DELETE CASCADE removes the doc_index row.
-  db.prepare("DELETE FROM documents WHERE id = ?").run(id);
+  stmt("DELETE FROM documents WHERE id = ?").run(id);
 }
 
 export function listReadyDocuments() {
@@ -388,14 +413,14 @@ export function listReadyDocuments() {
 
 export function countDocuments() {
   if (!dbReady) return 0;
-  return db.prepare("SELECT COUNT(*) AS n FROM documents").get()?.n ?? 0;
+  return stmt("SELECT COUNT(*) AS n FROM documents").get()?.n ?? 0;
 }
 
 // ── Document index (PageIndex tree, JSON) ────────────────────────────────────
 
 export function setDocIndex(docId, indexData) {
   if (!dbReady) return;
-  db.prepare(
+  stmt(
     `INSERT INTO doc_index (doc_id, index_data, index_version, updated_at)
      VALUES (@doc_id, @index_data, @index_version, @updated_at)
      ON CONFLICT(doc_id) DO UPDATE SET
@@ -412,7 +437,7 @@ export function setDocIndex(docId, indexData) {
 
 export function getDocIndex(docId) {
   if (!dbReady) return null;
-  const row = db.prepare("SELECT index_data, index_version FROM doc_index WHERE doc_id = ?").get(docId);
+  const row = stmt("SELECT index_data, index_version FROM doc_index WHERE doc_id = ?").get(docId);
   if (!row) return null;
   try {
     // index_data is the JSON-serialized PageIndexResult ({ docName, structure }).
@@ -432,7 +457,7 @@ export function getDocIndex(docId) {
 
 export function createCollection({ id, name, description, created_at }) {
   if (!dbReady) return;
-  db.prepare(
+  stmt(
     `INSERT INTO collections (id, name, description, created_at)
      VALUES (@id, @name, @description, @created_at)`
   ).run({ id, name, description, created_at });
@@ -464,7 +489,7 @@ export function listCollections() {
 
 export function renameCollection(id, { name, description }) {
   if (!dbReady) return;
-  db.prepare(
+  stmt(
     `UPDATE collections SET name = @name, description = @description WHERE id = @id`
   ).run({ id, name, description });
 }
@@ -472,13 +497,13 @@ export function renameCollection(id, { name, description }) {
 export function deleteCollection(id) {
   if (!dbReady) return;
   // ON DELETE CASCADE removes the membership rows.
-  db.prepare("DELETE FROM collections WHERE id = ?").run(id);
+  stmt("DELETE FROM collections WHERE id = ?").run(id);
 }
 
 // Idempotent: adding an existing membership is a no-op (INSERT OR IGNORE).
 export function addDocumentToCollection(collectionId, documentId) {
   if (!dbReady) return;
-  db.prepare(
+  stmt(
     `INSERT OR IGNORE INTO collection_documents (collection_id, document_id, added_at)
      VALUES (?, ?, ?)`
   ).run(collectionId, documentId, nowIso());
@@ -487,7 +512,7 @@ export function addDocumentToCollection(collectionId, documentId) {
 // Idempotent: removing a non-member is a no-op.
 export function removeDocumentFromCollection(collectionId, documentId) {
   if (!dbReady) return;
-  db.prepare(
+  stmt(
     "DELETE FROM collection_documents WHERE collection_id = ? AND document_id = ?"
   ).run(collectionId, documentId);
 }
@@ -523,7 +548,7 @@ export function listReadyDocumentsInCollection(collectionId) {
 
 export function setPreference(key, value) {
   if (!dbReady) return;
-  db.prepare(
+  stmt(
     `INSERT INTO user_preferences (key, value, updated_at)
      VALUES (@key, @value, @updated_at)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
@@ -532,12 +557,12 @@ export function setPreference(key, value) {
 
 export function getPreference(key) {
   if (!dbReady) return null;
-  return db.prepare("SELECT value FROM user_preferences WHERE key = ?").get(key)?.value ?? null;
+  return stmt("SELECT value FROM user_preferences WHERE key = ?").get(key)?.value ?? null;
 }
 
 export function getAllPreferences() {
   if (!dbReady) return {};
-  const rows = db.prepare("SELECT key, value FROM user_preferences").all();
+  const rows = stmt("SELECT key, value FROM user_preferences").all();
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
 }
 
@@ -596,7 +621,7 @@ export function addExtensionConfig({ name, type, config, enabled = true, source 
   if (!dbReady) return null;
   const id = crypto.randomUUID();
   const now = nowIso();
-  db.prepare(
+  stmt(
     `INSERT INTO extension_configs (id, name, type, config_json, enabled, source, origin, locked, permissions, created_at, updated_at)
      VALUES (@id, @name, @type, @config_json, @enabled, @source, @origin, @locked, @permissions, @created_at, @updated_at)`
   ).run({
@@ -633,19 +658,19 @@ export function updateExtensionConfig(name, { type, config, enabled }) {
   }
   if (updates.length === 0) return getExtensionConfig(name);
   updates.push("updated_at = @updated_at");
-  db.prepare(`UPDATE extension_configs SET ${updates.join(", ")} WHERE name = @name`).run(params);
+  stmt(`UPDATE extension_configs SET ${updates.join(", ")} WHERE name = @name`).run(params);
   return getExtensionConfig(name);
 }
 
 export function deleteExtensionConfig(name) {
   if (!dbReady) return false;
-  const result = db.prepare("DELETE FROM extension_configs WHERE name = ?").run(name);
+  const result = stmt("DELETE FROM extension_configs WHERE name = ?").run(name);
   return result.changes > 0;
 }
 
 export function setExtensionEnabled(name, enabled) {
   if (!dbReady) return null;
-  db.prepare("UPDATE extension_configs SET enabled = ?, updated_at = ? WHERE name = ?").run(
+  stmt("UPDATE extension_configs SET enabled = ?, updated_at = ? WHERE name = ?").run(
     enabled ? 1 : 0,
     nowIso(),
     name
@@ -680,7 +705,7 @@ export function addCustomSkill({ name, description, content, enabled = true }) {
   if (!dbReady) return null;
   const id = crypto.randomUUID();
   const now = nowIso();
-  db.prepare(
+  stmt(
     `INSERT INTO custom_skills (id, name, description, content, enabled, created_at, updated_at)
      VALUES (@id, @name, @description, @content, @enabled, @created_at, @updated_at)`
   ).run({
@@ -713,19 +738,19 @@ export function updateCustomSkill(name, { description, content, enabled }) {
   }
   if (updates.length === 0) return getCustomSkill(name);
   updates.push("updated_at = @updated_at");
-  db.prepare(`UPDATE custom_skills SET ${updates.join(", ")} WHERE name = @name`).run(params);
+  stmt(`UPDATE custom_skills SET ${updates.join(", ")} WHERE name = @name`).run(params);
   return getCustomSkill(name);
 }
 
 export function deleteCustomSkill(name) {
   if (!dbReady) return false;
-  const result = db.prepare("DELETE FROM custom_skills WHERE name = ?").run(name);
+  const result = stmt("DELETE FROM custom_skills WHERE name = ?").run(name);
   return result.changes > 0;
 }
 
 export function setCustomSkillEnabled(name, enabled) {
   if (!dbReady) return null;
-  db.prepare("UPDATE custom_skills SET enabled = ?, updated_at = ? WHERE name = ?").run(
+  stmt("UPDATE custom_skills SET enabled = ?, updated_at = ? WHERE name = ?").run(
     enabled ? 1 : 0,
     nowIso(),
     name
