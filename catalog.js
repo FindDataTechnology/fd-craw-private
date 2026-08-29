@@ -189,9 +189,28 @@ export async function refresh(user = null) {
   return getCatalogFor(user);
 }
 
+// Re-broadcast when the merged catalog changed (shared by refresh + the
+// async initial cloud merge).
+function notifyIfChanged() {
+  const cat = merged();
+  const sig = JSON.stringify({ agents: cat.agents.map(serialize), apps: cat.apps.map(serialize) });
+  if (sig !== lastSignature) {
+    lastSignature = sig;
+    broadcastFn?.({ type: "catalog_changed" });
+  }
+}
+
 export async function initCatalog({ broadcast }) {
   broadcastFn = broadcast;
-  await refresh();
+  // Local catalog first: boot readiness must not wait on the cloud fetch (a
+  // slow/unreachable AGENTS_CONFIG_URL costs up to its 10s timeout). The
+  // cloud merges asynchronously and broadcasts catalog_changed on arrival;
+  // the periodic refresh below keeps syncing.
+  await loadLocal();
+  notifyIfChanged();
+  void loadCloud()
+    .then(() => notifyIfChanged())
+    .catch((e) => console.warn(`[catalog] initial cloud refresh failed: ${e.message}`));
   if (REFRESH_SECS > 0) {
     timer = setInterval(
       () => refresh().catch((e) => console.warn(`[catalog] periodic refresh failed: ${e.message}`)),

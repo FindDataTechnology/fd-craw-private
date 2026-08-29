@@ -53,7 +53,9 @@ function freePort() {
 
 async function waitFor(predicate, ms = 10_000) {
   const start = Date.now();
-  while (!predicate()) {
+  // Await: predicates may be async (polling fetch) — a raw Promise is truthy
+  // and would exit the loop immediately.
+  while (!(await predicate())) {
     if (Date.now() - start > ms) throw new Error("waitFor timeout");
     await new Promise((r) => setTimeout(r, 100));
   }
@@ -210,21 +212,34 @@ test.describe("AUTH_MODE=forward_auth", () => {
     await expect(openWs({})).rejects.toThrow(/401/);
 
     const admin = await openWs(ADMIN);
-    await waitFor(() => admin.msgs.some((m) => m.type === "agents"));
-    const ids = admin.msgs.find((m) => m.type === "agents").agents.map((a) => a.id);
+    // The catalog boots local-first and merges the cloud asynchronously —
+    // poll list_agents until the cloud-sourced remote agent arrives.
+    await waitFor(() => {
+      admin.ws.send(JSON.stringify({ type: "list_agents" }));
+      return admin.msgs.some((m) => m.type === "agents" && m.agents.some((a) => a.id === "remote-chat"));
+    });
+    const ids = admin.msgs.findLast((m) => m.type === "agents").agents.map((a) => a.id);
     expect(ids).toContain("remote-chat"); // chat-mode remote is switchable
     expect(ids).toContain("admin-agent"); // admin sees the role-gated agent
     expect(ids).not.toContain("link-agent"); // link agents are pages, not chat targets
     admin.ws.close();
 
     const user = await openWs(USER);
-    await waitFor(() => user.msgs.some((m) => m.type === "agents"));
-    expect(user.msgs.find((m) => m.type === "agents").agents.map((a) => a.id)).not.toContain("admin-agent");
+    await waitFor(() => {
+      user.ws.send(JSON.stringify({ type: "list_agents" }));
+      return user.msgs.some((m) => m.type === "agents" && m.agents.some((a) => a.id === "remote-chat"));
+    });
+    expect(user.msgs.findLast((m) => m.type === "agents").agents.map((a) => a.id)).not.toContain("admin-agent");
     user.ws.close();
   });
 
   test("catalog GET is role-filtered, validated, cloud-wins, and redacted", async () => {
-    const adminCat = await (await fetch(`${BASE}/api/catalog`, { headers: ADMIN })).json();
+    // Cloud merges asynchronously after the local-first boot — wait for it.
+    let adminCat;
+    await waitFor(async () => {
+      adminCat = await (await fetch(`${BASE}/api/catalog`, { headers: ADMIN })).json();
+      return adminCat.agents.some((a) => a.id === "remote-chat");
+    });
     const agentIds = adminCat.agents.map((a) => a.id);
     expect(agentIds).toContain("admin-agent");
     expect(agentIds).toContain("link-agent"); // catalog lists link agents (unlike the WS switcher)

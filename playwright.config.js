@@ -74,7 +74,10 @@ export default defineConfig({
     : {
         webServer: {
           command: "node e2e/seed-fixtures.js && node server.js",
-          port: E2E_PORT,
+          // The server listens FIRST and initializes the agent in the
+          // background (listen-first boot) — readiness must gate on the
+          // agent, not the port, or tests would race a half-booted server.
+          url: `http://127.0.0.1:${E2E_PORT}/api/ready`,
           // server.js listens only after dsh init completes; a cold first
           // spawn (fresh profile composition, e.g. on a CI runner) can
           // exceed 60s.

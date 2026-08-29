@@ -12,9 +12,6 @@
 // callback as `documents_status` events. Query (reasoning-based retrieval over
 // the PageIndex trees) is delegated to the bridge.
 
-import { Settings } from "llamaindex";
-import { OpenAI } from "@llamaindex/openai";
-import { ProxyAgent, fetch as undiciFetch } from "undici";
 import { randomUUID } from "node:crypto";
 import * as db from "./db.js";
 import * as bridge from "./pageindex-bridge.js";
@@ -67,6 +64,12 @@ export async function initStore({ baseUrl, apiKey, model, broadcast: broadcastFn
   // framework is live, and route its OpenAI client to the configured provider.
   process.env.OPENAI_BASE_URL = baseUrl;
   process.env.OPENAI_API_KEY = apiKey;
+  // LlamaIndex + its OpenAI client load at first use (they parse megabytes of
+  // framework JS — keeping them off the boot path cut cold start notably).
+  const [{ Settings }, { OpenAI }] = await Promise.all([
+    import("llamaindex"),
+    import("@llamaindex/openai"),
+  ]);
   Settings.llm = new OpenAI({
     model: provider.model,
     apiKey,
@@ -231,6 +234,7 @@ async function fetchUrlAsText(url) {
       // proxy is configured route through it via undici's ProxyAgent dispatcher
       // (undici is the engine behind Node's fetch). undici's own fetch is used
       // here so the dispatcher instance is guaranteed compatible.
+      const { ProxyAgent, fetch: undiciFetch } = await import("undici");
       options.dispatcher = new ProxyAgent(proxyUrl);
       res = await undiciFetch(url, options);
     } else {

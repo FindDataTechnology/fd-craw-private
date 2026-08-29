@@ -22,12 +22,33 @@ export function attachWebSocket(ctx) {
 
 // ── WebSocket handling ───────────────────────────────────────────────────────
 
+// Sync a client that connected mid-boot with everything the normal connect
+// path sends, once the dsh agent is live (the "ready" broadcast's payload).
+const syncReadyClient = async (ws) => {
+  ws.send(JSON.stringify({ type: "ready" }));
+  ws.send(JSON.stringify({ type: "current_model", id: ctx.session?.model?.id || null }));
+  ws.send(JSON.stringify({ type: "current_agent", id: ctx.currentAgentId }));
+  ws.send(JSON.stringify({ type: "agents", agents: ctx.switchableAgents(ws.user) }));
+  ws.send(JSON.stringify({ type: "models", models: await ctx.getAvailableModels() }));
+  chatHistory
+    .listSessions()
+    .then((sessions) =>
+      ws.send(
+        JSON.stringify({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
+      )
+    )
+    .catch((e) => console.error("[chat-history] list on ready failed:", e.message));
+};
+
 ctx.wss.on("connection", (ws, req) => {
   // Identity is fixed at upgrade time (v1 ceiling: no re-auth mid-connection).
   ws.user = ctx.authEnabled ? userFromHeaders(req.headers) : null;
   ctx.clients.add(ws);
   console.log(`Client connected (${ctx.clients.size} total)`);
 
+  // Mid-boot connections learn the agent is still initializing; the ready
+  // broadcast re-syncs them with models/sessions once the dsh agent is live.
+  if (!ctx.ready.dsh) ws.send(JSON.stringify({ type: "initializing" }));
   // Tell the client which model is currently active so the dropdown can sync.
   const currentModelId = ctx.session?.model?.id || null;
   ws.send(JSON.stringify({ type: "current_model", id: currentModelId }));
@@ -60,6 +81,10 @@ ctx.wss.on("connection", (ws, req) => {
 
     switch (data.type) {
       case "prompt": {
+        if (!ctx.ready.dsh) {
+          ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
+          break;
+        }
         const text = data.text?.trim();
         if (!text) return;
 
@@ -171,12 +196,20 @@ ctx.wss.on("connection", (ws, req) => {
       }
 
       case "list_models": {
+        if (!ctx.ready.dsh) {
+          ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
+          break;
+        }
         const models = await ctx.getAvailableModels();
         ws.send(JSON.stringify({ type: "models", models }));
         break;
       }
 
       case "set_model": {
+        if (!ctx.ready.dsh) {
+          ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
+          break;
+        }
         await ctx.switchModelTo(data.id, ws);
         break;
       }
@@ -277,6 +310,10 @@ ctx.wss.on("connection", (ws, req) => {
       }
 
       case "new_session": {
+        if (!ctx.ready.dsh) {
+          ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
+          break;
+        }
         try {
           await ctx.startNewSession();
         } catch (err) {
@@ -286,6 +323,10 @@ ctx.wss.on("connection", (ws, req) => {
       }
 
       case "switch_session": {
+        if (!ctx.ready.dsh) {
+          ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
+          break;
+        }
         try {
           const result = await ctx.switchToSession(data.id);
           ctx.broadcast({
@@ -329,6 +370,12 @@ ctx.wss.on("connection", (ws, req) => {
     ctx.clients.delete(ws);
   });
 });
+
+// Called by the composition root when the dsh agent finishes initializing:
+// every connected client gets the ready event + the connect-time payloads.
+ctx.onDshReady = () => {
+  for (const ws of ctx.clients) void syncReadyClient(ws);
+};
 
 
 

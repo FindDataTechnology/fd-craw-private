@@ -75,6 +75,14 @@ export function registerMiscRoutes(ctx) {
     }
   });
 
+  // Readiness probe: 200 once the dsh agent finished initializing, 503 while
+  // the (listen-first) server is still booting background services. Deeper
+  // than a TCP check — used by the e2e webServer and suitable for deploy
+  // probes that must not route traffic to a half-booted instance.
+  app.get("/api/ready", (_req, res) => {
+    res.status(ctx.ready.dsh ? 200 : 503).json({ ready: ctx.ready.dsh });
+  });
+
   // ── Server config (e.g. openconnector / documents state) ──────────────────
   app.get("/api/config", (_req, res) => {
     res.json({

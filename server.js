@@ -310,26 +310,40 @@ async function initDshAgent() {
 
 
 
-// ── Start ────────────────────────────────────────────────────────────────────
-// BOOT-ORDER INVARIANTS (behavioral contract, see the split-server-monolith
-// spec): initChatHistory resolves the sessions store dir BEFORE initDshAgent
-// (the session shim reads it); db.initDb opens BEFORE documents.initStore and
-// BEFORE runLegacyMigrations; documents.initStore's restart reconciliation
-// runs BEFORE migrate's legacy import enqueues re-indexing; initDshAgent
-// completes before anything prompts; listen() is LAST. Parallelizing any of
-// this is a semantic change (planned deliberately in optimize-hot-paths).
+// ── Start (listen-first) ─────────────────────────────────────────────────────
+// The port listens IMMEDIATELY: static assets, /api/ready and non-agent
+// endpoints answer while background init proceeds. Agent-dependent features
+// (WS chat commands, /api/llm/*) answer an explicit initializing error until
+// ctx.ready.dsh flips, then connected clients get the ready sync payload.
+//
+// BOOT INVARIANTS (deliberate ordering — see optimize-hot-paths design D1):
+//   1. initChatHistory resolves the sessions store dir BEFORE initDshAgent
+//      (the session shim reads it).
+//   2. db.initDb opens BEFORE documents.initStore AND BEFORE
+//      runLegacyMigrations.
+//   3. documents.initStore and initDshAgent run CONCURRENTLY after (2) —
+//      they share no state — but BOTH complete BEFORE migrate.
+//   4. documents.initStore's restart reconciliation still runs BEFORE
+//      migrate's legacy import enqueues re-indexing (same relative order as
+//      the sequential boot).
+//   5. migrate, catalog.initCatalog and cron.initCron run concurrently after
+//      the dsh agent is ready (none can be prompted before then).
+server.listen(PORT, HOST, () => {
+  console.log(`Platform listening at http://${HOST}:${PORT} (agent init in background)`);
+});
 
 openConnector.initOpenConnector();
-// initChatHistory must run before initDshAgent so the sessions store dir is
-// resolved before the session shim reads it via chatHistory.getSessionsDir().
 await chatHistory.initChatHistory();
 await workdirStore.initWorkdirStore();
 // Open the SQLite project database (chat, documents, index, preferences) before
 // feature init. Degrades gracefully: if it cannot open, dbReady stays false and
 // the server continues (chat in-memory, documents disabled).
 await db.initDb();
-// Initialize document store (PageIndex indexing, LlamaIndex framework)
-if (db.isDbReady()) {
+
+// Documents (PageIndex indexing) and the dsh agent both depend only on the db
+// being open — run them concurrently.
+const documentsInit = (async () => {
+  if (!db.isDbReady()) return;
   if (!ctx.LLM_API_KEY) {
     console.warn("[documents] LLM_API_KEY not set; documents RAG indexing/query calls will fail at call time");
   }
@@ -339,30 +353,34 @@ if (db.isDbReady()) {
     model: documents.DOCUMENTS_MODEL,
     broadcast: ctx.broadcast,
   });
-}
-await initDshAgent();
+})();
+const dshInit = initDshAgent();
+await Promise.all([documentsInit, dshInit]);
+
+// Agent is live: flip readiness and sync any client that connected mid-boot.
+ctx.ready.dsh = true;
+ctx.onDshReady?.();
+
 // One-time import of legacy file stores (documents-store/, sessions-store/,
 // chat-history-store/) into the SQLite database. Runs only on a fresh database;
 // idempotent; never deletes the legacy stores. migrate.js reads both legacy
 // chat formats directly with stdlib fs (no SDK dependency).
-await migrate.runLegacyMigrations();
-
-await catalog.initCatalog({ broadcast: ctx.broadcast });
-
-// Initialize cron module
-await cron.initCron({
-  broadcast: ctx.broadcast,
-  sessionPrompt: async (prompt) => {
-    if (ctx.session) {
-      return ctx.session.prompt(prompt);
-    }
-  },
-  isStreaming: () => ctx.isStreaming,
-});
-
-server.listen(PORT, HOST, () => {
-  console.log(`Platform running at http://${HOST}:${PORT}`);
-});
+// catalog.initCatalog resolves on the LOCAL catalog (cloud merges async);
+// cron reads its jobs file and starts timers.
+await Promise.all([
+  migrate.runLegacyMigrations(),
+  catalog.initCatalog({ broadcast: ctx.broadcast }),
+  cron.initCron({
+    broadcast: ctx.broadcast,
+    sessionPrompt: async (prompt) => {
+      if (ctx.session) {
+        return ctx.session.prompt(prompt);
+      }
+    },
+    isStreaming: () => ctx.isStreaming,
+  }),
+]);
+console.log("Platform fully initialized");
 
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 

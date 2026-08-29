@@ -12,10 +12,21 @@
 // LlamaIndex "accesses pageindex" (indexing) and "reads from sqlite" (retrieval
 // loads trees + source text from the project database) through this module.
 
-import { PageIndex, markdownToTree } from "pageindex";
 import * as db from "./db.js";
 import { chat } from "./llm-chat.js";
-import { extractText, hasReader } from "./readers.js";
+
+// Heavy deps at first use: the pageindex lib and the LlamaIndex readers pull
+// large dependency trees (mammoth, officeparser, csv/html/json parsers) that
+// have no business blocking server boot — they load on the first indexing
+// call and stay cached for the process lifetime.
+let pageindexMod = null;
+async function getPageindex() {
+  pageindexMod ??= await import("pageindex");
+  return pageindexMod;
+}
+async function getReaders() {
+  return import("./readers.js");
+}
 
 // Reasoning model for indexing summaries and retrieval. Override with
 // DOCUMENTS_MODEL; must be a model id registered on the configured provider.
@@ -54,6 +65,8 @@ export async function buildIndex({ type, name, content, buffer }) {
   const opts = pageindexOptions();
   let result;
   let sourceText;
+  const { PageIndex, markdownToTree } = await getPageindex();
+  const { hasReader } = await getReaders();
 
   if (type === "markdown") {
     sourceText = content ?? (buffer ? buffer.toString("utf8") : "");
@@ -73,6 +86,7 @@ export async function buildIndex({ type, name, content, buffer }) {
     // not present but content is (restart re-index from persisted source_text),
     // skip re-extraction and build the tree from the saved text directly.
     if (buffer) {
+      const { extractText } = await getReaders();
       sourceText = await extractText(type, buffer);
     } else {
       sourceText = content || "";

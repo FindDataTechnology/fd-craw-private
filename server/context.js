@@ -93,6 +93,10 @@ export function createAppContext(config) {
 
     // ── WS clients + fan-out ────────────────────────────────────────────────
     clients: new Set(),
+
+    // ── Readiness (listen-first boot; see server.js) ────────────────────────
+    // The port listens immediately; agent-dependent features gate on dsh.
+    ready: { dsh: false },
   };
 
   // ctx.finishTurn is attached by server/dsh-events.js (attachDshEvents).

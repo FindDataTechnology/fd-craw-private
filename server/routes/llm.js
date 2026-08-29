@@ -3,6 +3,12 @@
 export function registerLlmRoutes(ctx) {
   const { app, broadcast } = ctx;
 
+  // The LLM routes read the dsh model list / live session — until the
+  // (listen-first) boot finishes the agent, they answer 503 instead of
+  // serving empty state.
+  const notReady = (_req, res) => res.status(503).json({ error: "initializing" });
+  app.use("/api/llm", (req, res, next) => (ctx.ready.dsh ? next() : notReady(req, res)));
+
   // Refresh the dsh model list at runtime (design D3 / spike 2). Re-runs
   // writeLlmProfile; dsh-settings-file hot-reloads the llm-pi-ai: section so new
   // models reach the adapter without a restart. The active model is untouched.
