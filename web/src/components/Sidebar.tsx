@@ -13,6 +13,7 @@ import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
 import { SettingsMenu } from "@/components/SettingsMenu";
 import { ChatSessionMenu } from "@/components/ChatSessionMenu";
+import { HelpDialog } from "@/components/HelpDialog";
 
 interface Props {
   send: (m: ClientMessage) => void;
@@ -46,6 +47,8 @@ export function Sidebar({ send }: Props) {
   // popover anchored to the row that fired the event.
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [menuTarget, setMenuTarget] = useState<{ id: string; el: HTMLElement } | null>(null);
+  // The help center's second entry point (settings menu → 帮助).
+  const [helpOpen, setHelpOpen] = useState(false);
 
   // The server bumps catalogVersion via `catalog_changed`; refetch the
   // switchable agent list so catalog/role edits appear live.
@@ -226,8 +229,9 @@ export function Sidebar({ send }: Props) {
             </option>
           ))}
         </select>
-        <SettingsMenu />
+        <SettingsMenu onHelp={() => setHelpOpen(true)} />
       </div>
+      <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </nav>
   );
 }

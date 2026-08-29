@@ -39,7 +39,8 @@
     "title": "Ajustes",
     "status": "📊 Estado del sistema",
     "models": "⚡ Modelos LLM",
-    "openconnector": "🔌 OpenConnector"
+    "openconnector": "🔌 OpenConnector",
+    "help": "❓ Ayuda"
   },
   "modelsPage": {
     "title": "Modelos",
@@ -85,7 +86,6 @@
     "placeholder": "Pregúntale al Asistente de Platform lo que sea… (escribe / para comandos, Enter para enviar, Shift+Enter para salto de línea)",
     "placeholderDisabled": "Conectando…",
     "send": "Enviar",
-    "helpHeader": "Comandos disponibles:",
     "dropHint": "Suelta para adjuntar el documento",
     "uploadFailed": "Error al subir: {{message}}",
     "attach": "Adjuntar un archivo",
@@ -100,7 +100,7 @@
       "model": "cambiar o mostrar el modelo activo",
       "new": "iniciar una nueva sesión de chat",
       "clear": "borrar la vista del chat",
-      "help": "listar los comandos disponibles"
+      "help": "Abrir el centro de ayuda"
     },
     "stop": "Detener",
     "uploading": "Subiendo…"
@@ -333,6 +333,22 @@
       "installFailed": "Error al instalar {{name}}: {{error}}",
       "readyToUse": "Listo para usar",
       "needsConfig": "Requiere configuración"
+    }
+  },
+  "help": {
+    "title": "Ayuda",
+    "subtitle": "Comandos, habilidades y atajos de teclado",
+    "commands": "Comandos",
+    "skills": "Habilidades ({{count}})",
+    "emptySkills": "No hay habilidades cargadas.",
+    "shortcuts": {
+      "title": "Atajos",
+      "send": "Enviar mensaje",
+      "newline": "Nueva línea",
+      "picker": "Abrir el selector de comandos",
+      "dismiss": "Cerrar selector / cancelar edición",
+      "thinking": "Plegar/desplegar bloques de razonamiento",
+      "sessionMenu": "Menú contextual de sesión (sobre una fila)"
     }
   }
 }

@@ -222,4 +222,23 @@ test.describe("composer hardening: IME, stop, disconnect", () => {
     await expect(chip).toContainText("note.txt");
     await expect(page.getByTestId("composer-attach-count")).toBeVisible();
   });
+
+  test("/help opens the persistent help center (not a vanishing toast)", async ({ page }) => {
+    const input = page.getByTestId("composer-input");
+    await input.fill("/help");
+    // First Enter is consumed by the slash picker (inserts the highlighted
+    // pick); the second submits the command — real-user key sequence.
+    await input.press("Enter");
+    await input.press("Enter");
+
+    const dialog = page.getByTestId("help-dialog");
+    await expect(dialog).toBeVisible();
+    // The three sections render: commands, skills, shortcuts.
+    await expect(dialog.getByRole("heading", { name: "Commands" })).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: /Skills \(/ })).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Shortcuts" })).toBeVisible();
+    // Esc closes it (the dialog is persistent, not a 1.6s toast).
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+  });
 });

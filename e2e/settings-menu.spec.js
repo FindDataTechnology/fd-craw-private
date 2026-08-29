@@ -47,4 +47,18 @@ test.describe("settings menu", () => {
     await page.keyboard.press("Escape");
     await expect(menu).toBeHidden();
   });
+
+  test("help entry opens the persistent help center", async ({ page }) => {
+    await gotoChat(page);
+    await page.getByTestId("settings-menu-btn").click();
+    await page.getByTestId("settings-menu-help").click();
+    // The menu closed and the help dialog opened.
+    await expect(page.getByTestId("settings-menu")).toBeHidden();
+    const dialog = page.getByTestId("help-dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Commands" })).toBeVisible();
+    // Escape closes the dialog.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+  });
 });

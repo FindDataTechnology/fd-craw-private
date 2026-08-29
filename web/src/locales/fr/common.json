@@ -39,7 +39,8 @@
     "title": "Paramètres",
     "status": "📊 État du système",
     "models": "⚡ Modèles LLM",
-    "openconnector": "🔌 OpenConnector"
+    "openconnector": "🔌 OpenConnector",
+    "help": "❓ Aide"
   },
   "modelsPage": {
     "title": "Modèles",
@@ -85,7 +86,6 @@
     "placeholder": "Demandez n'importe quoi à l'assistant Platform… (tapez / pour les commandes, Entrée pour envoyer, Maj+Entrée pour un saut de ligne)",
     "placeholderDisabled": "Connexion…",
     "send": "Envoyer",
-    "helpHeader": "Commandes disponibles :",
     "dropHint": "Relâchez pour joindre le document",
     "uploadFailed": "Échec de l'envoi : {{message}}",
     "attach": "Joindre un fichier",
@@ -100,7 +100,7 @@
       "model": "changer ou afficher le modèle actif",
       "new": "démarrer une nouvelle session de discussion",
       "clear": "effacer la vue de discussion",
-      "help": "lister les commandes disponibles"
+      "help": "Ouvrir le centre d’aide"
     },
     "stop": "Arrêter",
     "uploading": "Envoi en cours…"
@@ -333,6 +333,22 @@
       "installFailed": "Échec de l'installation de {{name}} : {{error}}",
       "readyToUse": "Prêt à l'emploi",
       "needsConfig": "Configuration requise"
+    }
+  },
+  "help": {
+    "title": "Aide",
+    "subtitle": "Commandes, compétences et raccourcis clavier",
+    "commands": "Commandes",
+    "skills": "Compétences ({{count}})",
+    "emptySkills": "Aucune compétence chargée.",
+    "shortcuts": {
+      "title": "Raccourcis",
+      "send": "Envoyer le message",
+      "newline": "Nouvelle ligne",
+      "picker": "Ouvrir le sélecteur de commandes",
+      "dismiss": "Fermer le sélecteur / annuler",
+      "thinking": "Replier/déplier tous les blocs de réflexion",
+      "sessionMenu": "Menu contextuel de session (sur une ligne)"
     }
   }
 }

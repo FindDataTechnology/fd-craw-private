@@ -8,6 +8,17 @@ interface DialogProps {
 }
 
 function Dialog({ open, onOpenChange, children }: DialogProps) {
+  // Escape closes the dialog. The primitive owns this (not callers): a modal
+  // without a keyboard exit traps keyboard and screen-reader users.
+  React.useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onOpenChange?.(false)
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [open, onOpenChange])
+
   if (!open) return null
 
   return (

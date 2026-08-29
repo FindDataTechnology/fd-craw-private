@@ -39,7 +39,8 @@
     "title": "Settings",
     "status": "📊 System Status",
     "models": "⚡ LLM Models",
-    "openconnector": "🔌 OpenConnector"
+    "openconnector": "🔌 OpenConnector",
+    "help": "❓ Help"
   },
   "modelsPage": {
     "title": "Models",
@@ -85,7 +86,6 @@
     "placeholder": "Ask Platform Assistant anything… (type / for commands, Enter to send, Shift+Enter for newline)",
     "placeholderDisabled": "Connecting…",
     "send": "Send",
-    "helpHeader": "Available commands:",
     "dropHint": "Release to attach the document",
     "uploadFailed": "Upload failed: {{message}}",
     "attach": "Attach a file",
@@ -100,7 +100,7 @@
       "model": "switch or show the active model",
       "new": "start a new chat session",
       "clear": "clear the chat view",
-      "help": "list available commands"
+      "help": "Open the help center"
     },
     "stop": "Stop",
     "uploading": "Uploading…"
@@ -333,6 +333,22 @@
       "installFailed": "Failed to install {{name}}: {{error}}",
       "readyToUse": "Ready to use",
       "needsConfig": "Needs config"
+    }
+  },
+  "help": {
+    "title": "Help",
+    "subtitle": "Commands, skills, and keyboard shortcuts",
+    "commands": "Commands",
+    "skills": "Skills ({{count}})",
+    "emptySkills": "No skills loaded.",
+    "shortcuts": {
+      "title": "Shortcuts",
+      "send": "Send message",
+      "newline": "New line",
+      "picker": "Open the command picker",
+      "dismiss": "Close picker / cancel edit",
+      "thinking": "Collapse/expand all thinking blocks",
+      "sessionMenu": "Session context menu (on a session row)"
     }
   }
 }

@@ -21,7 +21,13 @@ const ITEMS: Item[] = [
   { to: "/openconnector", key: "settingsMenu.openconnector", testId: "settings-menu-openconnector" },
 ];
 
-export function SettingsMenu() {
+interface Props {
+  // Opens the persistent help center. Rendered as a menu action (not a
+  // route): the dialog mounts in the Sidebar, not in this popover.
+  onHelp?: () => void;
+}
+
+export function SettingsMenu({ onHelp }: Props) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -85,6 +91,20 @@ export function SettingsMenu() {
               {t(it.key)}
             </button>
           ))}
+          {onHelp && (
+            <button
+              type="button"
+              role="menuitem"
+              data-testid="settings-menu-help"
+              onClick={() => {
+                setOpen(false);
+                onHelp();
+              }}
+              className="block w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted"
+            >
+              {t("settingsMenu.help")}
+            </button>
+          )}
         </div>
       )}
     </div>

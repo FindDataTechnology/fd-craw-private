@@ -18,6 +18,7 @@ import { ArrowUp, Loader2, Paperclip, Square, TriangleAlert, X } from "lucide-re
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import { SlashCommandPicker, type SlashCommand } from "@/components/SlashCommandPicker";
+import { HelpDialog } from "@/components/HelpDialog";
 import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
 import { showToast } from "@/components/Toast";
@@ -67,6 +68,9 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   // typed). The flag resets as soon as the text changes.
   const [pickerDismissed, setPickerDismissed] = useState(false);
   const [drag, setDrag] = useState(false);
+  // The persistent help center — opened by the /help command (it replaces the
+  // old behavior of flashing the command list in a 1.6-second toast).
+  const [helpOpen, setHelpOpen] = useState(false);
   // Attached documents: each chip is an ingested @doc:<id> reference (design
   // D4) that the server expands into the agent's context on submit. BOTH
   // entry gestures — paperclip and drag-drop — share one path, and the chip
@@ -117,12 +121,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
       return;
     }
     if (/^\/help\b/i.test(trimmed)) {
-      const help = [
-        t("composer.helpHeader"),
-        ...CMD_META.map((c) => `  ${c.label} - ${t(c.descKey)}`),
-        ...skills.map((s) => `  /skill:${s.name} - ${s.description || ""}`),
-      ].join("\n");
-      showToast(help);
+      setHelpOpen(true);
       onChange("");
       return;
     }
@@ -405,6 +404,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
           {t("composer.dropHint")}
         </div>
       )}
+      <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );
 }

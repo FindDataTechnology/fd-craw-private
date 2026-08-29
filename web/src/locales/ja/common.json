@@ -39,7 +39,8 @@
     "title": "設定",
     "status": "📊 システム状態",
     "models": "⚡ LLM モデル",
-    "openconnector": "🔌 OpenConnector"
+    "openconnector": "🔌 OpenConnector",
+    "help": "❓ ヘルプ"
   },
   "modelsPage": {
     "title": "モデル",
@@ -85,7 +86,6 @@
     "placeholder": "Platform アシスタントに何でも質問…（/ でコマンド、Enter で送信、Shift+Enter で改行）",
     "placeholderDisabled": "接続中…",
     "send": "送信",
-    "helpHeader": "利用可能なコマンド:",
     "dropHint": "ドロップしてドキュメントを添付",
     "uploadFailed": "アップロード失敗: {{message}}",
     "attach": "ファイルを添付",
@@ -100,7 +100,7 @@
       "model": "アクティブなモデルを切り替えまたは表示",
       "new": "新しいチャットセッションを開始",
       "clear": "チャットビューを消去",
-      "help": "利用可能なコマンド一覧"
+      "help": "ヘルプセンターを開く"
     },
     "stop": "停止",
     "uploading": "アップロード中…"
@@ -333,6 +333,22 @@
       "installFailed": "{{name}}のインストールに失敗しました: {{error}}",
       "readyToUse": "すぐに使える",
       "needsConfig": "設定が必要"
+    }
+  },
+  "help": {
+    "title": "ヘルプ",
+    "subtitle": "コマンド・スキル・ショートカットの一覧",
+    "commands": "コマンド",
+    "skills": "スキル（{{count}}）",
+    "emptySkills": "読み込まれたスキルはありません。",
+    "shortcuts": {
+      "title": "ショートカット",
+      "send": "メッセージを送信",
+      "newline": "改行",
+      "picker": "コマンドピッカーを開く",
+      "dismiss": "ピッカーを閉じる / 編集をキャンセル",
+      "thinking": "思考ブロックの一括開閉",
+      "sessionMenu": "セッションの右クリックメニュー（セッション行上で）"
     }
   }
 }
