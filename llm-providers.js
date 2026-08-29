@@ -16,9 +16,8 @@
 // (collisions get a numeric suffix). The Volces route id ("volces") is reserved
 // and cannot be added/edited/deleted through this module.
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { storeDir } from "./paths.js";
+import { readJsonOr, atomicWriteJsonSync, createWriteChain } from "./lib/persistence.js";
 
 const STORE_PATH = storeDir("llm-providers.json", process.env.LLM_PROVIDERS_STORE);
 const DEFAULT_PATH = storeDir("llm-default.json", process.env.LLM_DEFAULT_STORE);
@@ -36,22 +35,23 @@ const DEFAULT_MODELS = [
 
 // ── Storage ──────────────────────────────────────────────────────────────────
 
+// All mutations run through this chain's non-blocking variant: a second
+// concurrent edit is rejected with BusyError (code "busy") rather than
+// queued, which the REST layer maps to 409 (llm-model-management contract).
+// The chain lives here, next to the data it protects (the REST routes call
+// tryWithWriteLock; they no longer own the mutex).
+const writeChain = createWriteChain();
+
+export function tryWithWriteLock(fn) {
+  return writeChain.tryMutate(fn);
+}
+
 function readJson(path, fallback) {
-  try {
-    const raw = readFileSync(path, "utf8");
-    const doc = JSON.parse(raw);
-    return doc && typeof doc === "object" ? doc : fallback;
-  } catch (err) {
-    if (err.code !== "ENOENT") console.warn(`[llm-providers] ${path} unreadable: ${err.message}`);
-    return fallback;
-  }
+  return readJsonOr(path, fallback, { label: "llm-providers" });
 }
 
 function writeJsonAtomic(path, value) {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = path + ".tmp";
-  writeFileSync(tmp, JSON.stringify(value, null, 2), "utf8");
-  renameSync(tmp, path);
+  atomicWriteJsonSync(path, value);
 }
 
 function readProvidersDoc() {

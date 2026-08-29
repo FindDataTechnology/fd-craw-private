@@ -33,24 +33,6 @@ export function registerLlmRoutes(ctx) {
     broadcast({ type: "models", models: await ctx.getAvailableModels() });
   }
 
-  // In-process write mutex: serialize provider/credential mutations so two
-  // concurrent UI edits can't race on llm-providers.json / settings.yaml. A
-  // competing request is rejected with a 409 immediately (not queued), per the
-  // llm-model-management spec.
-  class BusyError extends Error {
-    constructor() { super("another edit in progress"); this.code = "busy"; }
-  }
-  let llmWriteInProgress = false;
-  async function withLlmWriteLock(fn) {
-    if (llmWriteInProgress) throw new BusyError();
-    llmWriteInProgress = true;
-    try {
-      return await fn();
-    } finally {
-      llmWriteInProgress = false;
-    }
-  }
-
   app.get("/api/llm/providers", async (_req, res) => {
     try {
       const llmProviders = await import("../../llm-providers.js");
@@ -77,7 +59,7 @@ export function registerLlmRoutes(ctx) {
     if (!ctx.requireAdmin(req, res)) return;
     try {
       const llmProviders = await import("../../llm-providers.js");
-      const record = await withLlmWriteLock(async () => {
+      const record = await llmProviders.tryWithWriteLock(async () => {
         const created = llmProviders.createProvider(req.body || {});
         await reloadLlmProviders();
         return created;
@@ -96,7 +78,7 @@ export function registerLlmRoutes(ctx) {
     if (!ctx.requireAdmin(req, res)) return;
     try {
       const llmProviders = await import("../../llm-providers.js");
-      const record = await withLlmWriteLock(async () => {
+      const record = await llmProviders.tryWithWriteLock(async () => {
         const updated = llmProviders.updateProvider(req.params.id, req.body || {});
         await reloadLlmProviders();
         return updated;
@@ -116,7 +98,7 @@ export function registerLlmRoutes(ctx) {
     if (!ctx.requireAdmin(req, res)) return;
     try {
       const llmProviders = await import("../../llm-providers.js");
-      await withLlmWriteLock(async () => {
+      await llmProviders.tryWithWriteLock(async () => {
         llmProviders.deleteProvider(req.params.id);
         await reloadLlmProviders();
       });
