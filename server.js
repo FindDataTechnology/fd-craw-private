@@ -6,6 +6,7 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import multer from "multer";
+import compression from "compression";
 import * as chatHistory from "./chat-history.js";
 import * as openConnector from "./open-connector.js";
 import * as documents from "./documents.js";
@@ -88,6 +89,9 @@ ctx.upload = multer({
 // Document collection: JSON bodies for text/url submissions; multipart file
 // uploads are kept in memory (LlamaIndex readers read the buffer directly).
 app.use(express.json());
+// HTTP compression for static assets + API JSON (the entry chunk ships ~600KB
+// raw). Must mount before express.static (registered in routes/misc.js).
+app.use(compression());
 
 // Forward-auth HTTP gate + ctx.requireAdmin (WS upgrade gate below).
 registerAuth(ctx);

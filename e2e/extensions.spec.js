@@ -13,8 +13,9 @@ test.describe("Extensions Page - UI Rendering", () => {
   test("page loads with correct tab names (Enabled/Store)", async ({ page }) => {
     await gotoExtensions(page);
 
-    // Check main heading (the extensions page is split: /mcp shows "MCP")
-    await expect(page.getByRole("heading", { name: /^MCP$/i })).toBeVisible();
+    // Check main heading (the extensions page is split: /mcp shows "MCP").
+    // Level-1 scoped: the section heading inside is also "MCP".
+    await expect(page.getByRole("heading", { name: /^MCP$/i, level: 1 })).toBeVisible();
 
     // Check tab names (new naming)
     await expect(page.getByRole("button", { name: /enabled/i })).toBeVisible();

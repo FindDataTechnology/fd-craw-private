@@ -1,8 +1,13 @@
 // Routes for the React SPA. The new canonical tab set is
 // Chat, Knowledge, Agents, MCP Servers, Skills, Models.
 // Legacy paths (Extensions, Documents) redirect to their new homes.
+//
+// Code splitting: the chat surface (the product's primary view) and the
+// dashboard stay in the eager entry chunk; every admin/one-off page loads
+// lazily on first navigation (shiki's language chunks already split
+// themselves the same way).
 
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useChatStore } from "@/hooks/useChatStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -10,11 +15,25 @@ import { Sidebar } from "@/components/Sidebar";
 import { ToastHost } from "@/components/Toast";
 import { ChatPage } from "@/pages/ChatPage";
 import { DashboardPage } from "@/pages/DashboardPage";
-import { DocumentsPage } from "@/pages/DocumentsPage";
-import { OpenConnectorPage, ExternalServicePage } from "@/pages/EmbeddedServicePages";
-import { ExtensionsPage } from "@/pages/ExtensionsPage";
-import { AgentsPage } from "@/pages/AgentsPage";
-import { ModelsPage } from "@/pages/ModelsPage";
+
+const DocumentsPage = lazy(() =>
+  import("@/pages/DocumentsPage").then((m) => ({ default: m.DocumentsPage })),
+);
+const ExtensionsPage = lazy(() =>
+  import("@/pages/ExtensionsPage").then((m) => ({ default: m.ExtensionsPage })),
+);
+const AgentsPage = lazy(() => import("@/pages/AgentsPage").then((m) => ({ default: m.AgentsPage })));
+const ModelsPage = lazy(() => import("@/pages/ModelsPage").then((m) => ({ default: m.ModelsPage })));
+const OpenConnectorPage = lazy(() =>
+  import("@/pages/EmbeddedServicePages").then((m) => ({ default: m.OpenConnectorPage })),
+);
+const ExternalServicePage = lazy(() =>
+  import("@/pages/EmbeddedServicePages").then((m) => ({ default: m.ExternalServicePage })),
+);
+
+function RouteFallback() {
+  return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
+}
 
 export default function App() {
   const { send } = useWebSocket();
@@ -35,31 +54,33 @@ export default function App() {
   return (
     <div className="grid h-dvh grid-cols-[240px_1fr] overflow-hidden bg-background text-foreground">
       <Sidebar send={send} />
-      <Routes>
-        <Route path="/" element={<Navigate to="/chat" replace />} />
-        <Route path="/chat" element={<ChatPage send={send} />} />
-        <Route path="/chat/:sessionId" element={<ChatPage send={send} />} />
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/chat" replace />} />
+          <Route path="/chat" element={<ChatPage send={send} />} />
+          <Route path="/chat/:sessionId" element={<ChatPage send={send} />} />
 
-        {/* Knowledge (was Documents) — same page, new label + route. */}
-        <Route path="/knowledge" element={<DocumentsPage />} />
-        <Route path="/documents" element={<Navigate to="/knowledge" replace />} />
+          {/* Knowledge (was Documents) — same page, new label + route. */}
+          <Route path="/knowledge" element={<DocumentsPage />} />
+          <Route path="/documents" element={<Navigate to="/knowledge" replace />} />
 
-        <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
 
-        {/* Top-level extension management — was nested under /extensions. */}
-        <Route path="/mcp" element={<ExtensionsPage type="mcp" />} />
-        <Route path="/skills" element={<ExtensionsPage type="skills" />} />
-        <Route path="/extensions" element={<Navigate to="/mcp" replace />} />
-        <Route path="/extensions/mcp" element={<Navigate to="/mcp" replace />} />
-        <Route path="/extensions/skills" element={<Navigate to="/skills" replace />} />
+          {/* Top-level extension management — was nested under /extensions. */}
+          <Route path="/mcp" element={<ExtensionsPage type="mcp" />} />
+          <Route path="/skills" element={<ExtensionsPage type="skills" />} />
+          <Route path="/extensions" element={<Navigate to="/mcp" replace />} />
+          <Route path="/extensions/mcp" element={<Navigate to="/mcp" replace />} />
+          <Route path="/extensions/skills" element={<Navigate to="/skills" replace />} />
 
-        <Route path="/models" element={<ModelsPage />} />
+          <Route path="/models" element={<ModelsPage />} />
 
-        <Route path="/agents" element={<AgentsPage />} />
-        <Route path="/openconnector" element={<OpenConnectorPage />} />
-        <Route path="/external/:appId" element={<ExternalServicePage />} />
-        <Route path="*" element={<Navigate to="/chat" replace />} />
-      </Routes>
+          <Route path="/agents" element={<AgentsPage />} />
+          <Route path="/openconnector" element={<OpenConnectorPage />} />
+          <Route path="/external/:appId" element={<ExternalServicePage />} />
+          <Route path="*" element={<Navigate to="/chat" replace />} />
+        </Routes>
+      </Suspense>
       <ToastHost />
     </div>
   );

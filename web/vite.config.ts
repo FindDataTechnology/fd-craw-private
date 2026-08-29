@@ -26,7 +26,10 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    sourcemap: true,
+    // Release/debug builds may opt into hidden maps (uploaded for crash
+    // reporting, never referenced by the served HTML); the default serves
+    // nothing — maps are not downloadable from the server.
+    sourcemap: process.env.VITE_SOURCEMAP === "hidden" ? "hidden" : false,
   },
   server: {
     port: 5173,
