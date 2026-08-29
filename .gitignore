@@ -44,3 +44,5 @@ web/.playwright-cli/
 .tmp-testpw-hash
 sso-test.mjs
 connect-app/
+.zcode/
+.mcp.json
