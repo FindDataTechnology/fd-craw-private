@@ -86,8 +86,7 @@
     "placeholderDisabled": "连接中…",
     "send": "发送",
     "helpHeader": "可用命令：",
-    "dropHint": "拖放文件以上传到文档集合",
-    "uploaded": "已上传 {{name}}",
+    "dropHint": "松开以附加文档",
     "uploadFailed": "上传失败：{{message}}",
     "attach": "添加附件",
     "removeAttachment": "移除附件",
@@ -103,7 +102,8 @@
       "clear": "清空对话视图",
       "help": "列出可用命令"
     },
-    "stop": "停止"
+    "stop": "停止",
+    "uploading": "上传中…"
   },
   "chat": {
     "empty": "发送消息开始对话。",

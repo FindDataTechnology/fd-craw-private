@@ -86,8 +86,7 @@
     "placeholderDisabled": "Connecting…",
     "send": "Send",
     "helpHeader": "Available commands:",
-    "dropHint": "Drop files to upload to the document collection",
-    "uploaded": "Uploaded {{name}}",
+    "dropHint": "Release to attach the document",
     "uploadFailed": "Upload failed: {{message}}",
     "attach": "Attach a file",
     "removeAttachment": "Remove attachment",
@@ -103,7 +102,8 @@
       "clear": "clear the chat view",
       "help": "list available commands"
     },
-    "stop": "Stop"
+    "stop": "Stop",
+    "uploading": "Uploading…"
   },
   "chat": {
     "empty": "Send a message to start chatting.",

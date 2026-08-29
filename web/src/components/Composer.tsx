@@ -14,7 +14,7 @@
 // tokens (/model, /new, …) are identifiers and stay literal.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, Loader2, Paperclip, Square, TriangleAlert, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import { SlashCommandPicker, type SlashCommand } from "@/components/SlashCommandPicker";
@@ -22,6 +22,17 @@ import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
 import { showToast } from "@/components/Toast";
 import { uploadFile } from "@/lib/documents-api";
+
+// One attached document chip. `key` is the local chip identity — the server
+// document id doesn't exist until the upload resolves.
+interface Attachment {
+  key: string;
+  id: string;
+  name: string;
+  state: "uploading" | "attached" | "error";
+  error?: string;
+}
+let attachSeq = 0;
 
 interface Props {
   send: (m: ClientMessage) => void;
@@ -56,16 +67,21 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   // typed). The flag resets as soon as the text changes.
   const [pickerDismissed, setPickerDismissed] = useState(false);
   const [drag, setDrag] = useState(false);
-  // Attached documents: each is an ingested @doc:<id> reference (design D4).
-  // The paperclip uploads via POST /api/documents (the path that already works
-  // in DocumentsPage); on success the id is appended so the outgoing prompt
-  // references the ingested document (server expands @doc:<id> into context).
-  const [attachments, setAttachments] = useState<{ id: string; name: string }[]>([]);
+  // Attached documents: each chip is an ingested @doc:<id> reference (design
+  // D4) that the server expands into the agent's context on submit. BOTH
+  // entry gestures — paperclip and drag-drop — share one path, and the chip
+  // is visible through the whole lifecycle (上传中 → 已附加/失败) so the
+  // upload is never silent.
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const disabled = status !== "connected";
   const trimmed = value.trim();
+  // Send is blocked while any upload is in flight — a prompt must never leave
+  // with its document half-ingested (the exact "did my file reach the agent?"
+  // failure this state makes visible).
+  const isUploading = attachments.some((a) => a.state === "uploading");
 
   // Built-in commands (Commands section). Skills come from the store and are
   // rendered as the Skills section inside <SlashCommandPicker>. Memoized on
@@ -92,7 +108,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   }, [focusTick]);
 
   const submit = () => {
-    if (!trimmed || disabled) return;
+    if (!trimmed || disabled || isUploading) return;
 
     // Local commands never reach the server.
     if (/^\/clear\b/i.test(trimmed)) {
@@ -111,9 +127,13 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
       return;
     }
 
-    // Append @doc:<id> references for any attachments so the server expands
-    // the ingested document content into the agent's context (design D4).
-    const refs = attachments.map((a) => `@doc:${a.id}`).join(" ");
+    // Append @doc:<id> references for ATTACHED documents (uploading/error
+    // chips are never referenced) so the server expands the ingested document
+    // content into the agent's context (design D4).
+    const refs = attachments
+      .filter((a) => a.state === "attached")
+      .map((a) => `@doc:${a.id}`)
+      .join(" ");
     const text = refs ? `${trimmed} ${refs}` : trimmed;
 
     // The server echoes the user turn back as a `user` event - no optimistic
@@ -131,23 +151,36 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
     textareaRef.current?.focus();
   };
 
-  // Paperclip: open the native file picker, upload each file via the existing
-  // /api/documents ingestion path, and record an @doc:<id> reference chip.
-  const onPickFiles = async (files: FileList | null) => {
-    if (!files || !files.length) return;
-    for (const f of Array.from(files)) {
+  // ONE attach path for both gestures (paperclip + drag-drop): the chip
+  // mounts as 上传中 the moment a file enters, then flips to 已附加 or 失败.
+  // The chip IS the feedback — no success toast to chase.
+  const attachFiles = async (files: File[]) => {
+    for (const f of files) {
+      const key = `att-${++attachSeq}`;
+      setAttachments((a) => [...a, { key, id: "", name: f.name, state: "uploading" }]);
       try {
         const doc = await uploadFile(f);
-        setAttachments((a) => [...a, { id: doc.id, name: doc.name || f.name }]);
+        setAttachments((a) =>
+          a.map((x) =>
+            x.key === key
+              ? { ...x, id: doc.id, name: doc.name || f.name, state: "attached" as const }
+              : x,
+          ),
+        );
       } catch (err) {
-        showToast(t("composer.uploadFailed", { message: (err as Error).message.slice(0, 80) }));
+        const message = (err as Error).message.slice(0, 120);
+        setAttachments((a) =>
+          a.map((x) => (x.key === key ? { ...x, state: "error" as const, error: message } : x)),
+        );
+        // The chip shows the failure; the toast carries the reason.
+        showToast(t("composer.uploadFailed", { message: message.slice(0, 80) }));
       }
     }
     textareaRef.current?.focus();
   };
 
-  const removeAttachment = (id: string) =>
-    setAttachments((a) => a.filter((x) => x.id !== id));
+  const removeAttachment = (key: string) =>
+    setAttachments((a) => a.filter((x) => x.key !== key));
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // IME composition (pinyin, kana, …): Enter confirms the composition and
@@ -225,23 +258,14 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
     return [...cmds, ...sks];
   }, [value, commands, skills]);
 
-  // Drag-drop: upload files via POST /api/documents.
-  const onDrop = async (e: React.DragEvent) => {
+  // Drag-drop attaches through the SAME path as the paperclip — dropping a
+  // file on the composer means "attach it to this conversation", not "upload
+  // it somewhere in the background".
+  const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDrag(false);
     const files = [...(e.dataTransfer?.files ?? [])];
-    if (!files.length) return;
-    for (const f of files) {
-      const fd = new FormData();
-      fd.append("file", f);
-      try {
-        const r = await fetch("/api/documents", { method: "POST", body: fd });
-        if (!r.ok) throw new Error(await r.text());
-        showToast(t("composer.uploaded", { name: f.name }));
-      } catch (err) {
-        showToast(t("composer.uploadFailed", { message: (err as Error).message.slice(0, 80) }));
-      }
-    }
+    if (files.length) attachFiles(files);
   };
 
   // Determine the active filter index across the merged list. The picker
@@ -279,18 +303,34 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
             </span>
             {attachments.map((a) => (
               <span
-                key={a.id}
-                className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs text-foreground"
+                key={a.key}
+                data-testid="composer-attachment"
+                data-state={a.state}
+                title={a.state === "error" ? a.error : a.state === "uploading" ? t("composer.uploading") : a.name}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs",
+                  a.state === "error"
+                    ? "border border-destructive/40 bg-destructive/10 text-destructive"
+                    : "bg-muted text-foreground",
+                )}
               >
-                <Paperclip className="h-3 w-3" />
+                {a.state === "uploading" ? (
+                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                ) : a.state === "error" ? (
+                  <TriangleAlert className="h-3 w-3" />
+                ) : (
+                  <Paperclip className="h-3 w-3 text-muted-foreground" />
+                )}
                 <span className="max-w-[12rem] truncate">{a.name}</span>
-                <button
-                  onClick={() => removeAttachment(a.id)}
-                  aria-label={t("composer.removeAttachment")}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-3 w-3" />
-                </button>
+                {a.state !== "uploading" && (
+                  <button
+                    onClick={() => removeAttachment(a.key)}
+                    aria-label={t("composer.removeAttachment")}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
               </span>
             ))}
           </div>
@@ -302,7 +342,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
             multiple
             className="hidden"
             onChange={(e) => {
-              onPickFiles(e.target.files);
+              attachFiles(Array.from(e.target.files ?? []));
               e.target.value = "";
             }}
           />
@@ -347,7 +387,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
           ) : (
             <button
               onClick={submit}
-              disabled={!trimmed || disabled}
+              disabled={!trimmed || disabled || isUploading}
               aria-label={t("composer.send")}
               data-testid="composer-send"
               className={cn(

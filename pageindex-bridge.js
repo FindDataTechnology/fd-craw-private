@@ -77,7 +77,9 @@ export async function buildIndex({ type, name, content, buffer }) {
     result = await new PageIndex(opts).fromPdf(buffer);
     sourceText = flattenTreeText(result.structure);
   } else if (type === "text" || type === "url") {
-    sourceText = content || "";
+    // A .txt upload arrives as a raw buffer (multer) — decode it, mirroring
+    // the markdown branch above.
+    sourceText = content ?? (buffer ? buffer.toString("utf8") : "");
     if (!sourceText) throw new Error("Missing text content");
     result = simpleTree(name || "document", sourceText);
   } else if (hasReader(type)) {

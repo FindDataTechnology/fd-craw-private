@@ -86,8 +86,7 @@
     "placeholderDisabled": "Connexion…",
     "send": "Envoyer",
     "helpHeader": "Commandes disponibles :",
-    "dropHint": "Déposez des fichiers pour les envoyer vers la collection de documents",
-    "uploaded": "{{name}} envoyé",
+    "dropHint": "Relâchez pour joindre le document",
     "uploadFailed": "Échec de l'envoi : {{message}}",
     "attach": "Joindre un fichier",
     "removeAttachment": "Retirer la pièce jointe",
@@ -103,7 +102,8 @@
       "clear": "effacer la vue de discussion",
       "help": "lister les commandes disponibles"
     },
-    "stop": "Arrêter"
+    "stop": "Arrêter",
+    "uploading": "Envoi en cours…"
   },
   "chat": {
     "empty": "Envoyez un message pour commencer à discuter.",

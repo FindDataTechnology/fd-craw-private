@@ -202,4 +202,24 @@ test.describe("composer hardening: IME, stop, disconnect", () => {
     });
     expect(inTurn).toEqual({ turnCount: 1, hasErrorBlock: true });
   });
+
+  test("drag-drop attaches through the same chip lifecycle as the paperclip", async ({ page }) => {
+    // Dropping a file on the composer used to upload silently to the
+    // documents collection — no chip, no @doc: reference, only a 1.6s toast.
+    // Now both gestures share ONE path: the chip mounts as uploading and
+    // settles on attached (or failed) — the upload is never invisible.
+    await page.evaluate(() => {
+      const dt = new DataTransfer();
+      dt.items.add(new File(["drag-drop attach e2e content"], "note.txt", { type: "text/plain" }));
+      const el = document.querySelector('[data-testid="composer-input"]');
+      el.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+    });
+    const chip = page.getByTestId("composer-attachment");
+    await expect(chip).toHaveCount(1);
+    // Small text file: the uploading state may flash by — the invariant is
+    // that the chip EXISTS from the moment of drop and ends attached.
+    await expect(chip).toHaveAttribute("data-state", "attached", { timeout: 10000 });
+    await expect(chip).toContainText("note.txt");
+    await expect(page.getByTestId("composer-attach-count")).toBeVisible();
+  });
 });

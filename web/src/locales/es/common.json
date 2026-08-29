@@ -86,8 +86,7 @@
     "placeholderDisabled": "Conectando…",
     "send": "Enviar",
     "helpHeader": "Comandos disponibles:",
-    "dropHint": "Suelta archivos para subirlos a la colección de documentos",
-    "uploaded": "Subido {{name}}",
+    "dropHint": "Suelta para adjuntar el documento",
     "uploadFailed": "Error al subir: {{message}}",
     "attach": "Adjuntar un archivo",
     "removeAttachment": "Quitar adjunto",
@@ -103,7 +102,8 @@
       "clear": "borrar la vista del chat",
       "help": "listar los comandos disponibles"
     },
-    "stop": "Detener"
+    "stop": "Detener",
+    "uploading": "Subiendo…"
   },
   "chat": {
     "empty": "Envía un mensaje para empezar a chatear.",

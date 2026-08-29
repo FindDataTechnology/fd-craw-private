@@ -86,8 +86,7 @@
     "placeholderDisabled": "接続中…",
     "send": "送信",
     "helpHeader": "利用可能なコマンド:",
-    "dropHint": "ファイルをドロップしてドキュメントコレクションにアップロード",
-    "uploaded": "{{name}} をアップロードしました",
+    "dropHint": "ドロップしてドキュメントを添付",
     "uploadFailed": "アップロード失敗: {{message}}",
     "attach": "ファイルを添付",
     "removeAttachment": "添付を削除",
@@ -103,7 +102,8 @@
       "clear": "チャットビューを消去",
       "help": "利用可能なコマンド一覧"
     },
-    "stop": "停止"
+    "stop": "停止",
+    "uploading": "アップロード中…"
   },
   "chat": {
     "empty": "メッセージを送信してチャットを開始してください。",

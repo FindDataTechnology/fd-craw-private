@@ -29,6 +29,8 @@ export const EXT_TYPE_MAP = {
   ".pdf": "pdf",
   ".md": "markdown",
   ".markdown": "markdown",
+  ".txt": "text",
+  ".text": "text",
   ".docx": "docx",
   ".xlsx": "xlsx",
   ".pptx": "pptx",
