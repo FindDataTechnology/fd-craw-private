@@ -113,7 +113,26 @@
       "recentChats": "Recent chats",
       "viewAll": "View all",
       "modelFooter": "Model: {{model}}",
-      "agentFooter": "Agent: {{agent}}"
+      "agentFooter": "Agent: {{agent}}",
+      "prompts": {
+        "docs": {
+          "title": "Search your documents",
+          "text": "Summarize the key points of the most recent documents in my library"
+        },
+        "skills": {
+          "title": "Discover skills",
+          "text": "List the skills currently available and what each one does"
+        },
+        "tools": {
+          "title": "Verify a question",
+          "text": "Research a technical question for me and cite your sources"
+        },
+        "write": {
+          "title": "Draft & organize",
+          "text": "Turn these bullet points into a concise weekly report:\n- point one\n- point two"
+        }
+      },
+      "viewLess": "Show less"
     },
     "header": {
       "editTitle": "Rename session",

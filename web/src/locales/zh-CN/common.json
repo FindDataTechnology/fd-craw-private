@@ -113,7 +113,26 @@
       "recentChats": "最近对话",
       "viewAll": "查看全部",
       "modelFooter": "模型：{{model}}",
-      "agentFooter": "智能体：{{agent}}"
+      "agentFooter": "智能体：{{agent}}",
+      "prompts": {
+        "docs": {
+          "title": "检索文档库",
+          "text": "总结文档库中最近上传文档的关键要点"
+        },
+        "skills": {
+          "title": "发现技能",
+          "text": "列出当前可用的技能，并说明各自的用途"
+        },
+        "tools": {
+          "title": "查证问题",
+          "text": "帮我查证一个技术问题，并给出信息来源"
+        },
+        "write": {
+          "title": "整理写作",
+          "text": "帮我把下面的要点整理成一份简洁的周报：\n- 要点一\n- 要点二"
+        }
+      },
+      "viewLess": "收起"
     },
     "header": {
       "editTitle": "重命名对话",

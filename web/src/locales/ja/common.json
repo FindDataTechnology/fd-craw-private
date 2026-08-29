@@ -113,7 +113,26 @@
       "recentChats": "最近のチャット",
       "viewAll": "すべて表示",
       "modelFooter": "モデル：{{model}}",
-      "agentFooter": "エージェント：{{agent}}"
+      "agentFooter": "エージェント：{{agent}}",
+      "prompts": {
+        "docs": {
+          "title": "文書を検索",
+          "text": "ドキュメントライブラリの最新ドキュメントの要点をまとめて"
+        },
+        "skills": {
+          "title": "スキルを見つける",
+          "text": "現在利用できるスキルと、それぞれの用途を列挙して"
+        },
+        "tools": {
+          "title": "質問を検証",
+          "text": "技術的な質問を調査し、情報源を示して"
+        },
+        "write": {
+          "title": "整理して執筆",
+          "text": "次の要点を簡潔な週報にまとめて：\n・要点1\n・要点2"
+        }
+      },
+      "viewLess": "折りたたむ"
     },
     "header": {
       "editTitle": "セッション名を変更",

@@ -2,59 +2,61 @@
 //
 // Rendered when `turns.length === 0` (mutually exclusive with `<Chat /> +
 // <ChatHeader /> + <Composer />`). Greets the user, surfaces 4 suggested prompt
-// cards, lists the last 5 sessions, and shows the active model/agent as a
-// subtle footer. The prompts are hard-coded for v1; a `prompts` prop lets a
-// future change override from config (`agents.json` or a dedicated welcome-
-// prompts.json) without touching this component.
+// cards, lists recent sessions (expandable), and shows the active model/agent
+// as a subtle footer.
+//
+// Suggested prompts resolve entirely through the i18n bundle (zh-CN leads) and
+// are complete, product-true sentences — each exercises something only this
+// product does (documents RAG, skills, tool-assisted lookup, daily writing).
+// Clicking a card PREFILLS the composer instead of sending: the user stays in
+// control, can edit or attach documents, and learns the surface by example.
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Code2, BarChart3, FileText, Search } from "lucide-react";
+import { Database, Sparkles, Search, PenLine } from "lucide-react";
 import { useChatStore } from "@/hooks/useChatStore";
 import type { ClientMessage } from "@/types/ws";
 import type { LucideIcon } from "lucide-react";
 
-export interface SuggestedPrompt {
-  title: string;
-  prompt: string;
-  icon: LucideIcon;
-  i18nKey?: string; // optional override for the title (otherwise title is literal)
-}
-
-const DEFAULT_PROMPTS: SuggestedPrompt[] = [
-  { title: "Write code", prompt: "Help me write a function that ", icon: Code2 },
-  { title: "Analyze data", prompt: "Analyze this data: ", icon: BarChart3 },
-  { title: "Summarize a document", prompt: "Summarize the key points of ", icon: FileText },
-  { title: "Research a topic", prompt: "Research the following topic: ", icon: Search },
+// Stable identity: key → i18n key pair + icon. The prompt text lives in the
+// locale bundles so zh-CN lands first and the other four locales follow.
+const PROMPT_KEYS: { key: string; icon: LucideIcon }[] = [
+  { key: "docs", icon: Database },
+  { key: "skills", icon: Sparkles },
+  { key: "tools", icon: Search },
+  { key: "write", icon: PenLine },
 ];
 
+const RECENT_PREVIEW = 5;
+
 interface Props {
-  prompts?: SuggestedPrompt[];
-  // The Composer-level `send` is plumbed through the page; the welcome
-  // component reuses it so clicking a suggested prompt behaves like hitting
-  // Enter on the composer (no extra WS plumbing).
+  // Prefill the composer with a suggested prompt (ChatPage owns the draft so
+  // it survives the welcome → in-session branch swap).
+  onPrefill: (text: string) => void;
+  // Recent-row navigation still needs the WS `send`.
   send: (m: ClientMessage) => void;
 }
 
-export function ChatWelcome({ prompts = DEFAULT_PROMPTS, send }: Props) {
+export function ChatWelcome({ onPrefill, send }: Props) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const sessions = useChatStore((s) => s.sessions);
   const currentModel = useChatStore((s) => s.currentModel);
   const currentAgent = useChatStore((s) => s.currentAgent);
   const agents = useChatStore((s) => s.agents);
+  const [showAllRecent, setShowAllRecent] = useState(false);
 
-  // Most-recently-updated first; cap at 5. updatedAt is string | number
-  // (legacy stores used epoch ms); coerce to a string for the comparison.
-  const recent = useMemo(
+  // Most-recently-updated first. updatedAt is string | number (legacy stores
+  // used epoch ms); coerce to a string for the comparison.
+  const sorted = useMemo(
     () =>
       sessions
         .slice()
-        .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
-        .slice(0, 5),
+        .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || ""))),
     [sessions],
   );
+  const recent = showAllRecent ? sorted : sorted.slice(0, RECENT_PREVIEW);
 
   const agentName = useMemo(() => {
     if (!currentAgent || currentAgent === "local") return null;
@@ -78,22 +80,25 @@ export function ChatWelcome({ prompts = DEFAULT_PROMPTS, send }: Props) {
             {t("chat.welcome.suggestedPrompts")}
           </h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {prompts.map((p) => {
-              const Icon = p.icon;
+            {PROMPT_KEYS.map(({ key, icon: Icon }) => {
+              const title = t(`chat.welcome.prompts.${key}.title`);
+              const prompt = t(`chat.welcome.prompts.${key}.text`);
               return (
                 <button
-                  key={p.prompt}
+                  key={key}
                   type="button"
                   data-testid="welcome-prompt-card"
-                  onClick={() => {
-                    if (send) send({ type: "prompt", text: p.prompt });
-                  }}
+                  data-prompt-key={key}
+                  onClick={() => onPrefill(prompt)}
                   className="group flex items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/50"
                 >
                   <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground group-hover:text-foreground" />
                   <div className="flex min-w-0 flex-col">
-                    <span className="text-sm font-medium text-foreground">{p.title}</span>
-                    <span className="truncate text-xs text-muted-foreground">{p.prompt}</span>
+                    <span className="text-sm font-medium text-foreground">{title}</span>
+                    {/* Two-line clamp: prompt texts are complete sentences (the
+                        write one is a multi-line starter) — a single-line
+                        truncate shreds them. */}
+                    <span className="line-clamp-2 text-xs text-muted-foreground">{prompt}</span>
                   </div>
                 </button>
               );
@@ -102,20 +107,22 @@ export function ChatWelcome({ prompts = DEFAULT_PROMPTS, send }: Props) {
         </section>
 
         {/* Recent chats — hidden when empty */}
-        {recent.length > 0 && (
+        {sorted.length > 0 && (
           <section aria-labelledby="welcome-recent-heading" className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <h2 id="welcome-recent-heading" className="text-sm font-medium text-muted-foreground">
                 {t("chat.welcome.recentChats")}
               </h2>
-              <button
-                type="button"
-                data-testid="welcome-view-all"
-                onClick={() => navigate("/chat")}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                {t("chat.welcome.viewAll")}
-              </button>
+              {sorted.length > RECENT_PREVIEW && (
+                <button
+                  type="button"
+                  data-testid="welcome-view-all"
+                  onClick={() => setShowAllRecent((v) => !v)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  {showAllRecent ? t("chat.welcome.viewLess") : t("chat.welcome.viewAll")}
+                </button>
+              )}
             </div>
             <ul className="flex flex-col gap-1">
               {recent.map((s) => (

@@ -30,17 +30,21 @@ test.describe("chat main-page polish", () => {
     await expect(cards).toHaveCount(4);
   });
 
-  test("8.2 clicking a suggested prompt starts the turn", async ({ page }) => {
+  test("8.2 clicking a suggested prompt prefills the composer", async ({ page }) => {
     await page.getByTestId("new-chat-btn").click();
     await expect(page.getByTestId("chat-welcome")).toBeVisible();
     const firstCard = page.getByTestId("welcome-prompt-card").first();
-    // The card sends the prompt directly (no draft-fill): the turn starts,
-    // the welcome hides and the in-session chrome appears.
+    // The card PREFILLS instead of sending: the composer fills and takes
+    // focus, the welcome stays, and nothing goes over the WS (the user is
+    // in control of what actually gets sent).
     await firstCard.click();
-    await expect(page.getByTestId("chat-welcome")).toBeHidden({ timeout: 10000 });
-    await expect(page.getByTestId("chat-header")).toBeVisible({ timeout: 10000 });
-    // Leave the app idle for the next test (the LLM may be unreachable in CI).
-    await waitForIdle(page, 30000);
+    const input = page.getByTestId("composer-input");
+    await expect(input).not.toHaveValue("");
+    await expect(page.getByTestId("chat-welcome")).toBeVisible();
+    const focused = await page.evaluate(
+      () => document.activeElement?.getAttribute("data-testid") || "",
+    );
+    expect(focused).toBe("composer-input");
   });
 
   test("8.3 first message hides the welcome and shows the chat header + log", async ({ page }) => {

@@ -25,6 +25,12 @@ import { uploadFile } from "@/lib/documents-api";
 
 interface Props {
   send: (m: ClientMessage) => void;
+  // Controlled draft, owned by ChatPage so it survives the welcome ↔
+  // in-session branch swap and can be prefilled by suggested-prompt cards.
+  value: string;
+  onChange: (v: string) => void;
+  // Bumped by ChatPage to focus the composer (e.g. after a card prefill).
+  focusTick?: number;
 }
 
 // Command tokens (identifiers, not translated) paired with i18n keys for their
@@ -36,7 +42,7 @@ const CMD_META = [
   { label: "/help", descKey: "composer.cmd.help" },
 ];
 
-export function Composer({ send }: Props) {
+export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   const { t } = useTranslation();
   const status = useChatStore((s) => s.status);
   const isStreaming = useChatStore((s) => s.isStreaming);
@@ -44,7 +50,6 @@ export function Composer({ send }: Props) {
   const skills = useChatStore((s) => s.skills);
   const clearView = useChatStore((s) => s.clearView);
 
-  const [value, setValue] = useState("");
   const [acIdx, setAcIdx] = useState(0);
   // Esc "dismisses" the picker without clearing the composer (a separate
   // state from the text-derived open check so the user keeps what they
@@ -80,13 +85,19 @@ export function Composer({ send }: Props) {
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [value]);
 
+  // Focus on demand — ChatPage bumps `focusTick` when a suggested-prompt card
+  // prefills the draft.
+  useEffect(() => {
+    if (focusTick > 0) textareaRef.current?.focus();
+  }, [focusTick]);
+
   const submit = () => {
     if (!trimmed || disabled) return;
 
     // Local commands never reach the server.
     if (/^\/clear\b/i.test(trimmed)) {
       clearView();
-      setValue("");
+      onChange("");
       return;
     }
     if (/^\/help\b/i.test(trimmed)) {
@@ -96,7 +107,7 @@ export function Composer({ send }: Props) {
         ...skills.map((s) => `  /skill:${s.name} - ${s.description || ""}`),
       ].join("\n");
       showToast(help);
-      setValue("");
+      onChange("");
       return;
     }
 
@@ -108,14 +119,14 @@ export function Composer({ send }: Props) {
     // The server echoes the user turn back as a `user` event - no optimistic
     // append here, or it renders twice.
     send({ type: "prompt", text });
-    setValue("");
+    onChange("");
     setAttachments([]);
   };
 
   const acceptAc = (label?: string) => {
     const pick = label;
     if (!pick) return;
-    setValue(pick + " ");
+    onChange(pick + " ");
     setAcIdx(0);
     textareaRef.current?.focus();
   };
@@ -310,7 +321,7 @@ export function Composer({ send }: Props) {
           <textarea
             ref={textareaRef}
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
             disabled={disabled}
             rows={1}

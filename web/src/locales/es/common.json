@@ -113,7 +113,26 @@
       "recentChats": "Chats recientes",
       "viewAll": "Ver todo",
       "modelFooter": "Modelo: {{model}}",
-      "agentFooter": "Agente: {{agent}}"
+      "agentFooter": "Agente: {{agent}}",
+      "prompts": {
+        "docs": {
+          "title": "Busca en tus documentos",
+          "text": "Resume los puntos clave de los documentos más recientes de mi biblioteca"
+        },
+        "skills": {
+          "title": "Descubre habilidades",
+          "text": "Lista las habilidades disponibles y para qué sirve cada una"
+        },
+        "tools": {
+          "title": "Verifica una duda",
+          "text": "Investiga una pregunta técnica y cita las fuentes"
+        },
+        "write": {
+          "title": "Redacta y organiza",
+          "text": "Convierte estos puntos en un informe semanal conciso:\n- punto uno\n- punto dos"
+        }
+      },
+      "viewLess": "Mostrar menos"
     },
     "header": {
       "editTitle": "Renombrar sesión",

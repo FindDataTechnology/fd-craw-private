@@ -113,7 +113,26 @@
       "recentChats": "Discussions récentes",
       "viewAll": "Tout voir",
       "modelFooter": "Modèle : {{model}}",
-      "agentFooter": "Agent : {{agent}}"
+      "agentFooter": "Agent : {{agent}}",
+      "prompts": {
+        "docs": {
+          "title": "Interrogez vos documents",
+          "text": "Résume les points clés des documents les plus récents de ma bibliothèque"
+        },
+        "skills": {
+          "title": "Découvrez les compétences",
+          "text": "Liste les compétences disponibles et à quoi sert chacune"
+        },
+        "tools": {
+          "title": "Vérifiez une question",
+          "text": "Recherche une question technique et cite les sources"
+        },
+        "write": {
+          "title": "Rédigez et organisez",
+          "text": "Transforme ces points en un rapport hebdomadaire concis :\n- point un\n- point deux"
+        }
+      },
+      "viewLess": "Réduire"
     },
     "header": {
       "editTitle": "Renommer la session",
