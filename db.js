@@ -402,13 +402,12 @@ export function deleteDocument(id) {
   stmt("DELETE FROM documents WHERE id = ?").run(id);
 }
 
+// Light select for retrieval: queryCollection only reads id/name (the tree
+// text comes from getDocIndex). Loading every ready document's source_text
+// here dragged megabytes through memory per query for nothing.
 export function listReadyDocuments() {
   if (!dbReady) return [];
-  return db
-    .prepare(
-      "SELECT id, name, type, source_text FROM documents WHERE status = 'ready'"
-    )
-    .all();
+  return stmt("SELECT id, name, type FROM documents WHERE status = 'ready'").all();
 }
 
 export function countDocuments() {
@@ -534,14 +533,12 @@ export function listCollectionDocuments(collectionId) {
 // Ready member documents of a collection with source_text, for scoped retrieval.
 export function listReadyDocumentsInCollection(collectionId) {
   if (!dbReady) return [];
-  return db
-    .prepare(
-      `SELECT d.id, d.name, d.type, d.source_text
-       FROM collection_documents cd
-       JOIN documents d ON d.id = cd.document_id
-       WHERE cd.collection_id = ? AND d.status = 'ready'`
-    )
-    .all(collectionId);
+  return stmt(
+    `SELECT d.id, d.name, d.type
+     FROM collection_documents cd
+     JOIN documents d ON d.id = cd.document_id
+     WHERE cd.collection_id = ? AND d.status = 'ready'`
+  ).all(collectionId);
 }
 
 // ── User preferences (single-user, key/value) ────────────────────────────────

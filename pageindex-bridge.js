@@ -93,6 +93,7 @@ export async function buildIndex({ type, name, content, buffer }) {
 // Persist a built index to SQLite (doc_index) as JSON.
 export function persistIndex(docId, result) {
   db.setDocIndex(docId, result);
+  treeCache.delete(docId); // invalidate; next read re-caches the fresh row
 }
 
 // Load a persisted index tree by document id.
@@ -100,10 +101,50 @@ export function loadIndex(docId) {
   return db.getDocIndex(docId);
 }
 
+// Parsed-tree LRU: getDocIndex JSON.parse()s the whole serialized tree per
+// document per query — with a cache, repeated queries (and every doc in a
+// multi-doc query after the first) skip both the SQLite read and the parse.
+// Simple insertion-order Map LRU; capped because trees can be large.
+const TREE_CACHE_MAX = 32;
+const treeCache = new Map();
+function getDocIndexCached(docId) {
+  const hit = treeCache.get(docId);
+  if (hit) {
+    treeCache.delete(docId);
+    treeCache.set(docId, hit); // refresh recency
+    return hit;
+  }
+  const idx = db.getDocIndex(docId);
+  if (idx) {
+    treeCache.set(docId, idx);
+    if (treeCache.size > TREE_CACHE_MAX) treeCache.delete(treeCache.keys().next().value);
+  }
+  return idx;
+}
+
 // ── Retrieval (reasoning over the tree) ──────────────────────────────────────
 
 const MAX_NODES_PER_DOC = 12; // cap selected nodes per document
 const MAX_NODE_TEXT_CHARS = 2000; // cap each node's text in the answer context
+// Per-document retrieval = 2 sequential LLM calls (node selection, then the
+// per-doc answer). Documents run CONCURRENTLY up to this bound — a 10-doc
+// query used to be 21 strictly sequential calls (minutes); at concurrency 3
+// it's ~ceil(10/3) rounds + synthesis. Env-overridable.
+const RAG_CONCURRENCY = Math.max(1, Number(process.env.RAG_CONCURRENCY) || 3);
+
+// Tiny bounded-concurrency map: preserves per-doc failure isolation.
+async function mapLimit(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i], i);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
 
 // Retrieve over a set of ready documents. `docs` defaults to all ready docs
 // (the collection-wide query); passing a collection's members scopes retrieval
@@ -111,16 +152,16 @@ const MAX_NODE_TEXT_CHARS = 2000; // cap each node's text in the answer context
 export async function queryCollection(query, docs) {
   if (!provider) throw new Error("PageIndex bridge not initialized");
 
-  const ready = docs || db.listReadyDocuments(); // [{ id, name, type, source_text }]
+  const ready = docs || db.listReadyDocuments(); // [{ id, name, type }] (light)
   if (!ready.length) return { answer: "", sources: [] };
 
   const perDoc = [];
-  for (const doc of ready) {
+  await mapLimit(ready, RAG_CONCURRENCY, async (doc) => {
     try {
-      const idx = db.getDocIndex(doc.id);
-      if (!idx?.structure) continue;
+      const idx = getDocIndexCached(doc.id);
+      if (!idx?.structure) return;
       const nodes = flattenNodes(idx.structure);
-      if (!nodes.length) continue;
+      if (!nodes.length) return;
 
       const relevant = await selectRelevantNodes(query, doc.name, nodes);
       const ctxNodes = (relevant.length ? relevant : nodes.slice(0, MAX_NODES_PER_DOC));
@@ -144,7 +185,7 @@ export async function queryCollection(query, docs) {
     } catch (err) {
       console.error(`[pageindex-bridge] query failed for "${doc.name}":`, err.message);
     }
-  }
+  });
 
   if (!perDoc.length) return { answer: "", sources: [] };
 
