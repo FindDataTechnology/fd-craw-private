@@ -79,6 +79,7 @@ COPY --from=builder /app/resources ./resources
 COPY --from=builder /app/package.json /app/platform.bundle.json /app/mcp.example.json ./
 COPY --from=builder /app/market-catalog.json /app/market-catalog-skills.json ./
 COPY --from=builder /app/*.js ./
+COPY --from=builder /app/server ./server
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/supervisor ./supervisor
 COPY --from=builder /app/bootstrap ./bootstrap
