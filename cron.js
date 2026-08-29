@@ -2,6 +2,7 @@ import schedule from "node-schedule";
 import fs from "node:fs";
 import path from "node:path";
 import { storeDir } from "./paths.js";
+import { atomicWriteJson, readJsonOr, createWriteChain } from "./lib/persistence.js";
 
 const CRON_STORAGE_DIR = storeDir("cron-store", process.env.CRON_STORAGE_PATH);
 const JOBS_FILE = path.join(CRON_STORAGE_DIR, "jobs.json");
@@ -28,46 +29,46 @@ async function initCron({ broadcast, sessionPrompt, isStreaming }) {
 
 // ── Persistence ─────────────────────────────────────────────────────────────
 
-async function loadJobs() {
-  try {
-    const data = await fs.promises.readFile(JOBS_FILE, "utf8");
-    const savedJobs = JSON.parse(data);
-    for (const jobData of savedJobs) {
-      // Reschedule recurring jobs
-      if (jobData.type === "recurring" && jobData.cron) {
-        scheduleJob(jobData);
-      }
-      // One-shot jobs that passed their scheduled time are not rescheduled;
-      // they stay in history only.
-      jobs.set(jobData.id, { ...jobData, job: null });
+function loadJobs() {
+  const savedJobs = readJsonOr(JOBS_FILE, [], { label: "cron" });
+  if (!Array.isArray(savedJobs)) return;
+  for (const jobData of savedJobs) {
+    // Reschedule recurring jobs
+    if (jobData.type === "recurring" && jobData.cron) {
+      scheduleJob(jobData);
     }
-    console.log(`[cron] Loaded ${jobs.size} jobs from storage`);
-  } catch (err) {
-    if (err.code !== "ENOENT") {
-      console.error("[cron] Failed to load jobs:", err.message);
-    }
+    // One-shot jobs that passed their scheduled time are not rescheduled;
+    // they stay in history only.
+    jobs.set(jobData.id, { ...jobData, job: null });
   }
+  console.log(`[cron] Loaded ${jobs.size} jobs from storage`);
 }
 
-async function saveJobs() {
-  // Serialize only the job data (excluding the live scheduleJob object)
-  const serializable = [...jobs.values()].map((j) => ({
-    id: j.id,
-    type: j.type,
-    cron: j.cron,
-    prompt: j.prompt,
-    when: j.when,
-    status: j.status,
-    paused: j.paused,
-    createdAt: j.createdAt,
-    lastRun: j.lastRun,
-    nextRun: j.nextRun,
-    history: j.history,
-  }));
-  // Atomic write: temp file + rename
-  const tempFile = `${JOBS_FILE}.tmp`;
-  await fs.promises.writeFile(tempFile, JSON.stringify(serializable, null, 2), "utf8");
-  await fs.promises.rename(tempFile, JOBS_FILE);
+// Serialized + atomic persistence: mutations rewrite the whole jobs file, so
+// overlapping saves are queued (no lost update) and each write goes through a
+// unique temp file (no interleaved-write corruption — the pre-fix race two
+// concurrent mutations could trigger on the shared jobs.json.tmp).
+const writeChain = createWriteChain();
+function saveJobs() {
+  return writeChain.mutate(async () => {
+    // Serialize only the job data (excluding the live scheduleJob object).
+    // Computed inside the queued task so a later save always sees the
+    // latest in-memory state.
+    const serializable = [...jobs.values()].map((j) => ({
+      id: j.id,
+      type: j.type,
+      cron: j.cron,
+      prompt: j.prompt,
+      when: j.when,
+      status: j.status,
+      paused: j.paused,
+      createdAt: j.createdAt,
+      lastRun: j.lastRun,
+      nextRun: j.nextRun,
+      history: j.history,
+    }));
+    await atomicWriteJson(JOBS_FILE, serializable);
+  });
 }
 
 // ── Job Management ──────────────────────────────────────────────────────────
