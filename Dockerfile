@@ -54,11 +54,27 @@ COPY . .
 RUN npm run web:build \
     && npm run predist
 
-# dsh CLI (the agent runtime server.js spawns by name). Pinned to the rc the
-# profiles were developed against — see ci(quality-gates) "pin dsh-base bundle
-# version" for why rc tags must not float. Installed into its own prefix so
-# the runtime stage can copy just the CLI + its deps.
-RUN npm install --prefix /opt/dsh @deepseek-ai/dsh@0.1.1-rc.2
+# dsh CLI (the agent runtime server.js spawns by name) + the JSON-RPC plugin
+# the profile's cordis.patch.yml inserts. Pinned to the rcs the profiles were
+# developed against — see ci(quality-gates) "pin dsh-base bundle version" for
+# why rc tags must not float. Installed into its own prefix so the runtime
+# stage can copy just the CLI + its deps.
+RUN npm install --prefix /opt/dsh \
+      @deepseek-ai/dsh@0.1.1-rc.2 \
+      @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5
+
+# dsh profile scaffold (server.js writes settings/patches into it at boot;
+# the base bundle must be pre-installed because the runtime network cannot
+# reach npm). dsh-profile-template/ mirrors ~/.dsh/profiles/platform.
+RUN mkdir -p /opt/dsh-home/profiles/platform \
+    && cp dsh-profile-template/package.json \
+          dsh-profile-template/pnpm-workspace.yaml \
+          dsh-profile-template/cordis.yml \
+          dsh-profile-template/cordis.patch.yml \
+          /opt/dsh-home/profiles/platform/ \
+    && npm install --prefix /opt/dsh-home/profiles/platform \
+          @deepseek-ai/dsh-base@0.0.1-rc.1 \
+          @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM node:25-bookworm-slim AS runtime
@@ -76,7 +92,9 @@ WORKDIR /app
 # and the bundled resources (OpenConnector, Node).
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /opt/dsh /opt/dsh
-ENV PATH="/opt/dsh/bin:${PATH}"
+COPY --from=builder /opt/dsh-home /opt/dsh-home
+ENV PATH="/opt/dsh/node_modules/.bin:${PATH}" \
+    DSH_HOME="/opt/dsh-home"
 COPY --from=builder /app/web/dist ./web/dist
 COPY --from=builder /app/resources ./resources
 
