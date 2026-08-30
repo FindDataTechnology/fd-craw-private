@@ -103,7 +103,8 @@
       "help": "Ouvrir le centre d’aide"
     },
     "stop": "Arrêter",
-    "uploading": "Envoi en cours…"
+    "uploading": "Envoi en cours…",
+    "cancelUpload": "Annuler l’envoi"
   },
   "chat": {
     "empty": "Envoyez un message pour commencer à discuter.",
@@ -142,7 +143,8 @@
     "titleTooLong": "Le titre doit comporter 200 caractères ou moins",
     "connectionLost": "Connexion perdue — reconnexion en cours…",
     "ariaStreaming": "Génération de la réponse…",
-    "ariaDone": "Réponse terminée"
+    "ariaDone": "Réponse terminée",
+    "retry": "Réessayer"
   },
   "turn": {
     "assistantName": "Assistant Platform",

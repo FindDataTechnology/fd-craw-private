@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import { Chat } from "@/components/Chat";
@@ -17,12 +18,18 @@ import type { ClientMessage } from "@/types/ws";
 // welcome → in-session branch swap, and so ChatWelcome's suggested-prompt
 // cards can prefill it: clicking a card fills the composer and focuses it —
 // the user stays in control of what actually gets sent.
+//
+// Sessions are deep-linkable: /chat/:sessionId loads that session, and the
+// URL follows the active session both ways (refresh and back keep context).
 export function ChatPage({ send }: { send: (m: ClientMessage) => void }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { sessionId: urlSessionId } = useParams();
   // Length-only subscription: this page branches on emptiness — subscribing
   // to the whole turns array would re-render it per streamed token.
   const isEmpty = useChatStore((s) => s.turns.length === 0);
   const status = useChatStore((s) => s.status);
+  const currentSessionId = useChatStore((s) => s.currentSessionId);
 
   const [draft, setDraft] = useState("");
   const [focusTick, setFocusTick] = useState(0);
@@ -30,6 +37,20 @@ export function ChatPage({ send }: { send: (m: ClientMessage) => void }) {
     setDraft(text);
     setFocusTick((n) => n + 1);
   };
+
+  // Deep link in: a session id in the URL that isn't current loads it.
+  useEffect(() => {
+    if (urlSessionId && urlSessionId !== currentSessionId) {
+      send({ type: "switch_session", id: urlSessionId });
+    }
+  }, [urlSessionId, currentSessionId, send]);
+  // URL out: the address bar follows the active session (replace, so each
+  // session is one history entry — back exits the chat, not the session).
+  useEffect(() => {
+    if (currentSessionId && urlSessionId !== currentSessionId) {
+      navigate(`/chat/${currentSessionId}`, { replace: true });
+    }
+  }, [currentSessionId, urlSessionId, navigate]);
 
   return (
     <main className="flex min-h-0 min-w-0 flex-col">
@@ -44,6 +65,14 @@ export function ChatPage({ send }: { send: (m: ClientMessage) => void }) {
         >
           <span className="h-2 w-2 shrink-0 rounded-full bg-destructive" />
           {t("chat.connectionLost")}
+          <button
+            type="button"
+            data-testid="connection-retry"
+            onClick={() => window.dispatchEvent(new Event("platform:reconnect"))}
+            className="ml-1 rounded-md border border-border px-2 py-0.5 text-xs text-foreground hover:bg-muted"
+          >
+            {t("chat.retry")}
+          </button>
         </div>
       )}
       {isEmpty ? (

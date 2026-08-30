@@ -146,6 +146,10 @@ test.describe("composer hardening: IME, stop, disconnect", () => {
     });
 
     await expect(page.getByTestId("connection-banner")).toBeVisible();
+    // Manual retry is offered on the banner (the backoff budget is finite).
+    await expect(page.getByTestId("connection-retry")).toBeVisible();
+    // Typing survives the outage — only send is gated by the connection.
+    await page.getByTestId("composer-input").fill("draft while offline");
     // The stranded run finalized: stop is gone even though no `done` arrived.
     await expect(page.getByTestId("composer-stop")).toBeHidden();
     const state = await page.evaluate(() => {
@@ -171,6 +175,8 @@ test.describe("composer hardening: IME, stop, disconnect", () => {
     });
     expect(swallowed).toBe(true);
 
+    // The offline draft survived the reconnect cycle.
+    await expect(page.getByTestId("composer-input")).toHaveValue("draft while offline");
     // Reconnect clears the banner (the hook sets "connected" on open).
     await page.evaluate(() => window.__chatStore.getState().setStatus("connected"));
     await expect(page.getByTestId("connection-banner")).toBeHidden();
@@ -280,5 +286,20 @@ test.describe("composer hardening: IME, stop, disconnect", () => {
       { timeout: 15000 },
     );
     await waitForIdle(page, 30000);
+  });
+
+  test("sessions are deep-linkable: /chat/:id loads that session", async ({ page }) => {
+    const id = await page.evaluate(() => {
+      const s = window.__chatStore.getState();
+      return s.sessions.find((x) => x.id !== s.currentSessionId)?.id || s.sessions[0]?.id || null;
+    });
+    test.skip(!id, "no sessions to deep-link");
+    await page.goto(`/chat/${id}`);
+    await page.waitForFunction(
+      (want) => window.__chatStore?.getState().currentSessionId === want,
+      id,
+      { timeout: 15000 },
+    );
+    await expect(page).toHaveURL(new RegExp("/chat/" + id + "$"));
   });
 });

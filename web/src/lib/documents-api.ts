@@ -50,10 +50,10 @@ export async function deleteDocument(id: string): Promise<void> {
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
 }
 
-export async function uploadFile(file: File): Promise<DocMeta> {
+export async function uploadFile(file: File, signal?: AbortSignal): Promise<DocMeta> {
   const fd = new FormData();
   fd.append("file", file);
-  const r = await fetch("/api/documents", { method: "POST", body: fd });
+  const r = await fetch("/api/documents", { method: "POST", body: fd, signal });
   return jsonOrThrow<DocMeta>(r);
 }
 

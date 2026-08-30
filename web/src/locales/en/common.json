@@ -103,7 +103,8 @@
       "help": "Open the help center"
     },
     "stop": "Stop",
-    "uploading": "Uploading…"
+    "uploading": "Uploading…",
+    "cancelUpload": "Cancel upload"
   },
   "chat": {
     "empty": "Send a message to start chatting.",
@@ -142,7 +143,8 @@
     "titleTooLong": "Title must be 200 characters or fewer",
     "connectionLost": "Connection lost — reconnecting…",
     "ariaStreaming": "Generating answer…",
-    "ariaDone": "Answer complete"
+    "ariaDone": "Answer complete",
+    "retry": "Retry"
   },
   "turn": {
     "assistantName": "Platform Assistant",

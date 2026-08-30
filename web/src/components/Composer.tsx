@@ -77,6 +77,9 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   // is visible through the whole lifecycle (上传中 → 已附加/失败) so the
   // upload is never silent.
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  // Live upload controllers, keyed by chip key — the X on an uploading chip
+  // aborts the in-flight POST instead of waiting it out.
+  const abortRef = useRef<Map<string, AbortController>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -152,13 +155,17 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
 
   // ONE attach path for both gestures (paperclip + drag-drop): the chip
   // mounts as 上传中 the moment a file enters, then flips to 已附加 or 失败.
-  // The chip IS the feedback — no success toast to chase.
+  // The chip IS the feedback — no success toast to chase. Every upload is
+  // cancellable (X on the uploading chip aborts the fetch) — a guard without
+  // an escape is a trap.
   const attachFiles = async (files: File[]) => {
     for (const f of files) {
       const key = `att-${++attachSeq}`;
+      const abort = new AbortController();
+      abortRef.current.set(key, abort);
       setAttachments((a) => [...a, { key, id: "", name: f.name, state: "uploading" }]);
       try {
-        const doc = await uploadFile(f);
+        const doc = await uploadFile(f, abort.signal);
         setAttachments((a) =>
           a.map((x) =>
             x.key === key
@@ -167,19 +174,29 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
           ),
         );
       } catch (err) {
+        // A cancel is a choice, not a failure: drop the chip silently.
+        if ((err as Error).name === "AbortError") {
+          setAttachments((a) => a.filter((x) => x.key !== key));
+          continue;
+        }
         const message = (err as Error).message.slice(0, 120);
         setAttachments((a) =>
           a.map((x) => (x.key === key ? { ...x, state: "error" as const, error: message } : x)),
         );
         // The chip shows the failure; the toast carries the reason.
         showToast(t("composer.uploadFailed", { message: message.slice(0, 80) }));
+      } finally {
+        abortRef.current.delete(key);
       }
     }
     textareaRef.current?.focus();
   };
 
-  const removeAttachment = (key: string) =>
+  const removeAttachment = (key: string) => {
+    abortRef.current.get(key)?.abort();
+    abortRef.current.delete(key);
     setAttachments((a) => a.filter((x) => x.key !== key));
+  };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // IME composition (pinyin, kana, …): Enter confirms the composition and
@@ -321,15 +338,13 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
                   <Paperclip className="h-3 w-3 text-muted-foreground" />
                 )}
                 <span className="max-w-[12rem] truncate">{a.name}</span>
-                {a.state !== "uploading" && (
-                  <button
-                    onClick={() => removeAttachment(a.key)}
-                    aria-label={t("composer.removeAttachment")}
-                    className="-my-1 rounded p-1 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-3 w-3" aria-hidden="true" />
-                  </button>
-                )}
+                <button
+                  onClick={() => removeAttachment(a.key)}
+                  aria-label={a.state === "uploading" ? t("composer.cancelUpload") : t("composer.removeAttachment")}
+                  className="-my-1 rounded p-1 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3 w-3" aria-hidden="true" />
+                </button>
               </span>
             ))}
           </div>
@@ -362,15 +377,16 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={onKeyDown}
-            disabled={disabled}
             rows={1}
             data-testid="composer-input"
-            placeholder={disabled ? t("composer.placeholderDisabled") : t("composer.placeholder")}
+            placeholder={t("composer.placeholder")}
             className={cn(
               "min-h-[24px] flex-1 resize-none bg-transparent text-sm text-foreground outline-none",
-              "placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+              "placeholder:text-muted-foreground",
             )}
           />
+          {/* Typing is never disabled — a local-first product must absorb the
+              outage, not punish it: draft while disconnected, send when back. */}
           {isStreaming ? (
             <button
               onClick={stopStreaming}

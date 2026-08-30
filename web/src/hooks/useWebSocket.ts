@@ -87,14 +87,18 @@ export function useWebSocket() {
     };
 
     // Reconnect immediately when the network comes back (e.g. laptop wake),
-    // bypassing the backoff timer and resetting the retry budget.
-    const onOnline = () => {
+    // bypassing the backoff timer and resetting the retry budget. The same
+    // path serves the banner's manual 重试 button.
+    const reconnectNow = () => {
       if (cancelled) return;
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       attempt = 0;
       connect();
     };
+    const onOnline = () => reconnectNow();
+    const onManualReconnect = () => reconnectNow();
     window.addEventListener("online", onOnline);
+    window.addEventListener("platform:reconnect", onManualReconnect);
 
     connect();
 
@@ -102,6 +106,7 @@ export function useWebSocket() {
       cancelled = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       window.removeEventListener("online", onOnline);
+      window.removeEventListener("platform:reconnect", onManualReconnect);
       wsRef.current?.close();
     };
   }, [apply, applyExtensions, setStatus]);

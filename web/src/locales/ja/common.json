@@ -103,7 +103,8 @@
       "help": "ヘルプセンターを開く"
     },
     "stop": "停止",
-    "uploading": "アップロード中…"
+    "uploading": "アップロード中…",
+    "cancelUpload": "アップロードをキャンセル"
   },
   "chat": {
     "empty": "メッセージを送信してチャットを開始してください。",
@@ -142,7 +143,8 @@
     "titleTooLong": "タイトルは 200 文字以下にしてください",
     "connectionLost": "接続が切断されました。自動的に再接続しています…",
     "ariaStreaming": "回答を生成中…",
-    "ariaDone": "回答が完了しました"
+    "ariaDone": "回答が完了しました",
+    "retry": "再試行"
   },
   "turn": {
     "assistantName": "Platform アシスタント",

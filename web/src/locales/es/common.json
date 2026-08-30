@@ -103,7 +103,8 @@
       "help": "Abrir el centro de ayuda"
     },
     "stop": "Detener",
-    "uploading": "Subiendo…"
+    "uploading": "Subiendo…",
+    "cancelUpload": "Cancelar subida"
   },
   "chat": {
     "empty": "Envía un mensaje para empezar a chatear.",
@@ -142,7 +143,8 @@
     "titleTooLong": "El título debe tener 200 caracteres o menos",
     "connectionLost": "Conexión perdida — reconectando…",
     "ariaStreaming": "Generando respuesta…",
-    "ariaDone": "Respuesta completa"
+    "ariaDone": "Respuesta completa",
+    "retry": "Reintentar"
   },
   "turn": {
     "assistantName": "Asistente de Platform",
