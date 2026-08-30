@@ -59,7 +59,12 @@ env:
 jobs:
   build-push:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Cold full builds (native addons + OpenConnector clone + Node tarball +
+    # web build) exceed 90m; three runs died at the ceiling. cache-to mode=max
+    # only saves on SUCCESS, so until one build completes no cache is ever
+    # published and every run stays cold — 240m lets the first success break
+    # that deadlock; later runs are cache-warm and far shorter.
+    timeout-minutes: 240
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
