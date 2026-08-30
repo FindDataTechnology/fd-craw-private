@@ -46,3 +46,13 @@ sso-test.mjs
 connect-app/
 .zcode/
 .mcp.json
+
+# Local AI tooling copies (per-machine; not part of the app)
+.claude/skills/
+
+# Impeccable live-mode session journals (local iteration state)
+.impeccable/live/
+
+# Scratch temp files
+.tmp-*
+*.local.log

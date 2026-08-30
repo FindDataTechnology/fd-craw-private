@@ -1,7 +1,7 @@
 ## 1. Dependencies & configuration
 
 - [x] 1.1 `npm install pi-provider-litellm dotenv`
-- [x] 1.2 Edit `.env`: replace `lite_llm_host`/`lite_llm_auth_bear` with `LITELLM_BASE_URL=http://192.168.1.4:4000` and `LITELLM_API_KEY=sk-Nhf43Q7sFxB81Hqp2YbAWvgM5ZkdLjISozmyr0DVJacXeGun`
+- [x] 1.2 Edit `.env`: replace `lite_llm_host`/`lite_llm_auth_bear` with `LITELLM_BASE_URL=http://<LAN-HOST>:4000` and `LITELLM_API_KEY=sk-<REDACTED — rotate if still valid>`
 - [x] 1.3 Add `.env` to `.gitignore`
 - [x] 1.4 Confirm `.env` is not tracked by git (`git check-ignore .env` returns the path; if already tracked, `git rm --cached .env`) — N/A: project is not a git repo; `.gitignore` entry added for when it becomes one
 
