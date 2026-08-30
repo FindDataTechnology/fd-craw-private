@@ -26,8 +26,8 @@ function AssistantTurnBase({ turn }: { turn: Extract<Turn, { role: "assistant" }
       data-streaming={turn.streaming ? "true" : "false"}
     >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="grid h-6 w-6 place-items-center rounded-full bg-primary/20 text-primary">
-          ●
+        <span aria-hidden="true" className="grid h-6 w-6 place-items-center rounded-full bg-primary/20">
+          <span className="h-2 w-2 rounded-full bg-primary" />
         </span>
         <span>{t("turn.assistantName")}</span>
       </div>

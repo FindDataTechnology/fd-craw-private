@@ -2,7 +2,7 @@ import { ChevronRight, Loader2, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import type { Block } from "@/hooks/useChatStore";
-import { memo } from "react";
+import { memo, useId } from "react";
 
 interface Props {
   block: Extract<Block, { kind: "tool" }>;
@@ -22,6 +22,7 @@ function stringify(v: unknown): string {
 function ToolBlockBase({ block, onToggle }: Props) {
   const { t } = useTranslation();
   const { name, args, state, result, partial, open } = block;
+  const bodyId = useId();
   const accent =
     state === "running"
       ? "border-l-primary"
@@ -40,9 +41,11 @@ function ToolBlockBase({ block, onToggle }: Props) {
     >
       <button
         onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={bodyId}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted"
       >
-        <ChevronRight className={cn("h-3 w-3 transition-transform", open && "rotate-90")} />
+        <ChevronRight className={cn("h-3 w-3 transition-transform", open && "rotate-90")} aria-hidden="true" />
         <Wrench className="h-3 w-3 shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate font-mono font-semibold text-foreground">{name}</span>
         <span
@@ -58,7 +61,7 @@ function ToolBlockBase({ block, onToggle }: Props) {
         </span>
       </button>
       {open && (
-        <div className="max-h-72 space-y-2 overflow-y-auto border-t border-border px-3 py-2 text-[11px]">
+        <div id={bodyId} className="max-h-72 space-y-2 overflow-y-auto border-t border-border px-3 py-2 text-[11px]">
           {args !== undefined && args !== null && (
             <Section label={t("turn.input")} body={stringify(args)} />
           )}

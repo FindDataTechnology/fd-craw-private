@@ -140,7 +140,9 @@
       "rename": "保存新标题"
     },
     "titleTooLong": "标题不能超过 200 个字符",
-    "connectionLost": "连接已断开，正在自动重连…"
+    "connectionLost": "连接已断开，正在自动重连…",
+    "ariaStreaming": "回答生成中…",
+    "ariaDone": "回答完成"
   },
   "turn": {
     "assistantName": "Platform 助手",

@@ -153,7 +153,7 @@ export function ChatHeader({ send }: Props) {
         )}
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground" data-testid="chat-header-status">
+      <div role="status" className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground" data-testid="chat-header-status">
         {currentModel && <span data-testid="chat-header-model">{currentModel}</span>}
         {currentModel && agentName && <span>·</span>}
         {agentName && <span data-testid="chat-header-agent">{agentName}</span>}
@@ -166,7 +166,7 @@ export function ChatHeader({ send }: Props) {
             status === "connecting" && "bg-warning",
             status === "disconnected" && "bg-destructive",
           )}
-          aria-label={t(`status.${status}`)}
+          aria-hidden="true"
         />
       </div>
     </header>

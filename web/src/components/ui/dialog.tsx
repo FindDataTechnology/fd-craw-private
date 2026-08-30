@@ -8,21 +8,56 @@ interface DialogProps {
 }
 
 function Dialog({ open, onOpenChange, children }: DialogProps) {
-  // Escape closes the dialog. The primitive owns this (not callers): a modal
-  // without a keyboard exit traps keyboard and screen-reader users.
+  const rootRef = React.useRef<HTMLDivElement>(null)
+  const restoreRef = React.useRef<HTMLElement | null>(null)
+  const focusables = () =>
+    rootRef.current
+      ? Array.from(
+          rootRef.current.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null)
+      : []
+
+  // Escape closes; Tab stays inside the dialog (focus trap); focus returns to
+  // the opener on close. A modal without these traps keyboard and
+  // screen-reader users behind the scrim.
   React.useEffect(() => {
     if (!open) return
+    restoreRef.current = document.activeElement as HTMLElement | null
+    // Initial focus: first focusable child, else the dialog root.
+    const f = focusables()
+    ;(f[0] ?? rootRef.current)?.focus()
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onOpenChange?.(false)
+      if (e.key === "Escape") {
+        onOpenChange?.(false)
+        return
+      }
+      if (e.key !== "Tab") return
+      const list = focusables()
+      if (!list.length) return
+      const first = list[0]!
+      const last = list[list.length - 1]!
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener("keydown", onKey)
-    return () => document.removeEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("keydown", onKey)
+      restoreRef.current?.focus?.()
+    }
   }, [open, onOpenChange])
 
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div ref={rootRef} className="fixed inset-0 z-50">
       {/* backdrop; clicking it closes the modal */}
       <div
         className="fixed inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in-0"
@@ -40,6 +75,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTML
   ({ className, children, ...props }, ref) => (
     <div
       ref={ref}
+      tabIndex={-1}
       className={cn(
         "mx-auto w-full max-w-lg rounded-lg border bg-background p-6 shadow-lg",
         "animate-in fade-in-0 zoom-in-95",

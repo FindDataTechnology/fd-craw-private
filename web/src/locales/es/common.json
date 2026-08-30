@@ -140,7 +140,9 @@
       "rename": "Guardar nuevo título"
     },
     "titleTooLong": "El título debe tener 200 caracteres o menos",
-    "connectionLost": "Conexión perdida — reconectando…"
+    "connectionLost": "Conexión perdida — reconectando…",
+    "ariaStreaming": "Generando respuesta…",
+    "ariaDone": "Respuesta completa"
   },
   "turn": {
     "assistantName": "Asistente de Platform",

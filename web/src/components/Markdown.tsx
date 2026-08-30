@@ -185,7 +185,7 @@ function HighlightedCode({ code, lang }: { code: string; lang: string }) {
         <span>{effectiveLang ?? (lang || "text")}</span>
         <button
           onClick={copy}
-          className="flex items-center gap-1 rounded px-1 py-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+          className="flex items-center gap-1 rounded px-1 py-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
         >
           {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           {copied ? t("markdown.copied") : t("markdown.copy")}

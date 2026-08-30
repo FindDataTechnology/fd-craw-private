@@ -325,9 +325,9 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
                   <button
                     onClick={() => removeAttachment(a.key)}
                     aria-label={t("composer.removeAttachment")}
-                    className="text-muted-foreground hover:text-foreground"
+                    className="-my-1 rounded p-1 text-muted-foreground hover:text-foreground"
                   >
-                    <X className="h-3 w-3" />
+                    <X className="h-3 w-3" aria-hidden="true" />
                   </button>
                 )}
               </span>

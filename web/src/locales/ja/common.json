@@ -140,7 +140,9 @@
       "rename": "新しい名前を保存"
     },
     "titleTooLong": "タイトルは 200 文字以下にしてください",
-    "connectionLost": "接続が切断されました。自動的に再接続しています…"
+    "connectionLost": "接続が切断されました。自動的に再接続しています…",
+    "ariaStreaming": "回答を生成中…",
+    "ariaDone": "回答が完了しました"
   },
   "turn": {
     "assistantName": "Platform アシスタント",

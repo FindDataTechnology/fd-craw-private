@@ -8,6 +8,7 @@ import { AssistantTurn } from "@/components/AssistantTurn";
 export function Chat() {
   const { t } = useTranslation();
   const turns = useChatStore((s) => s.turns);
+  const isStreaming = useChatStore((s) => s.isStreaming);
   const containerRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
 
@@ -33,11 +34,15 @@ export function Chat() {
   return (
     <div
       ref={containerRef}
-      role="log"
-      aria-live="polite"
       data-testid="chat-log"
       className="min-h-0 flex-1 overflow-y-auto px-4 py-6"
     >
+      {/* Scoped live region: announce only stream start/end. The container is
+          deliberately NOT aria-live — a polite log would re-announce every
+          50ms delta flush and flood screen readers. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {isStreaming ? t("chat.ariaStreaming") : turns.length > 0 ? t("chat.ariaDone") : ""}
+      </span>
       {turns.length === 0 ? (
         <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
           {t("chat.empty")}
