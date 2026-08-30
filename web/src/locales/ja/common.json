@@ -155,7 +155,11 @@
     "partial": "部分",
     "output": "出力",
     "outputError": "エラー",
-    "interrupted": "中断されました"
+    "interrupted": "中断されました",
+    "copy": "コピー",
+    "copied": "コピーしました",
+    "regenerate": "再生成",
+    "editResend": "編集して再送"
   },
   "markdown": {
     "copy": "コピー",

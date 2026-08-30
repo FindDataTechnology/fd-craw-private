@@ -1,11 +1,20 @@
 // Message log. Renders turns; auto-scrolls to bottom unless the user scrolled up.
-import { useEffect, useRef } from "react";
+// Owns the message-level actions wiring: copy lives inside AssistantTurn;
+// edit-and-resend goes to the LAST user turn; regenerate re-sends the last
+// user prompt from the LAST assistant turn.
+import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import { UserTurn } from "@/components/UserTurn";
 import { AssistantTurn } from "@/components/AssistantTurn";
+import type { ClientMessage } from "@/types/ws";
 
-export function Chat() {
+interface Props {
+  send: (m: ClientMessage) => void;
+  onPrefill: (text: string) => void;
+}
+
+export function Chat({ send, onPrefill }: Props) {
   const { t } = useTranslation();
   const turns = useChatStore((s) => s.turns);
   const isStreaming = useChatStore((s) => s.isStreaming);
@@ -31,6 +40,16 @@ export function Chat() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [turns]);
 
+  // The last user prompt: powers regenerate (re-send as a new prompt — dsh
+  // has no replace-turn RPC, so this is honest regeneration, not mutation).
+  const lastUserText = useMemo(() => {
+    for (let i = turns.length - 1; i >= 0; i--) {
+      const t = turns[i];
+      if (t && t.role === "user") return t.text;
+    }
+    return null;
+  }, [turns]);
+
   return (
     <div
       ref={containerRef}
@@ -49,13 +68,33 @@ export function Chat() {
         </div>
       ) : (
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
-          {turns.map((t) =>
-            t.role === "user" ? (
-              <UserTurn key={t.id} text={t.text} />
-            ) : (
-              <AssistantTurn key={t.id} turn={t} />
-            ),
-          )}
+          {turns.map((t, i) => {
+            const isLastUser =
+              t.role === "user" && !turns.slice(i + 1).some((x) => x.role === "user");
+            const isLastAssistant =
+              t.role === "assistant" && !turns.slice(i + 1).some((x) => x.role === "assistant");
+            if (t.role === "user") {
+              const text = t.text;
+              return (
+                <UserTurn
+                  key={t.id}
+                  text={text}
+                  onEdit={isLastUser ? () => onPrefill(text) : undefined}
+                />
+              );
+            }
+            return (
+              <AssistantTurn
+                key={t.id}
+                turn={t}
+                onRegenerate={
+                  isLastAssistant && lastUserText
+                    ? () => send({ type: "prompt", text: lastUserText })
+                    : undefined
+                }
+              />
+            );
+          })}
         </div>
       )}
     </div>

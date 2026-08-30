@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 // Full-width assistant turn. Blocks nest inside a left-rail so tool/thinking
 // visibly belong to the same turn as the text. This is the "not siblings"
 // design decision from proposal.md.
@@ -7,7 +7,7 @@ import { memo } from "react";
 // tool/thinking block labels resolve through the i18n bundle. Icons are
 // lucide throughout — no emoji as an icon system (DESIGN.md).
 import { useTranslation } from "react-i18next";
-import { Terminal, TriangleAlert } from "lucide-react";
+import { Check, Copy, RefreshCw, Terminal, TriangleAlert } from "lucide-react";
 import { useChatStore } from "@/hooks/useChatStore";
 import type { Turn } from "@/hooks/useChatStore";
 import { Markdown } from "@/components/Markdown";
@@ -16,12 +16,40 @@ import { ToolBlock } from "@/components/ToolBlock";
 import { SkillBlock } from "@/components/SkillBlock";
 import { cn } from "@/lib/utils";
 
-function AssistantTurnBase({ turn }: { turn: Extract<Turn, { role: "assistant" }> }) {
+function AssistantTurnBase({
+  turn,
+  onRegenerate,
+}: {
+  turn: Extract<Turn, { role: "assistant" }>;
+  // Re-send the last user prompt. Only the LAST assistant turn gets it, and
+  // only when that turn is finished (Chat owns the wiring).
+  onRegenerate?: () => void;
+}) {
   const { t } = useTranslation();
   const toggleBlock = useChatStore((s) => s.toggleBlock);
+  const [copied, setCopied] = useState(false);
+
+  // Copy carries the answer's prose (text blocks), not the machinery.
+  const answerText = turn.blocks
+    .filter((b): b is Extract<typeof b, { kind: "text" }> => b.kind === "text")
+    .map((b) => b.text)
+    .join("\n\n")
+    .trim();
+
+  const copy = async () => {
+    if (!answerText) return;
+    try {
+      await navigator.clipboard.writeText(answerText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      /* clipboard unavailable (permissions); the button stays honest */
+    }
+  };
+
   return (
     <article
-      className={cn("flex flex-col gap-3", turn.streaming && "opacity-100")}
+      className={cn("group flex flex-col gap-3", turn.streaming && "opacity-100")}
       data-testid="turn-assistant"
       data-streaming={turn.streaming ? "true" : "false"}
     >
@@ -30,6 +58,36 @@ function AssistantTurnBase({ turn }: { turn: Extract<Turn, { role: "assistant" }
           <span className="h-2 w-2 rounded-full bg-primary" />
         </span>
         <span>{t("turn.assistantName")}</span>
+        {/* Turn actions: revealed on hover, keyboard-accessible always. */}
+        <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          {answerText && (
+            <button
+              type="button"
+              onClick={copy}
+              aria-label={copied ? t("turn.copied") : t("turn.copy")}
+              data-testid="turn-copy"
+              data-copied={copied ? "true" : "false"}
+              className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              {copied ? (
+                <Check className="h-3.5 w-3.5 text-success" aria-hidden="true" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+            </button>
+          )}
+          {onRegenerate && !turn.streaming && (
+            <button
+              type="button"
+              onClick={onRegenerate}
+              aria-label={t("turn.regenerate")}
+              data-testid="turn-regenerate"
+              className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex flex-col gap-2 border-l border-border pl-4">
         {turn.blocks.map((b, i) => {

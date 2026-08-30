@@ -155,7 +155,11 @@
     "partial": "Partiel",
     "output": "Sortie",
     "outputError": "Erreur",
-    "interrupted": "Interrompu"
+    "interrupted": "Interrompu",
+    "copy": "Copier",
+    "copied": "Copié",
+    "regenerate": "Régénérer",
+    "editResend": "Modifier et renvoyer"
   },
   "markdown": {
     "copy": "Copier",

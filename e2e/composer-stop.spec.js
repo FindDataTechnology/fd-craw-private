@@ -247,4 +247,38 @@ test.describe("composer hardening: IME, stop, disconnect", () => {
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
   });
+
+  test("message actions: copy, edit-resend prefill, regenerate", async ({ page }) => {
+    // Drive a finished exchange through the store seam.
+    await page.evaluate(() => {
+      const s = window.__chatStore;
+      s.getState().apply({ type: "user", text: "帮我总结要点" });
+      s.getState().apply({ type: "agent_start" });
+      s.getState().apply({ type: "text", delta: "以下是三个要点。" });
+      s.getState().apply({ type: "done" });
+    });
+    await page.waitForTimeout(300);
+
+    // Copy: flips to the copied state (clipboard needs an explicit grant
+    // in headless Chromium; the button swallows a rejected write).
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    const copyBtn = page.getByTestId("turn-copy");
+    await expect(copyBtn).toBeVisible();
+    await copyBtn.click();
+    await expect(copyBtn).toHaveAttribute("data-copied", "true");
+
+    // Edit-and-resend on the LAST user turn prefills the composer.
+    await page.getByTestId("turn-edit").click();
+    await expect(page.getByTestId("composer-input")).toHaveValue("帮我总结要点");
+
+    // Regenerate re-sends the last user prompt (server echoes a new user turn).
+    const before = await page.evaluate(() => window.__chatStore.getState().turns.length);
+    await page.getByTestId("turn-regenerate").click();
+    await page.waitForFunction(
+      (n) => window.__chatStore.getState().turns.length > n,
+      before,
+      { timeout: 15000 },
+    );
+    await waitForIdle(page, 30000);
+  });
 });

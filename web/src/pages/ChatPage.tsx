@@ -54,7 +54,7 @@ export function ChatPage({ send }: { send: (m: ClientMessage) => void }) {
       ) : (
         <>
           <ChatHeader send={send} />
-          <Chat />
+          <Chat send={send} onPrefill={prefillComposer} />
           <Composer send={send} value={draft} onChange={setDraft} focusTick={focusTick} />
         </>
       )}
