@@ -62,15 +62,20 @@ The suite SHALL include a chat-turn test (isolated as a separate `@smoke` Playwr
 - **THEN** the current chat-history session SHALL contain the user message and a non-empty assistant message
 
 ### Requirement: A single command runs the E2E suite
-The project SHALL provide an `npm run test:e2e` script that runs the Playwright suite, and an `npm run test:e2e:smoke` script that includes the `@smoke` chat-turn project. Browser binaries SHALL be installable via `npx playwright install chromium`.
+The project SHALL provide an `npm run test:e2e` script that runs the offline deterministic Playwright `fast` project, an `npm run test:e2e:smoke` script that runs ONLY the `@smoke`-tagged chat-turn project (real LLM calls, requires local secrets), and `test:e2e:live`/`test:e2e:live:smoke` scripts for the remote live service. No script other than the explicit `live` scripts SHALL select the `live` Playwright project. Browser binaries SHALL be installable via `npx playwright install chromium`.
 
 #### Scenario: run the fast suite
 - **WHEN** a developer runs `npm run test:e2e`
 - **THEN** the deterministic, no-LLM tests SHALL run against a freshly launched server
 
-#### Scenario: run the full suite including the chat turn
+#### Scenario: run the smoke subset only
 - **WHEN** a developer runs `npm run test:e2e:smoke`
-- **THEN** the chat-turn `@smoke` tests SHALL also run
+- **THEN** only the `@smoke`-tagged tests SHALL be selected
+- **AND** the `live` project tests SHALL NOT run and no request SHALL be made to the remote live service
+
+#### Scenario: live suite stays opt-in
+- **WHEN** a developer runs `npm run test:e2e` or `npm run test:e2e:smoke` without `PW_LIVE=1`
+- **THEN** no test SHALL contact the deployed live service URL
 
 ### Requirement: E2E suite covers model switching flow
 The suite SHALL cover switching models via the UI selector and via the `/model` chat command, asserting the `model_changed` event is broadcast, the selector updates, and an error is shown for invalid model ids.

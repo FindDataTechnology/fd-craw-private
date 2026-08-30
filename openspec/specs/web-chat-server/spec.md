@@ -41,11 +41,15 @@ The server SHALL forward `tool_execution_start` and `tool_execution_end` events 
 - **AND** when the tool finishes, send `{ "type": "tool_end", "name": "<tool name>", "isError": <boolean> }`
 
 ### Requirement: Server serves static frontend files
-The server SHALL serve the `public/` directory as static files at the root path.
+The server SHALL serve the `web/dist/` directory (SPA, built by Vite) as static files at the root path with a SPA fallback for deep links, with HTTP compression enabled for compressible static assets.
 
 #### Scenario: Browser requests the page
 - **WHEN** a browser navigates to `http://localhost:3000`
-- **THEN** the server SHALL return `public/index.html`
+- **THEN** the server SHALL return the React SPA entry `web/dist/index.html`
+
+#### Scenario: compressible asset is requested
+- **WHEN** a client requests a large text-based asset (e.g. the app entry chunk) with `Accept-Encoding` allowing gzip/br
+- **THEN** the server SHALL return the asset content-compressed rather than uncompressed
 
 ### Requirement: Server degrades gracefully when no chat provider is configured
 The server SHALL start successfully when no chat provider (Volces or LiteLLM) is configured. When `VOLCES_API_KEY` is unset, the Volces provider SHALL NOT be registered. When neither Volces nor LiteLLM is configured, the `extensionFactories` array SHALL be empty, the agent session SHALL still be created (model resolves to the SDK default / `null`), and the server SHALL log a warning that chat is non-functional. The documents RAG SHALL log a warning when it initializes without a Volces key, because indexing/query calls will fail at call time rather than at startup.
@@ -84,4 +88,37 @@ Every asynchronous WebSocket message handler SHALL catch its own promise rejecti
 #### Scenario: proxy response-read failure returns 502
 - **WHEN** `await upstreamRes.arrayBuffer()` rejects in `createWebProxy` or `proxyLitellmUi`
 - **THEN** the server SHALL respond with HTTP 502 and a message describing the read failure
+
+### Requirement: Server decomposition preserves the external contract
+The backend SHALL remain launchable via `node server.js` with the same HTTP route surface (paths, methods, status codes), the same WebSocket message protocol, the same middleware ordering semantics (forward-auth gate before handlers, static + SPA fallback registered last), and the same boot/initialization ordering as the pre-decomposition monolith. Internal code organization into `server/` modules SHALL NOT introduce observable behavior changes.
+
+#### Scenario: e2e suite passes unchanged after extraction
+- **WHEN** the full offline e2e `fast` project runs against the decomposed server
+- **THEN** all tests that passed pre-decomposition SHALL pass post-decomposition without modification to specs or the frontend
+
+#### Scenario: entrypoint and middleware order are stable
+- **WHEN** the server starts via `node server.js` (dev) or the supervisor/packaged launcher
+- **THEN** static assets and SPA fallback SHALL remain served after all `/api` routes
+- **AND** WebSocket upgrades SHALL pass through the same identity gate as HTTP requests when forward-auth is enabled
+
+#### Scenario: boot initialization ordering is preserved
+- **WHEN** the server initializes (db, documents store, dsh agent, legacy migrations, catalog, cron)
+- **THEN** initialization SHALL occur in the same relative order as before decomposition, in particular documents-store init before legacy migrations run
+
+### Requirement: Server listens before background initialization completes
+The server SHALL accept TCP connections and serve static files and non-agent endpoints within ~1 second of process start, before dsh agent startup, legacy migrations, catalog loading, and cron initialization complete. Initialization groups with no ordering dependency SHALL run concurrently. Endpoints and WebSocket commands that require the dsh agent SHALL respond with an explicit initializing error (HTTP 503 / WS error event) until the agent is ready, and clients SHALL be notified when it becomes ready.
+
+#### Scenario: static assets answer during cold start
+- **WHEN** the server process has just started and the dsh agent is still handshaking
+- **THEN** an HTTP request for the SPA entry SHALL succeed without waiting for agent readiness
+
+#### Scenario: chat command during initialization
+- **WHEN** a client sends a `prompt` WebSocket command before the dsh agent is ready
+- **THEN** the server SHALL respond with an initializing error instead of crashing or hanging
+- **AND** the server SHALL emit a readiness event to connected clients once the agent is available
+
+#### Scenario: catalog cloud fetch does not block readiness
+- **WHEN** the remote agents catalog URL is slow or unreachable (up to its 10s timeout)
+- **THEN** the server SHALL already be listening and serving the local catalog
+- **AND** cloud catalog entries SHALL merge in when the fetch completes
 
