@@ -288,6 +288,38 @@ test.describe("composer hardening: IME, stop, disconnect", () => {
     await waitForIdle(page, 30000);
   });
 
+  test("session history restores tool blocks (transcript amnesia fix)", async ({ page }) => {
+    // Let the connect-time ready sync settle first (its session_loaded would
+    // otherwise race and clobber the synthetic one below).
+    await page.waitForFunction(() => {
+      const s = window.__chatStore?.getState();
+      return s && s.currentSessionId !== null;
+    }, null, { timeout: 15000 });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+      window.__chatStore.getState().apply({
+        type: "session_loaded",
+        id: "test-session",
+        messages: [
+          { role: "user", content: "查一下数据" },
+          {
+            role: "assistant",
+            content: "查完了。",
+            blocks: [
+              { kind: "tool", id: "t1", name: "mcp__search__web", args: { q: "x" }, result: "ok", state: "done" },
+              { kind: "text", text: "查完了。" },
+            ],
+          },
+        ],
+      });
+    });
+    await expect(page.getByTestId("tool-block")).toBeVisible();
+    await expect(page.getByTestId("tool-block")).toHaveAttribute("data-tool-state", "done");
+    // The tool name survives the reload (collapsed by default).
+    await expect(page.getByTestId("tool-block")).toContainText("mcp__search__web");
+    await expect(page.getByTestId("turn-assistant").last()).toContainText("查完了。");
+  });
+
   test("sessions are deep-linkable: /chat/:id loads that session", async ({ page }) => {
     const id = await page.evaluate(() => {
       const s = window.__chatStore.getState();

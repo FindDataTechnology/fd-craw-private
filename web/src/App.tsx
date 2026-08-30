@@ -57,8 +57,11 @@ export default function App() {
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<Navigate to="/chat" replace />} />
-          <Route path="/chat" element={<ChatPage send={send} />} />
-          <Route path="/chat/:sessionId" element={<ChatPage send={send} />} />
+          {/* One route with an OPTIONAL session param: navigating /chat ↔
+              /chat/:id must NOT remount ChatPage — a remount re-runs the
+              deep-link effect, which re-sends switch_session and fights the
+              server's session_loaded broadcasts (turns clobbered to zero). */}
+          <Route path="/chat/:sessionId?" element={<ChatPage send={send} />} />
 
           {/* Knowledge (was Documents) — same page, new label + route. */}
           <Route path="/knowledge" element={<DocumentsPage />} />

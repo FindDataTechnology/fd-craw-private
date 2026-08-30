@@ -56,6 +56,7 @@ export function attachDshEvents(ctx) {
         ctx.isStreaming = true;
         ctx.dshTurnError = null;
         ctx.dshToolNames.clear();
+        ctx.dshTurnBlocks = [];
         ctx.broadcast({ type: "agent_start" });
         break;
       case "assistant/chunk": {
@@ -74,24 +75,46 @@ export function attachDshEvents(ctx) {
       }
       case "assistant/message": {
         // Mirror the assistant's final text into the SQLite project database
-        // (on assistant/message). Only records when text was produced.
+        // (on assistant/message), now WITH the turn's block structure — the
+        // tool calls accumulated below survive reload instead of flattening
+        // to prose. Records when text OR tool evidence exists.
         const blocks = ev.data?.message?.content;
+        let text = "";
         if (Array.isArray(blocks)) {
-          const text = blocks.filter((b) => b.type === "text").map((b) => b.text).join("");
-          if (text) chatHistory.recordMessage(chatHistory.currentSessionId(), "assistant", text);
+          text = blocks.filter((b) => b.type === "text").map((b) => b.text).join("");
+        }
+        const persistBlocks = [
+          ...ctx.dshTurnBlocks,
+          ...(text ? [{ kind: "text", text }] : []),
+        ];
+        if (text || ctx.dshTurnBlocks.length) {
+          chatHistory.recordMessage(
+            chatHistory.currentSessionId(),
+            "assistant",
+            text,
+            persistBlocks
+          );
         }
         break;
       }
-      case "tool/call":
+      case "tool/call": {
         ctx.dshToolNames.set(ev.data.callId, ev.data.name);
-        ctx.broadcast({
-          type: "tool_start",
-          toolCallId: ev.data.callId,
+        // Accumulate for persistence (result/state filled by tool/result).
+        ctx.dshTurnBlocks.push({
+          kind: "tool",
+          id: ev.data.callId,
           name: ev.data.name,
           // dsh carries raw JSON string arguments; parse to match the WS contract.
           args: (() => { try { return JSON.parse(ev.data.arguments); } catch { return ev.data.arguments; } })(),
         });
+        ctx.broadcast({
+          type: "tool_start",
+          toolCallId: ev.data.callId,
+          name: ev.data.name,
+          args: ctx.dshTurnBlocks[ctx.dshTurnBlocks.length - 1].args,
+        });
         break;
+      }
       case "tool/result": {
         const callId =
           ev.data?.message?.source?.callId ?? ev.data?.message?.content?.[0]?.toolCallId;
@@ -99,12 +122,19 @@ export function attachDshEvents(ctx) {
         const resultText = Array.isArray(resultBlocks)
           ? resultBlocks.filter((b) => b.type === "text").map((b) => b.text).join("") || null
           : null;
+        const isError = !!ev.data?.error || !!ev.data?.message?.content?.[0]?.isError;
+        // Fill the accumulated persistence block for this call.
+        const acc = ctx.dshTurnBlocks.find((b) => b.id === callId);
+        if (acc) {
+          acc.result = resultText;
+          acc.state = isError ? "error" : "done";
+        }
         ctx.broadcast({
           type: "tool_end",
           toolCallId: callId,
           name: ctx.dshToolNames.get(callId) ?? undefined,
           result: resultText,
-          isError: !!ev.data?.error || !!ev.data?.message?.content?.[0]?.isError,
+          isError,
         });
         break;
       }

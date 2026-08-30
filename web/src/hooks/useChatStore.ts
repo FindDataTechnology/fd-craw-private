@@ -377,7 +377,24 @@ export const useChatStore = create<State>((set) => ({
                 : {
                     id: nextId(),
                     role: "assistant",
-                    blocks: [{ kind: "text", text: msg.content }],
+                    // Restore the persisted block structure when present (tool
+                    // calls intact, collapsed); plain content is the legacy
+                    // fallback for pre-migration rows.
+                    blocks: msg.blocks?.length
+                      ? msg.blocks.map((b) =>
+                          b.kind === "tool"
+                            ? {
+                                kind: "tool" as const,
+                                id: b.id,
+                                name: b.name,
+                                args: b.args,
+                                result: b.result,
+                                state: b.state ?? ("done" as const),
+                                open: false,
+                              }
+                            : { kind: "text" as const, text: b.text },
+                        )
+                      : [{ kind: "text", text: msg.content }],
                     streaming: false,
                   },
             ),

@@ -97,8 +97,10 @@ function titleFromFirstUser(messages) {
 // Mirror a single turn (user prompt or assistant response) for the current
 // session into SQLite. Creates the session row on first message (title derived
 // from the first user message; path from the SDK session file), then appends the
-// message. No-op when the DB is unavailable (chat stays in-memory).
-export function recordMessage(sessionId, role, content) {
+// message. `blocks` (optional, assistant turns) persists the block structure —
+// tool calls with results — so a reloaded session rebuilds the evidence trail.
+// No-op when the DB is unavailable (chat stays in-memory).
+export function recordMessage(sessionId, role, content, blocks) {
   if (!sessionId || !db.isDbReady()) return;
   const now = new Date().toISOString();
   const path = sm?.getSessionFile?.() ?? null;
@@ -110,7 +112,7 @@ export function recordMessage(sessionId, role, content) {
     db.touchSession(sessionId, now);
     if (path) db.setSessionPath(sessionId, path);
   }
-  db.appendMessage(sessionId, role, content || "", now);
+  db.appendMessage(sessionId, role, content || "", now, blocks?.length ? JSON.stringify(blocks) : undefined);
 }
 
 // ── Listing ──────────────────────────────────────────────────────────────────

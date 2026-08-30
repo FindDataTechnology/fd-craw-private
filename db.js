@@ -142,6 +142,19 @@ const MIGRATIONS = [
         db.exec(`ALTER TABLE extension_configs ADD COLUMN permissions TEXT`);
     },
   },
+  {
+    version: 6,
+    // Transcript block structure (tool calls with results) as nullable JSON on
+    // assistant messages, so a reloaded session rebuilds the evidence trail
+    // instead of flattening it to prose. Rows written before this migration
+    // have NULL blocks and fall back to the plain-content path.
+    apply: (db) => {
+      const cols = new Set(
+        db.prepare("PRAGMA table_info(chat_messages)").all().map((c) => c.name)
+      );
+      if (!cols.has("blocks")) db.exec(`ALTER TABLE chat_messages ADD COLUMN blocks TEXT`);
+    },
+  },
 ];
 
 function nowIso() {
@@ -262,16 +275,16 @@ export function setTitle(id, title, updatedAt) {
 }
 
 // Append a message with the next per-session seq. Returns the inserted seq.
-export function appendMessage(sessionId, role, content, createdAt) {
+export function appendMessage(sessionId, role, content, createdAt, blocksJson) {
   if (!dbReady) return null;
   const row = db
     .prepare("SELECT COALESCE(MAX(seq), 0) AS max_seq FROM chat_messages WHERE session_id = ?")
     .get(sessionId);
   const seq = (row?.max_seq ?? 0) + 1;
   stmt(
-    `INSERT INTO chat_messages (session_id, role, content, seq, created_at)
-     VALUES (?, ?, ?, ?, ?)`
-  ).run(sessionId, role, content, seq, createdAt);
+    `INSERT INTO chat_messages (session_id, role, content, seq, created_at, blocks)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(sessionId, role, content, seq, createdAt, blocksJson ?? null);
   return seq;
 }
 
@@ -318,9 +331,15 @@ export function getChatMessages(sessionId) {
   if (!dbReady) return [];
   return db
     .prepare(
-      "SELECT role, content FROM chat_messages WHERE session_id = ? ORDER BY seq ASC"
+      "SELECT role, content, blocks FROM chat_messages WHERE session_id = ? ORDER BY seq ASC"
     )
-    .all(sessionId);
+    .all(sessionId)
+    .map((row) => ({
+      role: row.role,
+      content: row.content,
+      // Block structure (nullable JSON; absent on pre-migration rows).
+      ...(row.blocks ? { blocks: JSON.parse(row.blocks) } : {}),
+    }));
 }
 
 export function countChatSessions() {

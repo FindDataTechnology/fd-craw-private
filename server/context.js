@@ -88,8 +88,12 @@ export function createAppContext(config) {
     // dsh→WS event-translation state: callId→name carried from tool/call
     // across to tool/result (which has no name); dshTurnError carries an
     // assistant/chunk finish error to the turn/end error broadcast.
+    // dshTurnBlocks accumulates the turn's tool calls so assistant/message can
+    // persist the block STRUCTURE (not just flattened text) — the transcript's
+    // evidence trail survives reload.
     dshToolNames: new Map(),
     dshTurnError: null,
+    dshTurnBlocks: [],
 
     // ── WS clients + fan-out ────────────────────────────────────────────────
     clients: new Set(),

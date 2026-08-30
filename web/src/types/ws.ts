@@ -93,9 +93,24 @@ export interface SessionMeta {
   updatedAt?: string | number;
 }
 
+// Persisted block structure on assistant messages (chat history): the tool
+// evidence trail survives reload. Absent on rows written before this field
+// existed — clients fall back to plain content.
+export type PersistedBlock =
+  | { kind: "text"; text: string }
+  | {
+      kind: "tool";
+      id: string;
+      name: string;
+      args?: unknown;
+      result?: unknown;
+      state?: "done" | "error";
+    };
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  blocks?: PersistedBlock[];
 }
 
 // ── Client → server ─────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import { Chat } from "@/components/Chat";
@@ -23,7 +23,6 @@ import type { ClientMessage } from "@/types/ws";
 // URL follows the active session both ways (refresh and back keep context).
 export function ChatPage({ send }: { send: (m: ClientMessage) => void }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const { sessionId: urlSessionId } = useParams();
   // Length-only subscription: this page branches on emptiness — subscribing
   // to the whole turns array would re-render it per streamed token.
@@ -38,19 +37,16 @@ export function ChatPage({ send }: { send: (m: ClientMessage) => void }) {
     setFocusTick((n) => n + 1);
   };
 
-  // Deep link in: a session id in the URL that isn't current loads it.
+  // Deep link in: a session id in the URL that isn't current loads it. The URL
+  // changes ONLY through user navigation (sidebar rows / new chat navigate
+  // explicitly; refresh keeps its place) — a reactive URL-follows-session
+  // effect here would race this one and ping-pong switch_session between the
+  // stale URL and the fresh session id.
   useEffect(() => {
     if (urlSessionId && urlSessionId !== currentSessionId) {
       send({ type: "switch_session", id: urlSessionId });
     }
   }, [urlSessionId, currentSessionId, send]);
-  // URL out: the address bar follows the active session (replace, so each
-  // session is one history entry — back exits the chat, not the session).
-  useEffect(() => {
-    if (currentSessionId && urlSessionId !== currentSessionId) {
-      navigate(`/chat/${currentSessionId}`, { replace: true });
-    }
-  }, [currentSessionId, urlSessionId, navigate]);
 
   return (
     <main className="flex min-h-0 min-w-0 flex-col">

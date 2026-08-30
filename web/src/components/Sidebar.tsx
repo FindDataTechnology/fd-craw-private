@@ -125,9 +125,12 @@ export function Sidebar({ send }: Props) {
               data-testid="session-row"
               data-session-id={s.id}
               data-current={s.id === currentSessionId ? "true" : "false"}
-              onClick={() => {
-                if (s.id !== currentSessionId) send({ type: "switch_session", id: s.id });
-              }}
+                onClick={() => {
+                  // URL leads the switch (deep-link effect no-ops once the
+                  // server's session_loaded lands); back/refresh keep place.
+                  navigate(`/chat/${s.id}`);
+                  if (s.id !== currentSessionId) send({ type: "switch_session", id: s.id });
+                }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 const el = rowRefs.current.get(s.id);
