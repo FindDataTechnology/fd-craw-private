@@ -152,7 +152,8 @@
     "input": "输入",
     "partial": "部分结果",
     "output": "输出",
-    "outputError": "错误"
+    "outputError": "错误",
+    "interrupted": "已中断"
   },
   "markdown": {
     "copy": "复制",

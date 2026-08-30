@@ -41,7 +41,7 @@ export type Block =
 
 export type Turn =
   | { id: string; role: "user"; text: string }
-  | { id: string; role: "assistant"; blocks: Block[]; streaming: boolean };
+  | { id: string; role: "assistant"; blocks: Block[]; streaming: boolean; interrupted?: boolean };
 
 interface State {
   status: ConnStatus;
@@ -206,11 +206,16 @@ export const useChatStore = create<State>((set) => ({
       // done/session_loaded/clearView reset it) — the composer bricked until
       // the view was wiped. Finalize the open turn and suppress the orphaned
       // run's remaining events instead; the connection banner explains the
-      // truncation while the WS hook reconnects.
+      // socket while the WS hook reconnects, and the interrupted marker on
+      // the turn itself says the ANSWER was cut off (indistinguishable from
+      // a finished one before this).
       discardDeltas();
+      const turns = state.turns.map((t) =>
+        t.role === "assistant" && t.streaming ? { ...t, streaming: false, interrupted: true } : t,
+      );
       return {
         status: s,
-        turns: finalizeOpenTurns(state.turns),
+        turns,
         isStreaming: false,
         suppressed: true,
       };

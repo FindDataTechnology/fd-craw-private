@@ -269,7 +269,7 @@ The conversation's mouth and the softest object in the product: a 16px-radius sh
 
 ### Assistant Turn (signature)
 
-Full-width article under a 24px avatar dot (20% blue circle) and the assistant label. Blocks hang on a 1px left rail with 16px indent: markdown prose (14px/1.625), collapsible thinking blocks (Quiet Surface at 40%, chevron rotates open), and tool blocks (2px state-colored left edge, mono tool name, italic status — *running* blue / *error* red / *done* green — expanding to mono args/result). The user's turn is the counterpoint: right-aligned 16px-radius Deep Workbench Blue bubble, max 85% width.
+Full-width article under a 24px avatar dot (20% blue circle) and the assistant label. Blocks hang on a 1px left rail with 16px indent: markdown prose (14px/1.625), collapsible thinking blocks (Quiet Surface at 40%, chevron rotates open), and tool blocks (2px state-colored left edge, mono tool name, italic status — *running* blue / *error* red / *done* green — expanding to mono args/result). Skill and command blocks share the neutral container with no state edge — only stateful work earns a color. The user's turn is the counterpoint: right-aligned 16px-radius Deep Workbench Blue bubble, max 85% width. A turn cut off by a disconnect carries an amber 「已中断」 chip — a truncation must never masquerade as a finished answer.
 
 ### Code Blocks (signature)
 

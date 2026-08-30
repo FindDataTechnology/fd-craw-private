@@ -152,7 +152,8 @@
     "input": "Input",
     "partial": "Partial",
     "output": "Output",
-    "outputError": "Error"
+    "outputError": "Error",
+    "interrupted": "Interrupted"
   },
   "markdown": {
     "copy": "Copy",

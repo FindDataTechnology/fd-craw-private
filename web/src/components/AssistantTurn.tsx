@@ -85,6 +85,16 @@ function AssistantTurnBase({ turn }: { turn: Extract<Turn, { role: "assistant" }
         {turn.streaming && turn.blocks.length === 0 && (
           <div className="text-xs text-muted-foreground">{t("turn.thinkingStreaming")}</div>
         )}
+        {/* Disconnect truncation marker: the answer was cut off mid-stream.
+            A user stop is a choice, not a truncation — no marker there. */}
+        {turn.interrupted && (
+          <div
+            data-testid="turn-interrupted"
+            className="inline-flex items-center gap-1 self-start rounded-md border border-warning/40 bg-warning/10 px-2 py-0.5 text-[11px] text-warning"
+          >
+            ⚠ {t("turn.interrupted")}
+          </div>
+        )}
       </div>
     </article>
   );

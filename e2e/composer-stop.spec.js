@@ -95,6 +95,8 @@ test.describe("composer hardening: IME, stop, disconnect", () => {
       turnCount: 1,
       tailStreaming: false,
     });
+    // A user stop is a choice — the turn is NOT marked interrupted.
+    await expect(page.getByTestId("turn-interrupted")).toBeHidden();
 
     // The orphaned run keeps streaming server-side — those events must not
     // re-open a turn or re-disable the composer (deltas flush at 50ms).
@@ -152,6 +154,10 @@ test.describe("composer hardening: IME, stop, disconnect", () => {
       return { isStreaming: s.isStreaming, tailStreaming: tail?.streaming };
     });
     expect(state).toEqual({ isStreaming: false, tailStreaming: false });
+
+    // The cut-off answer is marked in the transcript — a truncation used to
+    // be indistinguishable from a finished answer.
+    await expect(page.getByTestId("turn-interrupted")).toBeVisible();
 
     // Late events from the orphaned run stay swallowed after reconnect.
     await page.evaluate(() => {

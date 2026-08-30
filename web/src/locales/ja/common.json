@@ -152,7 +152,8 @@
     "input": "入力",
     "partial": "部分",
     "output": "出力",
-    "outputError": "エラー"
+    "outputError": "エラー",
+    "interrupted": "中断されました"
   },
   "markdown": {
     "copy": "コピー",
