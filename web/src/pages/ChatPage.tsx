@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { Menu } from "lucide-react";
 import { useChatStore } from "@/hooks/useChatStore";
 import { Chat } from "@/components/Chat";
 import { ChatHeader } from "@/components/ChatHeader";
@@ -21,7 +22,13 @@ import type { ClientMessage } from "@/types/ws";
 //
 // Sessions are deep-linkable: /chat/:sessionId loads that session, and the
 // URL follows the active session both ways (refresh and back keep context).
-export function ChatPage({ send }: { send: (m: ClientMessage) => void }) {
+interface Props {
+  send: (m: ClientMessage) => void;
+  // Toggles the off-canvas nav drawer (below md, rendered by App).
+  onToggleNav?: () => void;
+}
+
+export function ChatPage({ send, onToggleNav }: Props) {
   const { t } = useTranslation();
   const { sessionId: urlSessionId } = useParams();
   // Length-only subscription: this page branches on emptiness — subscribing
@@ -49,7 +56,26 @@ export function ChatPage({ send }: { send: (m: ClientMessage) => void }) {
   }, [urlSessionId, currentSessionId, send]);
 
   return (
-    <main className="flex min-h-0 min-w-0 flex-col">
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* Nav drawer toggle: below md the rail is off-canvas, so BOTH states
+          (welcome and in-session) need the handle — it sits at the page's
+          top-left, above the state branch. */}
+      {onToggleNav && (
+        <div className="flex items-center border-b border-border bg-card px-3 py-1.5 md:hidden">
+          <button
+            type="button"
+            onClick={onToggleNav}
+            aria-label={t("nav.openMenu")}
+            data-testid="nav-toggle"
+            className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Menu className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <span className="ml-1 truncate text-xs text-muted-foreground">
+            {t("sidebar.brand")}
+          </span>
+        </div>
+      )}
       {/* A dropped socket used to be legible only in the sidebar's 6px status
           dot — and it stranded the streaming state. The store now finalizes
           the turn on disconnect; this banner names what happened while the

@@ -320,6 +320,23 @@ test.describe("composer hardening: IME, stop, disconnect", () => {
     await expect(page.getByTestId("turn-assistant").last()).toContainText("查完了。");
   });
 
+  test("narrow viewport: nav drawer opens from the header toggle", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId("nav-toggle")).toBeVisible();
+    // Composer uses the full width (no 240px rail starve): the input is wide.
+    const box = await page.getByTestId("composer-input").boundingBox();
+    expect(box?.width ?? 0).toBeGreaterThan(200);
+    // Toggle opens the drawer; a nav item navigates and closes it.
+    await page.getByTestId("nav-toggle").click();
+    // The drawer instance (fixed overlay), not the md+ rail also in the DOM.
+    const drawer = page.locator("div.fixed.inset-y-0.left-0 [data-testid=sidebar]");
+    await expect(drawer).toBeVisible();
+    await drawer.getByTestId("nav-models").click();
+    await expect(page).toHaveURL(/\/models$/);
+    await page.goBack();
+    await expect(drawer).toBeHidden();
+  });
+
   test("sessions are deep-linkable: /chat/:id loads that session", async ({ page }) => {
     const id = await page.evaluate(() => {
       const s = window.__chatStore.getState();

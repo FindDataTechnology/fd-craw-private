@@ -14,7 +14,8 @@
     "agents": "Agents",
     "mcp": "Serveurs MCP",
     "skills": "Compétences",
-    "models": "Modèles"
+    "models": "Modèles",
+    "openMenu": "Ouvrir le menu de navigation"
   },
   "agentsPage": {
     "title": "Agents et applications",

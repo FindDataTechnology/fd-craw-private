@@ -7,7 +7,7 @@
 // lazily on first navigation (shiki's language chunks already split
 // themselves the same way).
 
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useChatStore } from "@/hooks/useChatStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -38,6 +38,9 @@ function RouteFallback() {
 export default function App() {
   const { send } = useWebSocket();
   const toggleAllThinking = useChatStore((s) => s.toggleAllThinking);
+  // Off-canvas nav drawer (below md the 240px rail would starve the content
+  // column to a sliver — the drawer restores it without a second layout).
+  const [navOpen, setNavOpen] = useState(false);
 
   // Ctrl/Cmd + O toggles all thinking blocks (foldable-observation-shortcut).
   useEffect(() => {
@@ -52,8 +55,26 @@ export default function App() {
   }, [toggleAllThinking]);
 
   return (
-    <div className="grid h-dvh grid-cols-[240px_1fr] overflow-hidden bg-background text-foreground">
-      <Sidebar send={send} />
+    <div className="flex h-dvh overflow-hidden bg-background text-foreground">
+      {/* md+: the permanent 240px rail. */}
+      <div className="hidden w-[240px] shrink-0 md:block">
+        <Sidebar send={send} />
+      </div>
+      {/* Below md: the same rail as an overlay drawer (toggle lives in the
+          chat header). Backdrop click dismisses. */}
+      {navOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/60 md:hidden"
+            onClick={() => setNavOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="fixed inset-y-0 left-0 z-50 w-[240px] md:hidden">
+            <Sidebar send={send} onNavigate={() => setNavOpen(false)} />
+          </div>
+        </>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col">
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<Navigate to="/chat" replace />} />
@@ -61,7 +82,7 @@ export default function App() {
               /chat/:id must NOT remount ChatPage — a remount re-runs the
               deep-link effect, which re-sends switch_session and fights the
               server's session_loaded broadcasts (turns clobbered to zero). */}
-          <Route path="/chat/:sessionId?" element={<ChatPage send={send} />} />
+          <Route path="/chat/:sessionId?" element={<ChatPage send={send} onToggleNav={() => setNavOpen((v) => !v)} />} />
 
           {/* Knowledge (was Documents) — same page, new label + route. */}
           <Route path="/knowledge" element={<DocumentsPage />} />
@@ -85,6 +106,7 @@ export default function App() {
         </Routes>
       </Suspense>
       <ToastHost />
+      </div>
     </div>
   );
 }

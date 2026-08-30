@@ -14,7 +14,8 @@
     "agents": "エージェント",
     "mcp": "MCP サーバー",
     "skills": "スキル",
-    "models": "モデル"
+    "models": "モデル",
+    "openMenu": "ナビゲーションメニューを開く"
   },
   "agentsPage": {
     "title": "エージェントとアプリ",

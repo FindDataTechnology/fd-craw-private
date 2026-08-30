@@ -14,7 +14,8 @@
     "agents": "智能体",
     "mcp": "MCP 服务器",
     "skills": "技能",
-    "models": "模型"
+    "models": "模型",
+    "openMenu": "打开导航菜单"
   },
   "agentsPage": {
     "title": "智能体与应用",

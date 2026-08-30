@@ -17,6 +17,8 @@ import { HelpDialog } from "@/components/HelpDialog";
 
 interface Props {
   send: (m: ClientMessage) => void;
+  // Called after in-drawer navigation so App can close the off-canvas drawer.
+  onNavigate?: () => void;
 }
 
 const NAV_BASE = [
@@ -28,7 +30,7 @@ const NAV_BASE = [
   { to: "/models", key: "nav.models", testId: "nav-models" },
 ];
 
-export function Sidebar({ send }: Props) {
+export function Sidebar({ send, onNavigate }: Props) {
   const { t, i18n } = useTranslation();
   const { locale, locales, changeLocale } = useLanguage();
   const status = useChatStore((s) => s.status);
@@ -81,6 +83,7 @@ export function Sidebar({ send }: Props) {
             key={n.to}
             to={n.to}
             data-testid={n.testId}
+            onClick={() => onNavigate?.()}
             className={({ isActive }) =>
               cn(
                 "rounded-md px-3 py-2 text-left text-sm text-muted-foreground",
@@ -102,6 +105,7 @@ export function Sidebar({ send }: Props) {
             onClick={() => {
               navigate("/chat");
               send({ type: "new_session" });
+              onNavigate?.();
             }}
             data-testid="new-chat-btn"
             className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -130,6 +134,7 @@ export function Sidebar({ send }: Props) {
                   // server's session_loaded lands); back/refresh keep place.
                   navigate(`/chat/${s.id}`);
                   if (s.id !== currentSessionId) send({ type: "switch_session", id: s.id });
+                  onNavigate?.();
                 }}
               onContextMenu={(e) => {
                 e.preventDefault();
