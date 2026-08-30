@@ -4,10 +4,10 @@ import { memo } from "react";
 // design decision from proposal.md.
 //
 // The assistant name label, the streaming "Thinking…" placeholder, and the
-// tool/thinking block labels resolve through the i18n bundle. Command and
-// error block payloads (⚙️ /name, ⚠️ message) are server/agent output and
-// stay literal.
+// tool/thinking block labels resolve through the i18n bundle. Icons are
+// lucide throughout — no emoji as an icon system (DESIGN.md).
 import { useTranslation } from "react-i18next";
+import { Terminal, TriangleAlert } from "lucide-react";
 import { useChatStore } from "@/hooks/useChatStore";
 import type { Turn } from "@/hooks/useChatStore";
 import { Markdown } from "@/components/Markdown";
@@ -58,8 +58,9 @@ function AssistantTurnBase({ turn }: { turn: Extract<Turn, { role: "assistant" }
                   key={key}
                   className="rounded-md border border-border bg-muted px-3 py-2 text-xs"
                 >
-                  <div className="font-mono text-muted-foreground">
-                    ⚙️ /{b.name}
+                  <div className="flex items-center gap-1.5 font-mono text-muted-foreground">
+                    <Terminal className="h-3 w-3 shrink-0" />
+                    /{b.name}
                     {b.args ? ` ${b.args}` : ""}
                   </div>
                   {b.message && (
@@ -73,9 +74,11 @@ function AssistantTurnBase({ turn }: { turn: Extract<Turn, { role: "assistant" }
               return (
                 <div
                   key={key}
-                  className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                  data-testid="turn-error-block"
+                  className="flex items-start gap-1.5 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-xs text-destructive"
                 >
-                  ⚠️ {b.message}
+                  <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span className="min-w-0 break-words">{b.message}</span>
                 </div>
               );
             default:
@@ -92,7 +95,8 @@ function AssistantTurnBase({ turn }: { turn: Extract<Turn, { role: "assistant" }
             data-testid="turn-interrupted"
             className="inline-flex items-center gap-1 self-start rounded-md border border-warning/40 bg-warning/10 px-2 py-0.5 text-[11px] text-warning"
           >
-            ⚠ {t("turn.interrupted")}
+            <TriangleAlert className="h-3 w-3 shrink-0" />
+            {t("turn.interrupted")}
           </div>
         )}
       </div>

@@ -167,7 +167,8 @@ test.describe("model selection", () => {
     await page.getByTestId("composer-input").fill("/model nonexistent-model-id-12345");
     await page.getByTestId("composer-send").click();
 
-    await expect(page.getByTestId("turn-assistant").last()).toContainText("⚠️", {
+    // The failure lands in the turn as an error block (icon + server detail).
+    await expect(page.getByTestId("turn-error-block")).toContainText("Unknown model", {
       timeout: 10000,
     });
   });

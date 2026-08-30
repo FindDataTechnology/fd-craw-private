@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Item {
@@ -67,7 +68,7 @@ export function SettingsMenu({ onHelp }: Props) {
           open && "bg-muted text-foreground",
         )}
       >
-        <span className="mr-1">⚙</span>
+        <Settings className="mr-1.5 inline h-3.5 w-3.5" />
         {t("settingsMenu.title")}
       </button>
       {open && (

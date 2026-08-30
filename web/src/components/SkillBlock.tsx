@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -20,7 +20,7 @@ export function SkillBlock({ name, args, open, onToggle }: Props) {
         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted"
       >
         <ChevronRight className={cn("h-3 w-3 transition-transform", open && "rotate-90")} />
-        <span>✨</span>
+        <Sparkles className="h-3 w-3 shrink-0 text-muted-foreground" />
         <span className="font-mono font-semibold text-foreground">/skill:{name}</span>
         {args && <span className="truncate font-mono text-muted-foreground">{args}</span>}
       </button>

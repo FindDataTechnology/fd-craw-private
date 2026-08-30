@@ -9,12 +9,12 @@
     "delete": "Supprimer"
   },
   "nav": {
-    "chat": "💬 Discussion",
-    "knowledge": "📚 Connaissance",
-    "agents": "🤖 Agents",
-    "mcp": "🧩 Serveurs MCP",
-    "skills": "📖 Compétences",
-    "models": "⚡ Modèles"
+    "chat": "Discussion",
+    "knowledge": "Connaissance",
+    "agents": "Agents",
+    "mcp": "Serveurs MCP",
+    "skills": "Compétences",
+    "models": "Modèles"
   },
   "agentsPage": {
     "title": "Agents et applications",
@@ -37,10 +37,10 @@
   },
   "settingsMenu": {
     "title": "Paramètres",
-    "status": "📊 État du système",
-    "models": "⚡ Modèles LLM",
-    "openconnector": "🔌 OpenConnector",
-    "help": "❓ Aide"
+    "status": "État du système",
+    "models": "Modèles LLM",
+    "openconnector": "OpenConnector",
+    "help": "Aide"
   },
   "modelsPage": {
     "title": "Modèles",
@@ -145,7 +145,7 @@
   "turn": {
     "assistantName": "Assistant Platform",
     "thinkingStreaming": "Réflexion…",
-    "thinking": "💭 Réflexion",
+    "thinking": "Réflexion",
     "statusRunning": "en cours…",
     "statusError": "erreur",
     "statusDone": "terminé",
@@ -172,7 +172,7 @@
     "provider": "Fournisseur : {{name}}",
     "uptime": "Disponibilité : {{sec}}s",
     "documents": "Documents",
-    "knowledge": "📚 Knowledge",
+    "knowledge": "Knowledge",
     "collections": "Collections : {{count}}",
     "mcpTools": "Outils MCP",
     "state": {

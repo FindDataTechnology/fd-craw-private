@@ -1,4 +1,4 @@
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight, Loader2, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import type { Block } from "@/hooks/useChatStore";
@@ -43,7 +43,7 @@ function ToolBlockBase({ block, onToggle }: Props) {
         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted"
       >
         <ChevronRight className={cn("h-3 w-3 transition-transform", open && "rotate-90")} />
-        <span className="font-mono text-muted-foreground">🔧</span>
+        <Wrench className="h-3 w-3 shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate font-mono font-semibold text-foreground">{name}</span>
         <span
           className={cn(

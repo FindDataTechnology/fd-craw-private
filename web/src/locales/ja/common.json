@@ -9,12 +9,12 @@
     "delete": "削除"
   },
   "nav": {
-    "chat": "💬 チャット",
-    "knowledge": "📚 ナレッジ",
-    "agents": "🤖 エージェント",
-    "mcp": "🧩 MCP サーバー",
-    "skills": "📖 スキル",
-    "models": "⚡ モデル"
+    "chat": "チャット",
+    "knowledge": "ナレッジ",
+    "agents": "エージェント",
+    "mcp": "MCP サーバー",
+    "skills": "スキル",
+    "models": "モデル"
   },
   "agentsPage": {
     "title": "エージェントとアプリ",
@@ -37,10 +37,10 @@
   },
   "settingsMenu": {
     "title": "設定",
-    "status": "📊 システム状態",
-    "models": "⚡ LLM モデル",
-    "openconnector": "🔌 OpenConnector",
-    "help": "❓ ヘルプ"
+    "status": "システム状態",
+    "models": "LLM モデル",
+    "openconnector": "OpenConnector",
+    "help": "ヘルプ"
   },
   "modelsPage": {
     "title": "モデル",
@@ -145,7 +145,7 @@
   "turn": {
     "assistantName": "Platform アシスタント",
     "thinkingStreaming": "考え中…",
-    "thinking": "💭 思考",
+    "thinking": "思考",
     "statusRunning": "実行中…",
     "statusError": "エラー",
     "statusDone": "完了",
@@ -172,7 +172,7 @@
     "provider": "プロバイダー: {{name}}",
     "uptime": "稼働時間: {{sec}}秒",
     "documents": "ドキュメント",
-    "knowledge": "📚 Knowledge",
+    "knowledge": "Knowledge",
     "collections": "コレクション: {{count}}",
     "mcpTools": "MCP ツール",
     "state": {

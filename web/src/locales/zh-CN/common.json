@@ -9,12 +9,12 @@
     "delete": "删除"
   },
   "nav": {
-    "chat": "💬 聊天",
-    "knowledge": "📚 知识库",
-    "agents": "🤖 智能体",
-    "mcp": "🧩 MCP 服务器",
-    "skills": "📖 技能",
-    "models": "⚡ 模型"
+    "chat": "聊天",
+    "knowledge": "知识库",
+    "agents": "智能体",
+    "mcp": "MCP 服务器",
+    "skills": "技能",
+    "models": "模型"
   },
   "agentsPage": {
     "title": "智能体与应用",
@@ -37,10 +37,10 @@
   },
   "settingsMenu": {
     "title": "设置",
-    "status": "📊 系统状态",
-    "models": "⚡ LLM 模型",
-    "openconnector": "🔌 OpenConnector",
-    "help": "❓ 帮助"
+    "status": "系统状态",
+    "models": "LLM 模型",
+    "openconnector": "OpenConnector",
+    "help": "帮助"
   },
   "modelsPage": {
     "title": "模型",
@@ -145,7 +145,7 @@
   "turn": {
     "assistantName": "Platform 助手",
     "thinkingStreaming": "思考中…",
-    "thinking": "💭 思考",
+    "thinking": "思考",
     "statusRunning": "运行中…",
     "statusError": "错误",
     "statusDone": "完成",
@@ -172,7 +172,7 @@
     "provider": "提供商：{{name}}",
     "uptime": "运行时间：{{sec}}秒",
     "documents": "文档",
-    "knowledge": "📚 Knowledge",
+    "knowledge": "Knowledge",
     "collections": "集合：{{count}}",
     "mcpTools": "MCP 工具",
     "state": {

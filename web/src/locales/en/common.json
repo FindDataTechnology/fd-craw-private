@@ -9,12 +9,12 @@
     "delete": "Delete"
   },
   "nav": {
-    "chat": "💬 Chat",
-    "knowledge": "📚 Knowledge",
-    "agents": "🤖 Agents",
-    "mcp": "🧩 MCP Servers",
-    "skills": "📖 Skills",
-    "models": "⚡ Models"
+    "chat": "Chat",
+    "knowledge": "Knowledge",
+    "agents": "Agents",
+    "mcp": "MCP Servers",
+    "skills": "Skills",
+    "models": "Models"
   },
   "agentsPage": {
     "title": "Agents & Apps",
@@ -37,10 +37,10 @@
   },
   "settingsMenu": {
     "title": "Settings",
-    "status": "📊 System Status",
-    "models": "⚡ LLM Models",
-    "openconnector": "🔌 OpenConnector",
-    "help": "❓ Help"
+    "status": "System Status",
+    "models": "LLM Models",
+    "openconnector": "OpenConnector",
+    "help": "Help"
   },
   "modelsPage": {
     "title": "Models",
@@ -145,7 +145,7 @@
   "turn": {
     "assistantName": "Platform Assistant",
     "thinkingStreaming": "Thinking…",
-    "thinking": "💭 Thinking",
+    "thinking": "Thinking",
     "statusRunning": "running…",
     "statusError": "error",
     "statusDone": "done",
@@ -172,7 +172,7 @@
     "provider": "Provider: {{name}}",
     "uptime": "Uptime: {{sec}}s",
     "documents": "Documents",
-    "knowledge": "📚 Knowledge",
+    "knowledge": "Knowledge",
     "collections": "Collections: {{count}}",
     "mcpTools": "MCP Tools",
     "state": {

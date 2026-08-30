@@ -9,12 +9,12 @@
     "delete": "Eliminar"
   },
   "nav": {
-    "chat": "💬 Chat",
-    "knowledge": "📚 Conocimiento",
-    "agents": "🤖 Agentes",
-    "mcp": "🧩 Servidores MCP",
-    "skills": "📖 Habilidades",
-    "models": "⚡ Modelos"
+    "chat": "Chat",
+    "knowledge": "Conocimiento",
+    "agents": "Agentes",
+    "mcp": "Servidores MCP",
+    "skills": "Habilidades",
+    "models": "Modelos"
   },
   "agentsPage": {
     "title": "Agentes y aplicaciones",
@@ -37,10 +37,10 @@
   },
   "settingsMenu": {
     "title": "Ajustes",
-    "status": "📊 Estado del sistema",
-    "models": "⚡ Modelos LLM",
-    "openconnector": "🔌 OpenConnector",
-    "help": "❓ Ayuda"
+    "status": "Estado del sistema",
+    "models": "Modelos LLM",
+    "openconnector": "OpenConnector",
+    "help": "Ayuda"
   },
   "modelsPage": {
     "title": "Modelos",
@@ -145,7 +145,7 @@
   "turn": {
     "assistantName": "Asistente de Platform",
     "thinkingStreaming": "Pensando…",
-    "thinking": "💭 Pensando",
+    "thinking": "Pensando",
     "statusRunning": "ejecutando…",
     "statusError": "error",
     "statusDone": "listo",
@@ -172,7 +172,7 @@
     "provider": "Proveedor: {{name}}",
     "uptime": "Tiempo activo: {{sec}}s",
     "documents": "Documentos",
-    "knowledge": "📚 Knowledge",
+    "knowledge": "Knowledge",
     "collections": "Colecciones: {{count}}",
     "mcpTools": "Herramientas MCP",
     "state": {
