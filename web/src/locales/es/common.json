@@ -359,6 +359,13 @@
       "dismiss": "Cerrar selector / cancelar edición",
       "thinking": "Plegar/desplegar bloques de razonamiento",
       "sessionMenu": "Menú contextual de sesión (sobre una fila)"
+    },
+    "concepts": {
+      "title": "Cómo funciona",
+      "attachments": "Los adjuntos se suben primero a tu biblioteca; el mensaje los referencia como @doc: — las respuestas se basan en el contenido del documento.",
+      "knowledge": "La página Conocimiento gestiona tu colección de documentos; los archivos adjuntos en el chat van a la misma colección.",
+      "sessions": "Las sesiones se guardan en la base de datos local; cambia desde la lista lateral o marca la URL (/chat/<id>).",
+      "tools": "Los bloques de herramienta muestran las llamadas reales: azul = en curso, verde = hecho, rojo = fallido; clic para expandir."
     }
   }
 }

@@ -57,6 +57,19 @@ export function HelpDialog({ open, onOpenChange }: Props) {
         </DialogHeader>
 
         <div className="mt-4 flex flex-col gap-5">
+          {/* Concepts — the how-does-this-work layer beneath the commands. */}
+          <section aria-labelledby="help-concepts-heading" className="flex flex-col gap-2">
+            <h3 id="help-concepts-heading" className="text-sm font-medium text-foreground">
+              {t("help.concepts.title")}
+            </h3>
+            <ul className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+              <li>• {t("help.concepts.attachments")}</li>
+              <li>• {t("help.concepts.knowledge")}</li>
+              <li>• {t("help.concepts.sessions")}</li>
+              <li>• {t("help.concepts.tools")}</li>
+            </ul>
+          </section>
+
           {/* Commands */}
           <section aria-labelledby="help-commands-heading" className="flex flex-col gap-2">
             <h3 id="help-commands-heading" className="text-sm font-medium text-foreground">

@@ -359,6 +359,13 @@
       "dismiss": "Fermer le sélecteur / annuler",
       "thinking": "Replier/déplier tous les blocs de réflexion",
       "sessionMenu": "Menu contextuel de session (sur une ligne)"
+    },
+    "concepts": {
+      "title": "Comment ça marche",
+      "attachments": "Les pièces jointes sont d’abord envoyées à votre bibliothèque ; le message les référence en @doc: — les réponses s’appuient sur le contenu du document.",
+      "knowledge": "La page Connaissances gère votre collection ; les fichiers joints dans le chat arrivent dans la même collection.",
+      "sessions": "Les sessions sont stockées dans la base locale ; changez via la liste latérale, marquez l’URL (/chat/<id>).",
+      "tools": "Les blocs d’outil montrent les appels réels : bleu = en cours, vert = terminé, rouge = échec ; cliquez pour déplier."
     }
   }
 }

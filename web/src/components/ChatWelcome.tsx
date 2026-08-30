@@ -95,10 +95,11 @@ export function ChatWelcome({ onPrefill, send }: Props) {
                   <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground group-hover:text-foreground" />
                   <div className="flex min-w-0 flex-col">
                     <span className="text-sm font-medium text-foreground">{title}</span>
-                    {/* Two-line clamp: prompt texts are complete sentences (the
-                        write one is a multi-line starter) — a single-line
-                        truncate shreds them. */}
-                    <span className="line-clamp-2 text-xs text-muted-foreground">{prompt}</span>
+                    {/* Preview collapses the multi-line starter template to its
+                        first sentence — the prefill keeps the full text. */}
+                    <span className="line-clamp-2 text-xs text-muted-foreground">
+                      {prompt.replace(/\s*\n+\s*/g, " ")}
+                    </span>
                   </div>
                 </button>
               );

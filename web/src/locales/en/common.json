@@ -359,6 +359,13 @@
       "dismiss": "Close picker / cancel edit",
       "thinking": "Collapse/expand all thinking blocks",
       "sessionMenu": "Session context menu (on a session row)"
+    },
+    "concepts": {
+      "title": "How it works",
+      "attachments": "Attachments upload to your knowledge library first; the message references them as @doc: — answers ground in document content, not just model memory.",
+      "knowledge": "The Knowledge page manages your document collection; files attached in chat land in the same collection.",
+      "sessions": "Sessions are stored in the local database; switch from the sidebar list, bookmark via URL (/chat/<id>).",
+      "tools": "Tool blocks show the agent's actual calls: blue = running, green = done, red = failed; click to expand input and output."
     }
   }
 }
