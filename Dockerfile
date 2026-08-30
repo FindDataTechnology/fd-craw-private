@@ -44,6 +44,28 @@ COPY web/package*.json ./web/
 RUN npm ci --ignore-scripts \
     && npm --prefix web ci --ignore-scripts
 
+# dsh CLI (the agent runtime server.js spawns by name) + the JSON-RPC plugin
+# the profile's cordis.patch.yml inserts, plus the profile scaffold. All
+# pinned to the rcs the profiles were developed against — see ci(quality-gates)
+# "pin dsh-base bundle version" for why rc tags must not float. These installs
+# are SLOW and flaky on CI, so they run BEFORE `COPY . .`: source edits then
+# never invalidate these layers. dsh-profile-template/ mirrors
+# ~/.dsh/profiles/platform; the base bundle is pre-installed because the
+# deployed runtime's network cannot reach npm.
+RUN npm config set fetch-retries 5 fetch-retry-mintimeout 20000 fetch-retry-maxtimeout 120000 fetch-timeout 600000 \
+    && npm install --prefix /opt/dsh \
+         @deepseek-ai/dsh@0.1.1-rc.2 \
+         @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5 \
+    && mkdir -p /opt/dsh-home/profiles/platform \
+    && cp dsh-profile-template/package.json \
+          dsh-profile-template/pnpm-workspace.yaml \
+          dsh-profile-template/cordis.yml \
+          dsh-profile-template/cordis.patch.yml \
+          /opt/dsh-home/profiles/platform/ \
+    && npm install --prefix /opt/dsh-home/profiles/platform \
+         @deepseek-ai/dsh-base@0.0.1-rc.1 \
+         @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5
+
 # Copy the rest of the source. Built resource payload dirs are .dockerignored so
 # a host's mac/win binaries never leak in — resources are built fresh for Linux.
 COPY . .
@@ -53,28 +75,6 @@ COPY . .
 # selected component is present).
 RUN npm run web:build \
     && npm run predist
-
-# dsh CLI (the agent runtime server.js spawns by name) + the JSON-RPC plugin
-# the profile's cordis.patch.yml inserts. Pinned to the rcs the profiles were
-# developed against — see ci(quality-gates) "pin dsh-base bundle version" for
-# why rc tags must not float. Installed into its own prefix so the runtime
-# stage can copy just the CLI + its deps.
-RUN npm install --prefix /opt/dsh \
-      @deepseek-ai/dsh@0.1.1-rc.2 \
-      @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5
-
-# dsh profile scaffold (server.js writes settings/patches into it at boot;
-# the base bundle must be pre-installed because the runtime network cannot
-# reach npm). dsh-profile-template/ mirrors ~/.dsh/profiles/platform.
-RUN mkdir -p /opt/dsh-home/profiles/platform \
-    && cp dsh-profile-template/package.json \
-          dsh-profile-template/pnpm-workspace.yaml \
-          dsh-profile-template/cordis.yml \
-          dsh-profile-template/cordis.patch.yml \
-          /opt/dsh-home/profiles/platform/ \
-    && npm install --prefix /opt/dsh-home/profiles/platform \
-          @deepseek-ai/dsh-base@0.0.1-rc.1 \
-          @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM node:25-bookworm-slim AS runtime
