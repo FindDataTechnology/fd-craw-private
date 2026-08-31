@@ -57,7 +57,10 @@ COPY dsh-profile-template/ ./dsh-profile-template/
 # are SLOW and flaky on CI, so they run BEFORE `COPY . .`: source edits then
 # never invalidate these layers. dsh-profile-template/ mirrors
 # ~/.dsh/profiles/platform; the base bundle is pre-installed because the
-# deployed runtime's network cannot reach npm.
+# deployed runtime's network cannot reach npm. dsh-base must be 0.1.1-rc.2:
+# 0.0.1-rc.1 pulls dsh-tool-bash → dsh-bash-env, which is not published (404);
+# dsh-sdk-protocol is added because jsonrpc-server imports it undeclared
+# (same reason ci.yml adds it).
 RUN npm config set fetch-retries 5 fetch-retry-mintimeout 20000 fetch-retry-maxtimeout 120000 fetch-timeout 600000 \
     && npm install --prefix /opt/dsh \
          @deepseek-ai/dsh@0.1.1-rc.2 \
@@ -69,8 +72,9 @@ RUN npm config set fetch-retries 5 fetch-retry-mintimeout 20000 fetch-retry-maxt
           dsh-profile-template/cordis.patch.yml \
           /opt/dsh-home/profiles/platform/ \
     && npm install --prefix /opt/dsh-home/profiles/platform \
-         @deepseek-ai/dsh-base@0.0.1-rc.1 \
-         @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5
+         @deepseek-ai/dsh-base@0.1.1-rc.2 \
+         @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5 \
+         @deepseek-ai/dsh-sdk-protocol@0.1.1-rc.2
 
 # Copy the rest of the source. Built resource payload dirs are .dockerignored so
 # a host's mac/win binaries never leak in — resources are built fresh for Linux.
