@@ -73,6 +73,14 @@ async function main() {
   console.log("Installing dependencies (--ignore-scripts)...");
   await execa("npm", ["install", "--ignore-scripts"], { cwd: tempDir });
 
+  // react-is is only a PEER dependency of recharts, and the builder's
+  // legacy-peer-deps npm (set in the Dockerfile for the dsh installs) never
+  // auto-installs peers — so vite's rolldown fails with "failed to resolve
+  // import react-is" when it bundles recharts/es6/util/ReactUtils.js. Install
+  // it explicitly; ^19 matches the lockfile's peer slot (19.2.x).
+  console.log("Installing missing peer dep react-is...");
+  await execa("npm", ["install", "--ignore-scripts", "--no-save", "react-is@^19"], { cwd: tempDir });
+
   // Generate the catalog via tsx (bypasses Node 25 type-stripping).
   console.log("Generating catalog via tsx...");
   const tsxPath = require.resolve("tsx", { paths: [path.join(PROJECT_ROOT, "node_modules")] });
