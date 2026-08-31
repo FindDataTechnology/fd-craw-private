@@ -32,6 +32,8 @@ custom-skills/
 # PLATFORM_DATA_DIR / CWD by bootstrap/first-run.js).
 dev-settings.json
 openconnector.db
+# dsh-credentials-local credential store (upstream API keys, 0600)
+.credentials.yaml
 
 # Local Playwright CLI console logs (scratch)
 .playwright-cli/
