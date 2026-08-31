@@ -60,8 +60,12 @@ COPY dsh-profile-template/ ./dsh-profile-template/
 # deployed runtime's network cannot reach npm. dsh-base must be 0.1.1-rc.2:
 # 0.0.1-rc.1 pulls dsh-tool-bash → dsh-bash-env, which is not published (404);
 # dsh-sdk-protocol is added because jsonrpc-server imports it undeclared
-# (same reason ci.yml adds it).
-RUN npm config set fetch-retries 5 fetch-retry-mintimeout 20000 fetch-retry-maxtimeout 120000 fetch-timeout 600000 \
+# (same reason ci.yml adds it). legacy-peer-deps mirrors ci.yml's pnpm
+# profile (autoInstallPeers: false): jsonrpc-server@0.0.1-rc.5 sits on the
+# 0.0.1 peer line (dsh-invariants ^0.0.1-rc.5) while dsh-base/protocol
+# 0.1.1-rc.2 declare ^0.1.1-rc.2 — a mix pnpm tolerates and npm hard-fails
+# with ERESOLVE (verified both ways locally before pushing).
+RUN npm config set fetch-retries 5 fetch-retry-mintimeout 20000 fetch-retry-maxtimeout 120000 fetch-timeout 600000 legacy-peer-deps true \
     && npm install --prefix /opt/dsh \
          @deepseek-ai/dsh@0.1.1-rc.2 \
          @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5 \
