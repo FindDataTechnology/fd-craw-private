@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { gotoChat } from "./helpers.js";
+import { gotoChat, waitForIdle } from "./helpers.js";
 
 // Session row right-click → ChatSessionMenu (Delete) → confirmation dialog →
 // DELETE /api/chat-history/sessions/:id. Covers:
@@ -7,30 +7,59 @@ import { gotoChat } from "./helpers.js";
 //   - active session: Delete is disabled with a tooltip
 //   - API: 404 on missing id, 409 on current id (covered by the UI; the
 //     409 case is what disables the menu entry)
+//
+// The test first sends one message on the boot session: a session only gains
+// a persistent row on its first message (recordMessage upserts chat_sessions),
+// and listSessions merges ONLY the current in-memory session — a messageless
+// session vanishes from the sidebar once another becomes current, so without
+// that message "+ New" can never produce a second row in a fresh store.
 
 test.describe("session right-click delete", () => {
   test("creates a new session then deletes a non-active one", async ({ page }) => {
     await gotoChat(page);
+    const currentRow = () =>
+      page.locator('[data-testid="session-row"][data-current="true"]').first();
 
-    // Start with a fresh session ("+ New" makes it current).
-    await page.getByTestId("new-chat-btn").click();
-    await expect(page.locator('[data-testid="session-row"][data-current="true"]').first())
-      .toBeVisible({ timeout: 5000 });
+    // Persist the boot session (see file comment). The turn errors offline —
+    // the fast project's LLM_BASE_URL is a dead port — but the user message
+    // is mirrored to SQLite before the prompt is issued.
+    await waitForIdle(page, 30000);
+    await page.getByTestId("composer-input").fill("session-delete persistence ping");
+    await page.getByTestId("composer-send").click();
+    // No idle wait here: offline the errored turn never emits agent_start, so
+    // client isStreaming stays false from the start and waitForIdle is a no-op,
+    // while the server (ctx.isStreaming set synchronously on send) would still
+    // reject new_session. The "+ New" block below retries instead.
+
+    // "+ New" starts a fresh session — wait for the CURRENT id to change.
+    // "A current row is visible" also holds BEFORE the new_session broadcast
+    // lands, and right-clicking that stale row races the broadcast: isCurrent
+    // flips mid-render and Delete shows enabled instead of disabled (CI flake).
+    // Wrapped in toPass: if the server is still finishing the errored turn, it
+    // rejects new_session ("Cannot start a new chat while the agent is
+    // responding") and the click retries once the turn ends. Note the message
+    // above lands in whatever session is current — earlier specs (chat-polish)
+    // may have renamed it, so the row title is not a stable wait key.
+    await expect(currentRow()).toBeVisible({ timeout: 5000 });
+    const beforeId = await currentRow().getAttribute("data-session-id");
+    await expect(async () => {
+      await page.getByTestId("new-chat-btn").click();
+      await expect
+        .poll(async () => currentRow().getAttribute("data-session-id"), { timeout: 5000 })
+        .not.toBe(beforeId);
+    }).toPass({ timeout: 30000 });
 
     // Right-click the current row — Delete should be DISABLED with a tooltip
     // (cannot delete the active session).
-    const currentRow = page.locator('[data-testid="session-row"][data-current="true"]').first();
-    await currentRow.click({ button: "right" });
+    await currentRow().click({ button: "right" });
     const menu = page.getByTestId("session-menu");
     await expect(menu).toBeVisible();
-    const deleteBtn = page.getByTestId("session-menu-delete");
-    await expect(deleteBtn).toBeDisabled();
+    await expect(page.getByTestId("session-menu-delete")).toBeDisabled();
     // Dismiss.
     await page.keyboard.press("Escape");
     await expect(menu).toBeHidden();
 
-    // Start another session so we have at least two rows.
-    await page.getByTestId("new-chat-btn").click();
+    // Two rows now: the persisted (non-current) one + the fresh current one.
     await expect
       .poll(async () => page.locator('[data-testid="session-row"]').count(), { timeout: 5000 })
       .toBeGreaterThanOrEqual(2);
