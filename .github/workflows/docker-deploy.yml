@@ -100,4 +100,8 @@ jobs:
           tags: ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }},${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          echo "Pushed $TAG — chengsi's harbor-watch timer deploys it to cheap-2 (log: /var/lib/platform-deploy/watch.log on 124.220.7.175)."
+
+      - name: Summarize
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          echo "Pushed $TAG — chengsi's harbor-watch timer deploys it to cheap-2 (log: /var/lib/platform-deploy/watch.log on 124.220.7.175)." >> "$GITHUB_STEP_SUMMARY"

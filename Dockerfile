@@ -44,8 +44,14 @@ COPY web/package*.json ./web/
 RUN npm ci --ignore-scripts \
     && npm --prefix web ci --ignore-scripts
 
+# dsh-profile-template/ is consumed by the dsh install layer below (cp →
+# /opt/dsh-home), so it must exist in the builder BEFORE that RUN. Copying it
+# here keeps the slow dsh installs cacheable: these four tiny text files change
+# far less often than the source that arrives via `COPY . .` further down.
+COPY dsh-profile-template/ ./dsh-profile-template/
+
 # dsh CLI (the agent runtime server.js spawns by name) + the JSON-RPC plugin
-# the profile's cordis.patch.yml inserts, plus the profile scaffold. All
+# profile scaffold comes from dsh-profile-template/ copied above. All
 # pinned to the rcs the profiles were developed against — see ci(quality-gates)
 # "pin dsh-base bundle version" for why rc tags must not float. These installs
 # are SLOW and flaky on CI, so they run BEFORE `COPY . .`: source edits then
