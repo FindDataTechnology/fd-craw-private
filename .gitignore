@@ -49,6 +49,9 @@ connect-app/
 
 # Local AI tooling copies (per-machine; not part of the app)
 .claude/skills/
+# Claude/ZCode worktree scratch dirs — a committed gitlink here breaks
+# actions/checkout's submodule cleanup ("No url found for submodule path").
+.claude/worktrees/
 
 # Impeccable live-mode session journals (local iteration state)
 .impeccable/live/

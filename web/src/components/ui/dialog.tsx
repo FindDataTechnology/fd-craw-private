@@ -10,14 +10,19 @@ interface DialogProps {
 function Dialog({ open, onOpenChange, children }: DialogProps) {
   const rootRef = React.useRef<HTMLDivElement>(null)
   const restoreRef = React.useRef<HTMLElement | null>(null)
-  const focusables = () =>
-    rootRef.current
-      ? Array.from(
-          rootRef.current.querySelectorAll<HTMLElement>(
-            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-          )
-        ).filter((el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null)
-      : []
+  // Stable identity: the focus-trap effect below depends on this, and it only
+  // ever reads rootRef (a ref), so it never goes stale.
+  const focusables = React.useCallback(
+    () =>
+      rootRef.current
+        ? Array.from(
+            rootRef.current.querySelectorAll<HTMLElement>(
+              'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            )
+          ).filter((el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null)
+        : [],
+    []
+  )
 
   // Escape closes; Tab stays inside the dialog (focus trap); focus returns to
   // the opener on close. A modal without these traps keyboard and
@@ -52,7 +57,7 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
       document.removeEventListener("keydown", onKey)
       restoreRef.current?.focus?.()
     }
-  }, [open, onOpenChange])
+  }, [open, onOpenChange, focusables])
 
   if (!open) return null
 
