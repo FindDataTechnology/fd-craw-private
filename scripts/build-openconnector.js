@@ -152,5 +152,12 @@ async function copyDir(src, dest, depth = 0) {
 
 main().catch((err) => {
   console.error("❌ Build failed:", err.shortMessage || err.message || err);
+  // execa pipes child output into the error object instead of the build log —
+  // without this, a CI failure (e.g. build:web) shows only the exit code and
+  // the real compiler/bundler error never surfaces.
+  for (const [name, out] of [["stdout", err.stdout], ["stderr", err.stderr]]) {
+    const text = typeof out === "string" ? out : "";
+    if (text.trim()) console.error(`[child ${name} tail]\n${text.slice(-4000)}`);
+  }
   process.exit(1);
 });
