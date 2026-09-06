@@ -31,14 +31,29 @@ const DSH_HOME = process.env.DSH_HOME || join(homedir(), ".dsh");
 const SETTINGS_PATH = join(DSH_HOME, "settings.yaml");
 const CREDENTIALS_PATH = join(DSH_HOME, ".credentials.yaml");
 
-// Volces gateway model catalog — deliberately scoped to 3 ids to keep the
-// model selector frozen. The gateway serves more (minimax-m3, qwen3.x, …);
-// those reach the selector through dsh-llm's discoverModels() when configured,
-// not through this static route.
+// token.finddatatech.cloud gateway model catalog (IDs verified against
+// GET /v1/models 2026-09-02; date-suffixed ids are the gateway's real ids).
 const VOLCES_MODELS = [
-  { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", contextWindow: 128000, maxTokens: 8192 },
-  { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextWindow: 128000, maxTokens: 8192 },
+  { id: "deepseek-v4-flash-0731", name: "DeepSeek V4 Flash", contextWindow: 128000, maxTokens: 8192 },
+  { id: "deepseek-v4-pro-0813", name: "DeepSeek V4 Pro", contextWindow: 128000, maxTokens: 8192 },
+  { id: "glm-5.3", name: "GLM 5.3", contextWindow: 128000, maxTokens: 8192 },
+  { id: "glm-5.3-flash", name: "GLM 5.3 Flash", contextWindow: 128000, maxTokens: 8192 },
   { id: "glm-5.2", name: "GLM 5.2", contextWindow: 128000, maxTokens: 8192 },
+  { id: "glm-5.1", name: "GLM 5.1", contextWindow: 128000, maxTokens: 8192 },
+  { id: "glm-5", name: "GLM 5", contextWindow: 128000, maxTokens: 8192 },
+  { id: "kimi-k2.7-code", name: "Kimi K2.7 Code", contextWindow: 128000, maxTokens: 8192 },
+  { id: "kimi-k2.6", name: "Kimi K2.6", contextWindow: 128000, maxTokens: 8192 },
+  { id: "kimi-k2.5", name: "Kimi K2.5", contextWindow: 128000, maxTokens: 8192 },
+  { id: "minimax-m2.7", name: "MiniMax M2.7", contextWindow: 128000, maxTokens: 8192 },
+  { id: "minimax-m2.5", name: "MiniMax M2.5", contextWindow: 128000, maxTokens: 8192 },
+  { id: "qwen3.8-max", name: "Qwen 3.8 Max", contextWindow: 128000, maxTokens: 8192 },
+  { id: "qwen3.8-27b", name: "Qwen 3.8 27B", contextWindow: 128000, maxTokens: 8192 },
+  { id: "qwen3.7-max", name: "Qwen 3.7 Max", contextWindow: 128000, maxTokens: 8192 },
+  { id: "qwen3.7-flash", name: "Qwen 3.7 Flash", contextWindow: 128000, maxTokens: 8192 },
+  { id: "seed-2.1-pro", name: "Seed 2.1 Pro", contextWindow: 128000, maxTokens: 8192 },
+  { id: "seed-2.1-turbo", name: "Seed 2.1 Turbo", contextWindow: 128000, maxTokens: 8192 },
+  { id: "longcat-2.0", name: "LongCat 2.0", contextWindow: 128000, maxTokens: 8192 },
+  { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", contextWindow: 128000, maxTokens: 8192 },
 ];
 
 // Normalize an LLM baseURL to include the API-version path (OpenAI convention).
