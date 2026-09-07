@@ -7,6 +7,7 @@ web/dist
 .env
 .env.*
 mcp.json
+.mcp.json
 documents-store
 chat-history-store
 collections-store

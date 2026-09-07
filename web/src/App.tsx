@@ -23,7 +23,14 @@ const ExtensionsPage = lazy(() =>
   import("@/pages/ExtensionsPage").then((m) => ({ default: m.ExtensionsPage })),
 );
 const AgentsPage = lazy(() => import("@/pages/AgentsPage").then((m) => ({ default: m.AgentsPage })));
+const BotsPage = lazy(() => import("@/pages/BotsPage").then((m) => ({ default: m.BotsPage })));
 const ModelsPage = lazy(() => import("@/pages/ModelsPage").then((m) => ({ default: m.ModelsPage })));
+const TracePage = lazy(() =>
+  import("@/pages/TracePage").then((m) => ({ default: m.TracePage })),
+);
+const TraceDetailPage = lazy(() =>
+  import("@/pages/TracePage").then((m) => ({ default: m.TraceDetailPage })),
+);
 const OpenConnectorPage = lazy(() =>
   import("@/pages/EmbeddedServicePages").then((m) => ({ default: m.OpenConnectorPage })),
 );
@@ -99,7 +106,11 @@ export default function App() {
 
           <Route path="/models" element={<ModelsPage />} />
 
+          <Route path="/trace" element={<TracePage />} />
+          <Route path="/trace/:turnId" element={<TraceDetailPage />} />
+
           <Route path="/agents" element={<AgentsPage />} />
+          <Route path="/bots" element={<BotsPage />} />
           <Route path="/openconnector" element={<OpenConnectorPage />} />
           <Route path="/external/:appId" element={<ExternalServicePage />} />
           <Route path="*" element={<Navigate to="/chat" replace />} />

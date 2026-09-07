@@ -32,6 +32,9 @@ custom-skills/
 # PLATFORM_DATA_DIR / CWD by bootstrap/first-run.js).
 dev-settings.json
 openconnector.db
+# Runtime LLM provider/default stores (contain upstream API keys in plaintext)
+llm-providers.json
+llm-default.json
 # dsh-credentials-local credential store (upstream API keys, 0600)
 .credentials.yaml
 

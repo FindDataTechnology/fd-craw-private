@@ -12,10 +12,33 @@
     "chat": "Chat",
     "knowledge": "Conocimiento",
     "agents": "Agentes",
+    "bots": "Bots",
     "mcp": "Servidores MCP",
     "skills": "Habilidades",
     "models": "Modelos",
+    "trace": "Traza",
     "openMenu": "Abrir menú de navegación"
+  },
+  "trace": {
+    "title": "Traza",
+    "description": "Traza por turno: cada petición LLM, llamada a herramienta y evento en orden.",
+    "errorsOnly": "Solo errores",
+    "loading": "Cargando…",
+    "empty": "Aún no hay trazas. Se registran a partir del siguiente turno de chat.",
+    "back": "Volver a las trazas",
+    "errorBadge": "error",
+    "prev": "Anterior",
+    "next": "Siguiente",
+    "toolCalls": "llamadas a herramientas",
+    "retries": "reintentos",
+    "textChars": "caracteres",
+    "col": {
+      "time": "Hora",
+      "model": "Modelo",
+      "duration": "Duración",
+      "events": "Eventos",
+      "session": "Sesión"
+    }
   },
   "agentsPage": {
     "title": "Agentes y aplicaciones",
@@ -76,7 +99,11 @@
       "never": "Sin probar",
       "ok": "OK",
       "failed": "Error"
-    }
+    },
+    "fieldEfforts": "Niveles de razonamiento (opcional)",
+    "effortsHint": "Niveles admitidos por este proveedor, separados por comas (p. ej. low, medium, high). Déjalo vacío para el valor predeterminado.",
+    "thinkingLevel": "Nivel de razonamiento",
+    "thinkingDefault": "Predeterminado"
   },
   "status": {
     "connected": "Conectado",
@@ -105,7 +132,20 @@
     },
     "stop": "Detener",
     "uploading": "Subiendo…",
-    "cancelUpload": "Cancelar subida"
+    "cancelUpload": "Cancelar subida",
+    "strip": {
+      "workspace": "Carpeta",
+      "workspaceUnset": "Sin carpeta",
+      "workspaceRecents": "Carpetas recientes",
+      "workspacePlaceholder": "Ruta absoluta a una carpeta…",
+      "workspaceAbsolute": "Introduce una ruta absoluta.",
+      "workspaceConfirm": "¿Cambiar la carpeta de trabajo a {{path}}?\n\nEsto reinicia el agente. Los mensajes anteriores de este chat pueden referirse a archivos que ya no existen.",
+      "commands": "Comandos",
+      "model": "Modelo",
+      "modelUnset": "Sin modelo",
+      "effort": "Razonamiento",
+      "effortDefault": "Predeterminado"
+    }
   },
   "chat": {
     "empty": "Envía un mensaje para empezar a chatear.",
@@ -366,6 +406,32 @@
       "knowledge": "La página Conocimiento gestiona tu colección de documentos; los archivos adjuntos en el chat van a la misma colección.",
       "sessions": "Las sesiones se guardan en la base de datos local; cambia desde la lista lateral o marca la URL (/chat/<id>).",
       "tools": "Los bloques de herramienta muestran las llamadas reales: azul = en curso, verde = hecho, rojo = fallido; clic para expandir."
+    }
+  },
+  "botsPage": {
+    "title": "Bots",
+    "subtitle": "Conecta el asistente a chats de WeCom, Feishu, Telegram y WeChat Official Account.",
+    "addBot": "Añadir bot",
+    "editBot": "Editar bot",
+    "empty": "Aún no hay bots configurados.",
+    "formHint": "Las credenciales se guardan en el servidor y nunca se devuelven al navegador.",
+    "type": "Plataforma",
+    "name": "Nombre",
+    "enabled": "Activado",
+    "keepStored": "Configurado: déjalo vacío para conservarlo",
+    "copy": "Copiar",
+    "webhookCopied": "URL del webhook copiada",
+    "copyFailed": "No se pudo copiar la URL del webhook",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "confirmDeleteTitle": "¿Eliminar el bot?",
+    "confirmDelete": "Se eliminará permanentemente «{{name}}» y sus credenciales.",
+    "types": {
+      "telegram": "Telegram",
+      "feishu": "Feishu / Lark",
+      "wecom": "WeCom",
+      "wechat-oa": "Cuenta Oficial de WeChat"
     }
   }
 }

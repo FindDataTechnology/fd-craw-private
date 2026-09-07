@@ -18,9 +18,12 @@ export type ServerMessage =
   | { type: "command_use"; name: string; args?: string; message?: string }
   | { type: "done" }
   | { type: "error"; message: string }
-  | { type: "current_model"; id: string | null }
+  | { type: "current_model"; id: string | null; effort?: string | null }
   | { type: "models"; models: ModelInfo[] }
-  | { type: "model_changed"; id: string | null }
+  | { type: "model_changed"; id: string | null; effort?: string | null }
+  | { type: "effort_changed"; effort: string | null }
+  | { type: "workspaces"; current: string | null; recents: string[] }
+  | { type: "workspace_changed"; path: string }
   | { type: "agents"; agents: AgentInfo[] }
   | { type: "current_agent"; id: string }
   | { type: "agent_changed"; id: string }
@@ -48,6 +51,8 @@ export interface ModelInfo {
   id: string;
   name?: string;
   provider?: string;
+  // Selectable thinking levels; absent when the model offers no control.
+  reasoningEfforts?: string[];
 }
 
 // Catalog agent (GET /api/catalog / the `agents` WS message). Serialized
@@ -119,6 +124,9 @@ export type ClientMessage =
   | { type: "prompt"; text: string }
   | { type: "list_models" }
   | { type: "set_model"; id: string }
+  | { type: "set_effort"; effort: string | null }
+  | { type: "list_workspaces" }
+  | { type: "set_workspace"; path: string }
   | { type: "list_agents" }
   | { type: "set_agent"; id: string }
   | { type: "list_skills" }

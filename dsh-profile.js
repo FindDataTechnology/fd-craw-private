@@ -56,6 +56,37 @@ const VOLCES_MODELS = [
   { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", contextWindow: 128000, maxTokens: 8192 },
 ];
 
+// Thinking levels a model may be asked for. dsh-llm resolves an explicit effort
+// against the model's declared map and throws UNSUPPORTED_REASONING_EFFORT on a
+// miss, so only declare what the gateway actually accepts. Wire value = the
+// level string itself (the OpenAI `reasoning_effort` field).
+// ponytail: deepseek-v4 only until another family is verified — a wrong `false`
+// just hides a control, a wrong map is a dispatch error.
+const IDENTITY_EFFORTS = { low: "low", medium: "medium", high: "high" };
+
+function declaredEfforts(modelId) {
+  return modelId.startsWith("deepseek-v4") ? IDENTITY_EFFORTS : false;
+}
+
+// The selectable level names for a `reasoningEfforts` declaration (`false` =
+// non-reasoning model → no control).
+export function effortLevels(reasoningEfforts) {
+  return reasoningEfforts && typeof reasoningEfforts === "object" ? Object.keys(reasoningEfforts) : [];
+}
+
+// Persisted per-provider thinking level (`llm.effort.<provider>` in the prefs
+// table). Read here rather than passed in so every writeLlmProfile() caller —
+// including the runtime model refresh — reproduces the choice.
+async function persistedEffort(providerId) {
+  try {
+    const db = await import("./db.js");
+    if (!db.isDbReady()) return null;
+    return db.getPreference(`llm.effort.${providerId}`) || null;
+  } catch {
+    return null;
+  }
+}
+
 // Normalize an LLM baseURL to include the API-version path (OpenAI convention).
 // dsh's bundled pi-ai builds the request URL as `${baseURL}/chat/completions`; a
 // bare host:port hits `/chat/completions`, which the gateway accepts but returns
@@ -78,6 +109,7 @@ const VOLCES_MODELS = [
 export async function buildLlmProfile({
   llmApiKey = process.env.LLM_API_KEY?.trim(),
   llmBaseUrl = process.env.LLM_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3",
+  efforts = null,
 } = {}) {
   const providers = {};
   const models = [];
@@ -89,9 +121,12 @@ export async function buildLlmProfile({
       displayName: "Volces",
       api: "openai-completions",
       baseURL: normalizeBaseUrl(llmBaseUrl),
-      models: VOLCES_MODELS.map((m) => ({ ...m, input: ["text"] })),
+      models: VOLCES_MODELS.map((m) => ({ ...m, input: ["text"], reasoningEfforts: declaredEfforts(m.id) })),
     };
-    for (const m of VOLCES_MODELS) models.push({ id: m.id, name: m.name, provider: route });
+    for (const m of VOLCES_MODELS) {
+      const levels = effortLevels(declaredEfforts(m.id));
+      models.push({ id: m.id, name: m.name, provider: route, ...(levels.length ? { reasoningEfforts: levels } : {}) });
+    }
   }
 
   // Merge user-managed providers (Models page). Imported lazily to avoid a
@@ -105,14 +140,21 @@ export async function buildLlmProfile({
     console.warn(`[dsh-profile] user providers unavailable: ${e?.message || e}`);
   }
 
+  // Project the persisted thinking level onto each route (dsh reads effort
+  // per-provider, not per-model — design D1).
+  for (const [id, p] of Object.entries(providers)) {
+    const level = efforts ? efforts[id] : await persistedEffort(id);
+    if (level) p.reasoning = level;
+  }
+
   return { providers, models };
 }
 
 // Write the llm-pi-ai section to $DSH_HOME/settings.yaml, preserving any other
 // sections already in the document (data-loss safe). Atomic: temp+rename.
 // Returns { providers, models } so server.js can source its model selector.
-export async function writeLlmProfile() {
-  const { providers, models } = await buildLlmProfile();
+export async function writeLlmProfile(opts = {}) {
+  const { providers, models } = await buildLlmProfile(opts);
   let doc = {};
   try {
     const existing = readFileSync(SETTINGS_PATH, "utf8");
@@ -359,6 +401,20 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (Object.keys(providers).length === 0) console.log("OK (dormant — graceful-degrade path)");
   else if (models.some((m) => VOLCES_MODELS.some((v) => v.id === m.id))) console.log("OK volces route declared");
   else console.log("FAIL: no volces models despite LLM_API_KEY set");
+  // Thinking-level round-trip: an explicit effort lands as provider-level
+  // `reasoning`, and a deepseek model declares its selectable levels.
+  if (providers.volces) {
+    const { providers: p2 } = await buildLlmProfile({ efforts: { volces: "high" } });
+    const yamlDoc = yaml.load(yaml.dump({ "llm-pi-ai": { providers: p2 } }))["llm-pi-ai"].providers;
+    const ds = yamlDoc.volces.models.find((m) => m.id.startsWith("deepseek-v4"));
+    console.assert(yamlDoc.volces.reasoning === "high", "reasoning level did not round-trip");
+    console.assert(ds && Object.keys(ds.reasoningEfforts).includes("high"), "deepseek model missing reasoningEfforts");
+    console.assert(
+      yamlDoc.volces.models.find((m) => m.id.startsWith("glm"))?.reasoningEfforts === false,
+      "non-reasoning model should declare false",
+    );
+    console.log("OK reasoning effort round-trips");
+  }
   // MCP patch self-check: write the file and dump it so the entry shape is visible.
   const patchPath = await writeMcpPatch();
   if (patchPath) {

@@ -18,6 +18,7 @@ import { ArrowUp, Loader2, Paperclip, Square, TriangleAlert, X } from "lucide-re
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import { SlashCommandPicker, type SlashCommand } from "@/components/SlashCommandPicker";
+import { ControlStrip } from "@/components/ControlStrip";
 import { HelpDialog } from "@/components/HelpDialog";
 import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,9 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   const stopStreaming = useChatStore((s) => s.stopStreaming);
   const skills = useChatStore((s) => s.skills);
   const clearView = useChatStore((s) => s.clearView);
+  // A model/effort/workspace change restarts the dsh child; sending into a
+  // restarting runtime would just error.
+  const pendingConfig = useChatStore((s) => s.pendingConfig);
 
   const [acIdx, setAcIdx] = useState(0);
   // Esc "dismisses" the picker without clearing the composer (a separate
@@ -89,6 +93,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   // with its document half-ingested (the exact "did my file reach the agent?"
   // failure this state makes visible).
   const isUploading = attachments.some((a) => a.state === "uploading");
+  const canSend = !!trimmed && !disabled && !isUploading && pendingConfig === null;
 
   // Built-in commands (Commands section). Skills come from the store and are
   // rendered as the Skills section inside <SlashCommandPicker>. Memoized on
@@ -115,7 +120,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   }, [focusTick]);
 
   const submit = () => {
-    if (!trimmed || disabled || isUploading) return;
+    if (!canSend) return;
 
     // Local commands never reach the server.
     if (/^\/clear\b/i.test(trimmed)) {
@@ -150,6 +155,18 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
     if (!pick) return;
     onChange(pick + " ");
     setAcIdx(0);
+    textareaRef.current?.focus();
+  };
+
+  // The commands button inserts a bare "/" — the picker already opens off a
+  // trailing `/` token, so there is no click-mode to build and no second
+  // command list to keep in sync. Appends to a non-empty draft rather than
+  // replacing it, so it never eats what the user typed.
+  const openCommands = () => {
+    const base = value.length === 0 || /\s$/.test(value) ? value : `${value} `;
+    onChange(`${base}/`);
+    setAcIdx(0);
+    setPickerDismissed(false);
     textareaRef.current?.focus();
   };
 
@@ -402,7 +419,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
           ) : (
             <button
               onClick={submit}
-              disabled={!trimmed || disabled || isUploading}
+              disabled={!canSend}
               aria-label={t("composer.send")}
               data-testid="composer-send"
               className={cn(
@@ -413,6 +430,9 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
               <ArrowUp className="h-4 w-4" />
             </button>
           )}
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <ControlStrip send={send} onOpenCommands={openCommands} />
         </div>
       </div>
       {drag && (

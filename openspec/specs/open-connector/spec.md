@@ -52,16 +52,14 @@ The server SHALL expose endpoints that proxy the runtime's: runtime health (`GET
 - **AND** SHALL return the action result envelope to the client
 
 ### Requirement: Server registers the OpenConnector MCP endpoint with the agent when enabled
-When the module is enabled, the server SHALL build an HTTP MCP server config pointing at `<base>/mcp` (with the runtime token as a Bearer header) and merge it into the existing MCP connect step so the runtime's tools (`list_apps`, `search_actions`, `get_action_guide`, `execute_action`) are registered as agent-callable tools. The OpenConnector tool names SHALL be added to the agent session's `tools` allowlist. A failure to connect the OpenConnector MCP server SHALL NOT prevent the agent session from starting.
+
+When the module is enabled, the server SHALL build an HTTP MCP server config pointing at `<base>/mcp` (with the runtime token as a Bearer header) and pass it to the dsh runtime's `dsh-mcp-client` plugin configuration (via the profile) so the runtime's tools (`list_apps`, `search_actions`, `get_action_guide`, `execute_action`) are registered as agent-callable tools by dsh, rather than by server-side JavaScript bridge code. The OpenConnector tool names SHALL use the `mcp__open-connector__` prefix via dsh's naming convention. A failure to connect the OpenConnector MCP server SHALL NOT prevent the dsh runtime / agent session from starting.
 
 #### Scenario: OpenConnector tools are available to the agent
-- **WHEN** the module is enabled and the runtime's `/mcp` endpoint is reachable
-- **THEN** the agent session SHALL have the four OpenConnector MCP tools available (named with the `mcp__open-connector__` prefix)
-- **AND** the server SHALL log how many OpenConnector tools were registered
 
-#### Scenario: OpenConnector MCP server fails to connect
-- **WHEN** the runtime is unreachable or the `/mcp` handshake fails at startup
-- **THEN** the server SHALL log a warning identifying the failed server, skip its tools, and proceed to start the agent session with the remaining tools
+- **WHEN** the module is enabled and the runtime's `/mcp` endpoint is reachable
+- **THEN** the dsh runtime SHALL have the four OpenConnector MCP tools available (named with the `mcp__open-connector__` prefix)
+- **AND** the server SHALL log how many OpenConnector tools were registered
 
 ### Requirement: Config endpoint exposes only the base URL and enabled state
 The server SHALL expose `GET /api/openconnector/config` returning only `{ enabled, baseUrl }` (where `baseUrl` is the configured runtime base URL). The server SHALL NEVER include the runtime token or admin token in any response sent to the browser.

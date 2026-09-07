@@ -12,10 +12,33 @@
     "chat": "チャット",
     "knowledge": "ナレッジ",
     "agents": "エージェント",
+    "bots": "ボット",
     "mcp": "MCP サーバー",
     "skills": "スキル",
     "models": "モデル",
+    "trace": "トレース",
     "openMenu": "ナビゲーションメニューを開く"
+  },
+  "trace": {
+    "title": "トレース",
+    "description": "ターンごとのトレース：LLM リクエスト、ツール呼び出し、すべてのイベントを順に表示。",
+    "errorsOnly": "エラーのみ",
+    "loading": "読み込み中…",
+    "empty": "トレースはまだありません。次のチャットから記録されます。",
+    "back": "トレース一覧へ戻る",
+    "errorBadge": "エラー",
+    "prev": "前へ",
+    "next": "次へ",
+    "toolCalls": "ツール呼び出し",
+    "retries": "リトライ",
+    "textChars": "文字",
+    "col": {
+      "time": "時刻",
+      "model": "モデル",
+      "duration": "所要時間",
+      "events": "イベント数",
+      "session": "セッション"
+    }
   },
   "agentsPage": {
     "title": "エージェントとアプリ",
@@ -76,7 +99,11 @@
       "never": "未テスト",
       "ok": "OK",
       "failed": "失敗"
-    }
+    },
+    "fieldEfforts": "思考レベル（任意）",
+    "effortsHint": "このプロバイダーが受け付けるレベルをカンマ区切りで指定します（例: low, medium, high）。空欄の場合はプロバイダーの既定値を使用します。",
+    "thinkingLevel": "思考レベル",
+    "thinkingDefault": "既定"
   },
   "status": {
     "connected": "接続済み",
@@ -105,7 +132,20 @@
     },
     "stop": "停止",
     "uploading": "アップロード中…",
-    "cancelUpload": "アップロードをキャンセル"
+    "cancelUpload": "アップロードをキャンセル",
+    "strip": {
+      "workspace": "作業フォルダ",
+      "workspaceUnset": "未選択",
+      "workspaceRecents": "最近使ったフォルダ",
+      "workspacePlaceholder": "フォルダの絶対パスを入力…",
+      "workspaceAbsolute": "絶対パスを入力してください。",
+      "workspaceConfirm": "作業フォルダを {{path}} に切り替えますか？\n\nエージェントが再起動します。このチャットの以前のメッセージが参照するファイルが解決できなくなる場合があります。",
+      "commands": "コマンド",
+      "model": "モデル",
+      "modelUnset": "未選択",
+      "effort": "思考の深さ",
+      "effortDefault": "デフォルト"
+    }
   },
   "chat": {
     "empty": "メッセージを送信してチャットを開始してください。",
@@ -366,6 +406,32 @@
       "knowledge": "「ナレッジ」ページで文書コレクションを管理します。チャットで添付したファイルも同じコレクションに入ります。",
       "sessions": "セッションはローカル DB に保存されます。サイドバーで切り替え、URL（/chat/<id>）をブックマークできます。",
       "tools": "ツールブロックは実際の呼び出しを表示します。青=実行中、緑=完了、赤=失敗。クリックで入出力を展開。"
+    }
+  },
+  "botsPage": {
+    "title": "ボット",
+    "subtitle": "アシスタントを WeCom・Feishu・Telegram・WeChat 公式アカウントのチャットに接続します。",
+    "addBot": "ボットを追加",
+    "editBot": "ボットを編集",
+    "empty": "ボットはまだ設定されていません。",
+    "formHint": "認証情報はサーバーにのみ保存され、ブラウザーには返されません。",
+    "type": "プラットフォーム",
+    "name": "名前",
+    "enabled": "有効",
+    "keepStored": "設定済み — 空欄のままで維持",
+    "copy": "コピー",
+    "webhookCopied": "Webhook URL をコピーしました",
+    "copyFailed": "Webhook URL をコピーできませんでした",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "delete": "削除",
+    "confirmDeleteTitle": "ボットを削除しますか？",
+    "confirmDelete": "「{{name}}」とその認証情報を完全に削除します。",
+    "types": {
+      "telegram": "Telegram",
+      "feishu": "Feishu / Lark",
+      "wecom": "WeCom",
+      "wechat-oa": "WeChat 公式アカウント"
     }
   }
 }

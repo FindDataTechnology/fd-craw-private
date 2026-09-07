@@ -13,6 +13,7 @@
 // notifications log at debug (DSH_DEBUG) and never drop the turn.
 
 import * as chatHistory from "../chat-history.js";
+import * as trace from "./trace.js";
 
 export function attachDshEvents(ctx) {
   // Mark the current agent turn finished: reset the streaming flag, broadcast
@@ -35,6 +36,26 @@ export function attachDshEvents(ctx) {
   };
 
   ctx.handleDshEvent = (notif) => {
+    // Session routing (design D2). One dsh runtime multiplexes the web chat and
+    // every bot chat, so the pump can no longer assume THE session. A
+    // notification for a non-web session goes to that session's registered
+    // collector and NEVER to the WS broadcast path — that is what keeps bot
+    // turns out of the web transcript. An unclaimed non-web session is dropped.
+    // Bridge lifecycle notifications carry no sessionId and stay on the web path.
+    const sid = notif?.params?.sessionId;
+    if (sid && sid !== ctx.dshSessionId) {
+      const collector = ctx.sessionCollectors.get(sid);
+      if (collector) {
+        try { collector(notif); }
+        catch (e) { console.error(`[dsh] session collector ${sid} failed: ${e.message}`); }
+      } else if (process.env.DSH_DEBUG) {
+        console.debug("[dsh] notification for unclaimed session:", sid, notif.method);
+      }
+      return;
+    }
+    // Trace tap first: record everything (raw), before the WS translation
+    // switch drops unknown event types. Failure-isolated inside record().
+    trace.record(notif, { sessionId: ctx.dshSessionId, turnId: ctx.dshCurrentTurnId });
     const { method, params } = notif || {};
     if (method === "session.status") {
       if (params?.status === "idle") ctx.finishTurn();

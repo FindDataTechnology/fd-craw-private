@@ -132,7 +132,7 @@ test.describe("model selection", () => {
     const def = await page.request.get("/api/llm/default");
     const defBody = await def.json();
     const activeId = defBody.activeModelId;
-    const FROZEN = ["deepseek-v4-pro", "deepseek-v4-flash", "glm-5.2"];
+    const FROZEN = ["deepseek-v4-pro-0813", "deepseek-v4-flash-0731", "glm-5.2"];
     const targetId = FROZEN.find((id) => id !== activeId);
     if (!targetId) {
       test.skip(true, "no alternate frozen model available");
@@ -152,8 +152,8 @@ test.describe("model selection", () => {
     // The chip reflects the active model; poll because the dsh restart takes a
     // few seconds and current_model is re-sent on the next WS connection.
     const NAMES = {
-      "deepseek-v4-pro": "DeepSeek V4 Pro",
-      "deepseek-v4-flash": "DeepSeek V4 Flash",
+      "deepseek-v4-pro-0813": "DeepSeek V4 Pro",
+      "deepseek-v4-flash-0731": "DeepSeek V4 Flash",
       "glm-5.2": "GLM 5.2",
     };
     await expect
@@ -199,7 +199,7 @@ test.describe("model selection", () => {
     });
 
     const volcesIds = models.filter((m) => m.provider === "volces").map((m) => m.id);
-    const frozenIds = ["deepseek-v4-pro", "deepseek-v4-flash", "glm-5.2"];
+    const frozenIds = ["deepseek-v4-pro-0813", "deepseek-v4-flash-0731", "glm-5.2"];
     expect(
       frozenIds.every((id) => volcesIds.includes(id)),
       `expected frozen Volces ids ${frozenIds.join(", ")}; got ${JSON.stringify(volcesIds)}`

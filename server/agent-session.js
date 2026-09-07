@@ -5,6 +5,42 @@
 
 import * as chatHistory from "../chat-history.js";
 import * as catalog from "../catalog.js";
+import path from "node:path";
+import fs, { constants as fsConstants } from "node:fs/promises";
+
+// Resolve and vet a client-supplied workspace path. Symlinks are resolved
+// FIRST so the thing we validate is the thing we hand to dsh — validating the
+// link and spawning in the target is how a check gets bypassed.
+//
+// Deliberately not an allowlist: the server already runs with the user's full
+// filesystem access and the agent's tools are unconstrained, so gating the
+// picker alone would be theatre. Real sandboxing belongs with tool permissions.
+export async function validateWorkspace(input) {
+  if (typeof input !== "string" || !input.trim()) {
+    return { ok: false, error: "Workspace path is required" };
+  }
+  const raw = input.trim();
+  if (!path.isAbsolute(raw)) {
+    return { ok: false, error: "Workspace path must be absolute" };
+  }
+  let resolved;
+  try {
+    resolved = await fs.realpath(raw);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err.code === "ENOENT" ? `No such directory: ${raw}` : `Cannot read ${raw}: ${err.message}`,
+    };
+  }
+  try {
+    const st = await fs.stat(resolved);
+    if (!st.isDirectory()) return { ok: false, error: `Not a directory: ${raw}` };
+    await fs.access(resolved, fsConstants.R_OK | fsConstants.X_OK);
+  } catch {
+    return { ok: false, error: `Directory is not readable: ${raw}` };
+  }
+  return { ok: true, path: resolved };
+}
 
 export function attachAgentSession(ctx) {
 
@@ -40,7 +76,55 @@ async function switchToSession(id) {
 // model list (no stock listModels RPC). Sourced once at initDshAgent from
 // writeLlmProfile().
 async function getAvailableModels() {
-  return ctx.dshModels.map((m) => ({ id: m.id, name: m.name || m.id, provider: m.provider }));
+  return ctx.dshModels.map((m) => ({
+    id: m.id,
+    name: m.name || m.id,
+    provider: m.provider,
+    ...(m.reasoningEfforts?.length ? { reasoningEfforts: m.reasoningEfforts } : {}),
+  }));
+}
+
+// The thinking levels the given model declares (empty = no control for it).
+function effortsForModel(id) {
+  return ctx.dshModels.find((m) => m.id === id)?.reasoningEfforts || [];
+}
+
+// Persist a provider's thinking level (null clears it) and reproject the dsh
+// profile. The prefs row is the source of truth; settings.yaml is the projection
+// writeLlmProfile() rebuilds on every boot (design D3).
+function persistEffort(provider, effort) {
+  ctx.db.setPreference(`llm.effort.${provider}`, effort || "");
+}
+
+// Switch the active thinking level. dsh has no effort RPC — the generated
+// settings.yaml IS the transport, so applying it is the same restart path as a
+// model switch (design D1). Returns { ok, error? } like switchModelTo.
+async function switchEffortTo(effort) {
+  if (ctx.isStreaming) {
+    return { ok: false, error: "Cannot change the thinking level while the agent is responding" };
+  }
+  const modelId = ctx.session?.model?.id;
+  const provider = ctx.defaultModel?.provider;
+  if (!modelId || !provider) return { ok: false, error: "No active model" };
+  const allowed = effortsForModel(modelId);
+  // null/"" = back to the provider default, always allowed.
+  if (effort && !allowed.includes(effort)) {
+    return { ok: false, error: `Model ${modelId} does not support thinking level "${effort}"` };
+  }
+  if ((ctx.currentEffort || null) === (effort || null)) return { ok: true };
+  const level = effort || null;
+  try {
+    persistEffort(provider, level);
+    if (!dshProfileMod) dshProfileMod = await import("../dsh-profile.js");
+    await dshProfileMod.writeLlmProfile();
+    await ctx.dshBridge.restart({ provider, model: modelId });
+    ctx.currentEffort = level;
+    ctx.broadcast({ type: "effort_changed", effort: level });
+    return { ok: true };
+  } catch (err) {
+    console.error("[dsh] thinking-level switch failed:", err.message);
+    return { ok: false, error: err.message };
+  }
 }
 
 // Refresh the model list at runtime (design D3 / spike 2). Re-runs writeLlmProfile
@@ -81,11 +165,22 @@ async function switchModelTo(id) {
     return { ok: false, error: `Unknown model: ${id}` };
   }
   if (ctx.session?.model?.id === id) return { ok: true };
+  // The persisted effort belongs to a provider, but the offered set is the new
+  // model's. An incompatible level falls back to the provider default rather
+  // than reaching dispatch as UNSUPPORTED_REASONING_EFFORT.
+  const carried = ctx.db.getPreference(`llm.effort.${target.provider}`) || null;
+  const effort = carried && (target.reasoningEfforts || []).includes(carried) ? carried : null;
+  if (carried && !effort) persistEffort(target.provider, null);
   try {
+    if (effort !== ctx.currentEffort) {
+      if (!dshProfileMod) dshProfileMod = await import("../dsh-profile.js");
+      await dshProfileMod.writeLlmProfile();
+    }
     await ctx.dshBridge.restart({ provider: target.provider, model: target.id });
     ctx.session.model = { id: target.id };
     ctx.defaultModel = { id: target.id, provider: target.provider, name: target.name || target.id };
-    ctx.broadcast({ type: "model_changed", id });
+    ctx.currentEffort = effort;
+    ctx.broadcast({ type: "model_changed", id, effort });
     return { ok: true };
   } catch (err) {
     console.error("[dsh] model switch failed:", err.message);
@@ -232,15 +327,80 @@ async function handleNewCommand(ws) {
 }
 
 
+// ── Workspace (dsh cwd) ─────────────────────────────────────────────────────
+
+const WORKSPACE_RECENTS_KEY = "workspace.recents";
+const WORKSPACE_RECENTS_MAX = 8;
+
+function readRecents() {
+  try {
+    const raw = ctx.db.getPreference(WORKSPACE_RECENTS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list.filter((p) => typeof p === "string") : [];
+  } catch {
+    // A corrupt prefs row must not brick the composer — start the list over.
+    return [];
+  }
+}
+
+function pushRecent(dir) {
+  const next = [dir, ...readRecents().filter((p) => p !== dir)].slice(0, WORKSPACE_RECENTS_MAX);
+  ctx.db.setPreference(WORKSPACE_RECENTS_KEY, JSON.stringify(next));
+  return next;
+}
+
+function currentWorkspace() {
+  return ctx.dshBridge?.getCwd?.() || process.cwd();
+}
+
+// Switch the dsh runtime's working directory. `cwd` is fixed in the initialize
+// handshake with no RPC to change it, so this is the same restart path as a
+// model or thinking-level switch. Returns { ok, error? }.
+async function switchWorkspaceTo(input) {
+  if (ctx.isStreaming) {
+    return { ok: false, error: "Cannot change the workspace while the agent is responding" };
+  }
+  const v = await validateWorkspace(input);
+  // A bad path must not cost a restart, and must not half-switch the runtime.
+  if (!v.ok) return v;
+  const previous = currentWorkspace();
+  if (v.path === previous) return { ok: true };
+  try {
+    await ctx.dshBridge.restart({ cwd: v.path });
+  } catch (err) {
+    console.error("[dsh] workspace switch failed:", err.message);
+    // Best-effort return to the directory that was known to work; if that also
+    // fails the bridge's own backoff ladder owns recovery from here.
+    try {
+      await ctx.dshBridge.restart({ cwd: previous });
+    } catch (restoreErr) {
+      console.error("[dsh] workspace restore failed:", restoreErr.message);
+    }
+    return { ok: false, error: `Could not start the agent in ${v.path}: ${err.message}` };
+  }
+  pushRecent(v.path);
+  ctx.broadcast({ type: "workspace_changed", path: v.path });
+  return { ok: true };
+}
+
+function listWorkspaces() {
+  const current = currentWorkspace();
+  return { current, recents: [current, ...readRecents().filter((p) => p !== current)] };
+}
+
   ctx.createNewSession = createNewSession;
   ctx.switchToSession = switchToSession;
   ctx.getAvailableModels = getAvailableModels;
   ctx.refreshDshModels = refreshDshModels;
   ctx.switchModelTo = switchModelTo;
+  ctx.switchEffortTo = switchEffortTo;
+  ctx.effortsForModel = effortsForModel;
   ctx.switchableAgents = switchableAgents;
   ctx.switchAgentTo = switchAgentTo;
   ctx.streamRemoteChat = streamRemoteChat;
   ctx.handleModelCommand = handleModelCommand;
   ctx.startNewSession = startNewSession;
   ctx.handleNewCommand = handleNewCommand;
+  ctx.switchWorkspaceTo = switchWorkspaceTo;
+  ctx.listWorkspaces = listWorkspaces;
 }

@@ -12,10 +12,33 @@
     "chat": "Chat",
     "knowledge": "Knowledge",
     "agents": "Agents",
+    "bots": "Bots",
     "mcp": "MCP Servers",
     "skills": "Skills",
     "models": "Models",
+    "trace": "Trace",
     "openMenu": "Open navigation menu"
+  },
+  "trace": {
+    "title": "Trace",
+    "description": "Per-turn runtime trace: every LLM request, tool call, and event in order.",
+    "errorsOnly": "Errors only",
+    "loading": "Loading…",
+    "empty": "No traces captured yet. Traces start recording with the next chat turn.",
+    "back": "Back to traces",
+    "errorBadge": "error",
+    "prev": "Previous",
+    "next": "Next",
+    "toolCalls": "tool calls",
+    "retries": "retries",
+    "textChars": "chars",
+    "col": {
+      "time": "Time",
+      "model": "Model",
+      "duration": "Duration",
+      "events": "Events",
+      "session": "Session"
+    }
   },
   "agentsPage": {
     "title": "Agents & Apps",
@@ -76,7 +99,11 @@
       "never": "Not tested",
       "ok": "OK",
       "failed": "Failed"
-    }
+    },
+    "fieldEfforts": "Thinking levels (optional)",
+    "effortsHint": "Comma-separated levels this provider accepts, e.g. low, medium, high. Leave blank for the provider default.",
+    "thinkingLevel": "Thinking level",
+    "thinkingDefault": "Default"
   },
   "status": {
     "connected": "Connected",
@@ -105,7 +132,20 @@
     },
     "stop": "Stop",
     "uploading": "Uploading…",
-    "cancelUpload": "Cancel upload"
+    "cancelUpload": "Cancel upload",
+    "strip": {
+      "workspace": "Workspace",
+      "workspaceUnset": "No folder",
+      "workspaceRecents": "Recent folders",
+      "workspacePlaceholder": "Absolute path to a folder…",
+      "workspaceAbsolute": "Enter an absolute path.",
+      "workspaceConfirm": "Switch the workspace to {{path}}?\n\nThis restarts the agent. Earlier messages in this chat may refer to files that no longer resolve.",
+      "commands": "Commands",
+      "model": "Model",
+      "modelUnset": "No model",
+      "effort": "Thinking",
+      "effortDefault": "Default"
+    }
   },
   "chat": {
     "empty": "Send a message to start chatting.",
@@ -366,6 +406,32 @@
       "knowledge": "The Knowledge page manages your document collection; files attached in chat land in the same collection.",
       "sessions": "Sessions are stored in the local database; switch from the sidebar list, bookmark via URL (/chat/<id>).",
       "tools": "Tool blocks show the agent's actual calls: blue = running, green = done, red = failed; click to expand input and output."
+    }
+  },
+  "botsPage": {
+    "title": "Bots",
+    "subtitle": "Connect the assistant to WeCom, Feishu, Telegram, and WeChat Official Account chats.",
+    "addBot": "Add bot",
+    "editBot": "Edit bot",
+    "empty": "No bots configured yet.",
+    "formHint": "Credentials are stored on the server and never sent back to the browser.",
+    "type": "Platform",
+    "name": "Name",
+    "enabled": "Enabled",
+    "keepStored": "Configured — leave blank to keep",
+    "copy": "Copy",
+    "webhookCopied": "Webhook URL copied",
+    "copyFailed": "Could not copy the webhook URL",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirmDeleteTitle": "Delete bot?",
+    "confirmDelete": "This permanently removes \"{{name}}\" and its credentials.",
+    "types": {
+      "telegram": "Telegram",
+      "feishu": "Feishu / Lark",
+      "wecom": "WeCom",
+      "wechat-oa": "WeChat Official Account"
     }
   }
 }

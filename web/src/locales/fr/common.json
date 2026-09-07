@@ -12,10 +12,33 @@
     "chat": "Discussion",
     "knowledge": "Connaissance",
     "agents": "Agents",
+    "bots": "Bots",
     "mcp": "Serveurs MCP",
     "skills": "Compétences",
     "models": "Modèles",
+    "trace": "Traçage",
     "openMenu": "Ouvrir le menu de navigation"
+  },
+  "trace": {
+    "title": "Traçage",
+    "description": "Trace par tour : chaque requête LLM, appel d'outil et événement dans l'ordre.",
+    "errorsOnly": "Erreurs uniquement",
+    "loading": "Chargement…",
+    "empty": "Aucune trace pour l'instant. L'enregistrement commence au prochain tour de chat.",
+    "back": "Retour aux traces",
+    "errorBadge": "erreur",
+    "prev": "Précédent",
+    "next": "Suivant",
+    "toolCalls": "appels d'outils",
+    "retries": "tentatives",
+    "textChars": "caractères",
+    "col": {
+      "time": "Heure",
+      "model": "Modèle",
+      "duration": "Durée",
+      "events": "Événements",
+      "session": "Session"
+    }
   },
   "agentsPage": {
     "title": "Agents et applications",
@@ -76,7 +99,11 @@
       "never": "Non testé",
       "ok": "OK",
       "failed": "Échec"
-    }
+    },
+    "fieldEfforts": "Niveaux de réflexion (facultatif)",
+    "effortsHint": "Niveaux acceptés par ce fournisseur, séparés par des virgules (par ex. low, medium, high). Laissez vide pour la valeur par défaut.",
+    "thinkingLevel": "Niveau de réflexion",
+    "thinkingDefault": "Par défaut"
   },
   "status": {
     "connected": "Connecté",
@@ -105,7 +132,20 @@
     },
     "stop": "Arrêter",
     "uploading": "Envoi en cours…",
-    "cancelUpload": "Annuler l’envoi"
+    "cancelUpload": "Annuler l’envoi",
+    "strip": {
+      "workspace": "Dossier",
+      "workspaceUnset": "Aucun dossier",
+      "workspaceRecents": "Dossiers récents",
+      "workspacePlaceholder": "Chemin absolu vers un dossier…",
+      "workspaceAbsolute": "Saisissez un chemin absolu.",
+      "workspaceConfirm": "Basculer le dossier de travail vers {{path}} ?\n\nCela redémarre l'agent. Les messages précédents de cette conversation peuvent référencer des fichiers introuvables.",
+      "commands": "Commandes",
+      "model": "Modèle",
+      "modelUnset": "Aucun modèle",
+      "effort": "Réflexion",
+      "effortDefault": "Par défaut"
+    }
   },
   "chat": {
     "empty": "Envoyez un message pour commencer à discuter.",
@@ -366,6 +406,32 @@
       "knowledge": "La page Connaissances gère votre collection ; les fichiers joints dans le chat arrivent dans la même collection.",
       "sessions": "Les sessions sont stockées dans la base locale ; changez via la liste latérale, marquez l’URL (/chat/<id>).",
       "tools": "Les blocs d’outil montrent les appels réels : bleu = en cours, vert = terminé, rouge = échec ; cliquez pour déplier."
+    }
+  },
+  "botsPage": {
+    "title": "Bots",
+    "subtitle": "Connectez l'assistant aux conversations WeCom, Feishu, Telegram et WeChat Official Account.",
+    "addBot": "Ajouter un bot",
+    "editBot": "Modifier le bot",
+    "empty": "Aucun bot configuré pour l'instant.",
+    "formHint": "Les identifiants sont stockés sur le serveur et ne sont jamais renvoyés au navigateur.",
+    "type": "Plateforme",
+    "name": "Nom",
+    "enabled": "Activé",
+    "keepStored": "Configuré — laisser vide pour conserver",
+    "copy": "Copier",
+    "webhookCopied": "URL du webhook copiée",
+    "copyFailed": "Impossible de copier l'URL du webhook",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "confirmDeleteTitle": "Supprimer le bot ?",
+    "confirmDelete": "Cela supprime définitivement « {{name}} » et ses identifiants.",
+    "types": {
+      "telegram": "Telegram",
+      "feishu": "Feishu / Lark",
+      "wecom": "WeCom",
+      "wechat-oa": "Compte officiel WeChat"
     }
   }
 }

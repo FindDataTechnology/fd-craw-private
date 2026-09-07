@@ -98,6 +98,13 @@ export async function gotoKnowledge(page) {
   await expect(page.getByTestId("documents-page")).toBeVisible({ timeout: 15000 });
 }
 
+// Navigate to the Trace list page.
+export async function gotoTrace(page) {
+  await pinLocaleEn(page);
+  await page.goto("/trace");
+  await expect(page.getByTestId("trace-page")).toBeVisible({ timeout: 15000 });
+}
+
 // Navigate to the React System Status page (was Dashboard at /dashboard).
 export async function gotoDashboard(page) {
   await pinLocaleEn(page);

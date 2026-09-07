@@ -17,6 +17,8 @@ export interface LlmProvider {
   hasKey: boolean;
   reserved?: boolean;
   models: string[];
+  // Thinking levels this provider's models accept (identity wire values).
+  reasoningEfforts?: string[];
   lastTest: LastTest | null;
 }
 
@@ -50,6 +52,7 @@ export async function createProvider(input: {
   name: string;
   baseUrl: string;
   apiKey: string;
+  reasoningEfforts?: string;
 }): Promise<LlmProvider> {
   const r = await fetch("/api/llm/providers", {
     method: "POST",
@@ -62,7 +65,7 @@ export async function createProvider(input: {
 
 export async function updateProvider(
   id: string,
-  input: { name?: string; baseUrl?: string; apiKey?: string },
+  input: { name?: string; baseUrl?: string; apiKey?: string; reasoningEfforts?: string },
 ): Promise<LlmProvider> {
   const r = await fetch(`/api/llm/providers/${encodeURIComponent(id)}`, {
     method: "PUT",

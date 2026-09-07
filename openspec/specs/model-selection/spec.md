@@ -4,48 +4,78 @@
 TBD - created by archiving change add-mcp-skills-model-select. Update Purpose after archive.
 ## Requirements
 ### Requirement: Server lists available models to the client
-The server SHALL respond to a `list_models` WebSocket message with the set of models available to the agent, each including its id, display name, and provider, sourced from the model registry's available models and scoped to the providers the server is configured to use. When LiteLLM is configured, LiteLLM-routed models SHALL be included and correctly identified.
+
+The server SHALL respond to a `list_models` WebSocket message with the set of models available to the agent, each including its id, display name, provider, and — when the model declares reasoning efforts in the generated dsh profile — a `reasoningEfforts` array of selectable thinking levels. The model list SHALL be sourced from the dsh runtime's reported models (requested over the JSON-RPC bridge) rather than the pi `ModelRegistry`, and scoped to the providers the server is configured to use (Volces and/or LiteLLM adapters). When LiteLLM is configured, LiteLLM-routed models SHALL be included and correctly identified.
 
 #### Scenario: client requests the model list
+
 - **WHEN** a WebSocket client sends `{ "type": "list_models" }`
-- **THEN** the server SHALL reply with `{ "type": "models", "models": [ { "id": "...", "name": "...", "provider": "..." }, ... ] }` containing only models from the server's configured providers that have configured auth
+- **THEN** the server SHALL request the model list from the dsh runtime over JSON-RPC
+- **AND** SHALL reply with `{ "type": "models", "models": [ { "id": "...", "name": "...", "provider": "..." }, ... ] }` containing only models from the server's configured adapters that have configured auth
+- **AND** each entry SHALL include an optional `reasoningEfforts: string[]` (absent or empty when the model offers no thinking-level control)
+
+#### Scenario: non-reasoning model
+
+- **WHEN** a model's generated profile declares `reasoningEfforts: false`
+- **THEN** the `models` payload SHALL omit the `reasoningEfforts` field for that model
+- **AND** the UI SHALL NOT render a thinking-level control for it
 
 #### Scenario: LiteLLM models appear in selector when configured
+
 - **WHEN** the server starts with LiteLLM configured
 - **AND** a client sends `{ "type": "list_models" }`
 - **THEN** the server SHALL include LiteLLM-routed models in the `models` response
 - **AND** the model selector dropdown SHALL display LiteLLM models as selectable options
 
 ### Requirement: Server communicates the active model
-The server SHALL send the currently active model id to a client when its WebSocket connection opens, and SHALL send a `model_changed` event whenever the active model changes.
+
+The server SHALL send the currently active model id and thinking level to a client when its WebSocket connection opens, SHALL send a `model_changed` event whenever the active model changes, and SHALL send an `effort_changed` event whenever the thinking level changes. The active model SHALL be tracked as the dsh runtime's current model, queried/set over the JSON-RPC bridge.
 
 #### Scenario: client connects
+
 - **WHEN** a WebSocket client establishes a connection
 - **THEN** the server SHALL send `{ "type": "current_model", "id": "<active model id>" }`
 
+#### Scenario: connect syncs effort
+
+- **WHEN** a client's WebSocket connection opens
+- **THEN** the server SHALL include the active `effort` in the ready-sync / `current_model` payload
+
 #### Scenario: model is switched
+
 - **WHEN** the active model changes from `glm-5.2` to `deepseek-v4-pro`
 - **THEN** the server SHALL broadcast `{ "type": "model_changed", "id": "deepseek-v4-pro" }` to all clients
 
+#### Scenario: model switch invalidates effort
+
+- **WHEN** the active model changes to one that does not support the persisted thinking level
+- **THEN** the server SHALL fall back to the provider default and reflect the effective effort in the `model_changed` payload
+
 ### Requirement: User can switch the active model at runtime
-The server SHALL accept a `set_model` WebSocket message OR a `/model <id>` chat command and switch the agent session's active model via the SDK's runtime model-switch API, validating that the requested model is available and has configured auth. A `/model` command with no argument SHALL report the currently active model AND list all available selectable models. The switched model SHALL apply to the next agent turn. (Model switching is rejected while the agent is streaming, per the dedicated streaming-guard requirement.)
+
+The server SHALL accept a `set_model` WebSocket message OR a `/model <id>` chat command and switch the dsh runtime's active model via a JSON-RPC model-switch request over the bridge, validating that the requested model is available and has configured auth. A `/model` command with no argument SHALL report the currently active model AND list all available selectable models. The switched model SHALL apply to the next agent turn. (Model switching is rejected while the agent is streaming, per the dedicated streaming-guard requirement.)
 
 #### Scenario: user selects a valid model via the selector
+
 - **WHEN** a client sends `{ "type": "set_model", "id": "deepseek-v4-flash" }` for a model in the available list
-- **THEN** the server SHALL switch the session's active model and broadcast `model_changed` with the new id
+- **THEN** the server SHALL send a JSON-RPC model-switch request to the dsh runtime
+- **AND** SHALL broadcast `model_changed` with the new id
 
 #### Scenario: user switches model via the /model command
+
 - **WHEN** a client sends `{ "type": "prompt", "text": "/model deepseek-v4-pro" }` for a model in the available list
-- **THEN** the server SHALL switch the session's active model and broadcast `model_changed` with the new id
+- **THEN** the server SHALL switch the dsh runtime's active model and broadcast `model_changed` with the new id
 - **AND** SHALL broadcast a `command_use` event for the `model` command
 
 #### Scenario: /model with no argument reports current model and lists available models
+
 - **WHEN** a client sends `{ "type": "prompt", "text": "/model" }`
 - **THEN** the server SHALL broadcast a `command_use` event reporting the currently active model
 - **AND** SHALL include a list of all available selectable models in the message
 - **AND** SHALL NOT switch the model
 
 #### Scenario: user selects an unknown model
+
 - **WHEN** a client sends `set_model` or `/model nonexistent` for a model not in the available list
 - **THEN** the server SHALL send an `error` message and the active model SHALL remain unchanged
 
@@ -125,4 +155,30 @@ The sidebar's model display SHALL be a read-only chip showing the current defaul
 - **WHEN** the user changes the default on `/models`
 - **THEN** a `model_changed` event SHALL be broadcast
 - **AND** the chip SHALL update accordingly
+
+### Requirement: Client can switch the thinking level
+The server SHALL accept a `set_effort` WebSocket message carrying a thinking level, validate it against the current model's declared `reasoningEfforts`, persist it host-side, write it into the dsh settings profile, and apply it by restarting the dsh runtime (which resumes the session from disk).
+
+#### Scenario: supported level selected
+- **WHEN** the client sends `{ "type": "set_effort", "effort": "high" }` while the current model declares `high`
+- **THEN** the server SHALL persist the level, update the generated `llm-pi-ai` profile, restart the dsh runtime, and broadcast `effort_changed { effort: "high" }`
+
+#### Scenario: unsupported level rejected
+- **WHEN** the client sends `set_effort` with a level not declared for the current model
+- **THEN** the server SHALL reply with an error and SHALL NOT restart the runtime or alter persistence
+
+#### Scenario: switch rejected while streaming
+- **WHEN** the agent is streaming a turn and `set_effort` arrives
+- **THEN** the server SHALL reject the switch with an error, matching the existing model-switch guard
+
+### Requirement: Model and thinking level are selected together in the UI
+The models page SHALL present the thinking-level picker alongside (not separate from) the model selector for models that declare efforts, and the chat header chip SHALL display the active model and non-default effort together.
+
+#### Scenario: combined selector
+- **WHEN** the user opens the models page and selects a model with declared efforts
+- **THEN** the effort picker SHALL be offered in the same selection flow, with "Default" preselected when no explicit effort is persisted
+
+#### Scenario: chip reflects effort
+- **WHEN** a non-default thinking level is active
+- **THEN** the Sidebar model chip SHALL display `Model · effort`
 

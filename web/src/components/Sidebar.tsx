@@ -25,9 +25,11 @@ const NAV_BASE = [
   { to: "/chat", key: "nav.chat", testId: "nav-chat" },
   { to: "/knowledge", key: "nav.knowledge", testId: "nav-knowledge" },
   { to: "/agents", key: "nav.agents", testId: "nav-agents" },
+  { to: "/bots", key: "nav.bots", testId: "nav-bots" },
   { to: "/mcp", key: "nav.mcp", testId: "nav-mcp" },
   { to: "/skills", key: "nav.skills", testId: "nav-skills" },
   { to: "/models", key: "nav.models", testId: "nav-models" },
+  { to: "/trace", key: "nav.trace", testId: "nav-trace" },
 ];
 
 export function Sidebar({ send, onNavigate }: Props) {
@@ -36,6 +38,7 @@ export function Sidebar({ send, onNavigate }: Props) {
   const status = useChatStore((s) => s.status);
   const models = useChatStore((s) => s.models);
   const currentModel = useChatStore((s) => s.currentModel);
+  const currentEffort = useChatStore((s) => s.currentEffort);
   const sessions = useChatStore((s) => s.sessions);
   const currentSessionId = useChatStore((s) => s.currentSessionId);
   const isStreaming = useChatStore((s) => s.isStreaming);
@@ -210,7 +213,8 @@ export function Sidebar({ send, onNavigate }: Props) {
           )}
         >
           {currentModel
-            ? models.find((m) => m.id === currentModel)?.name || currentModel
+            ? (models.find((m) => m.id === currentModel)?.name || currentModel) +
+              (currentEffort ? ` · ${currentEffort}` : "")
             : t("sidebar.loadingModels")}
         </button>
         <StatusRow status={status} />

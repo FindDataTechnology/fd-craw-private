@@ -1,11 +1,15 @@
-# NodePort exposing the single Platform container. The bundled supervisor
-# listens on containerPort 3000 (server.js, HOST=0.0.0.0). 30950 was free at
-# authoring time (k3s NodePort range 30000-32767); reach it at
-# http://23.144.68.246:30950 from outside the cluster.
+# NodePort exposing the platform pod (cheap-cluster live layout).
+#
+# The pod is hostNetwork and listens on PORT=3100 (port 3000 is DNAT-claimed
+# by a law-craw hostPort on cheap-5 — see k8s/deployment.yaml header).
+# The reverse tunnel on cheap-5 targets 127.0.0.1:3100 directly; this Service
+# is the in-cluster path (NodePort 30100) used by anything that reaches the
+# node from the cluster side (e.g. cheap-1's older forward tunnel target).
 apiVersion: v1
 kind: Service
 metadata:
   name: platform
+  namespace: default
   labels:
     app.kubernetes.io/name: platform
 spec:
@@ -14,7 +18,7 @@ spec:
     app.kubernetes.io/name: platform
   ports:
     - name: http
-      port: 80
-      targetPort: http
-      nodePort: 30950
+      port: 3000
+      targetPort: 3100
+      nodePort: 30100
       protocol: TCP

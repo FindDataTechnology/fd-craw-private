@@ -18,6 +18,13 @@ function wsUrl(): string {
   return `${proto}//${host}/`;
 }
 
+// One connection for the whole app, so a module-scope handle lets deep
+// components send without threading `send` through every intermediate prop.
+let currentSend: (msg: ClientMessage) => void = () => {};
+export function wsSend(msg: ClientMessage) {
+  currentSend(msg);
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
@@ -58,6 +65,7 @@ export function useWebSocket() {
         ws.send(JSON.stringify({ type: "list_agents" } satisfies ClientMessage));
         ws.send(JSON.stringify({ type: "list_skills" } satisfies ClientMessage));
         ws.send(JSON.stringify({ type: "list_sessions" } satisfies ClientMessage));
+        ws.send(JSON.stringify({ type: "list_workspaces" } satisfies ClientMessage));
       };
 
       ws.onmessage = (e) => {
@@ -85,6 +93,7 @@ export function useWebSocket() {
       const ws = wsRef.current;
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
     };
+    currentSend = sendRef.current;
 
     // Reconnect immediately when the network comes back (e.g. laptop wake),
     // bypassing the backoff timer and resetting the retry budget. The same

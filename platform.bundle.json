@@ -1,6 +1,6 @@
 {
   "components": {
-    "openconnector": { "include": true }
+    "openconnector": { "include": false }
   },
   "mcpServers": {},
   "skills": [

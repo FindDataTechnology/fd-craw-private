@@ -1,121 +1,126 @@
-# ── Platform single-container Deployment ───────────────────────────────────────
+# ── Platform single-container Deployment (cheap-cluster live layout) ──────────
 #
-# One pod = one process tree: scripts/start.js → supervisor spawns server.js +
-# LiteLLM + OpenConnector + Postgres as localhost child processes (exactly like
-# `npm start`). replicas: 1 + Recreate because the PVC is RWO and the in-process
-# agent session is stateful and not horizontally scalable.
+# This manifest mirrors the LIVE deployment on the cheap k3s cluster (as of
+# 2026-09-07). Key differences from the earlier PVC/harbor design:
 #
-# Image tag: CI (.github/workflows/docker-deploy.yml) builds, pushes to Harbor,
-# then commits the new sha tag back into THIS file (GitOps — ArgoCD auto-sync
-# detects the manifest change and rolls out). Until CI runs, :latest is the
-# fallback for first deploy / local testing.
+# - Runs in the `default` namespace, pinned to node cheap-5 via nodeName.
+# - hostNetwork: the pod listens on the node itself. PORT=3100 because cheap-5
+#   also runs a law-craw pod whose hostPort 3000 would otherwise DNAT-intercept
+#   every local connect to :3000 (including the platform's own self-checks).
+# - External entry: cheap-5 runs rrev-cheap1.service, a reverse SSH tunnel to
+#   cheap-1 (the public forward server), carrying 127.0.0.1:3100 → cheap-1's
+#   127.0.0.1:3000 and 127.0.0.1:32080 (sub2api NodePort) → cheap-1:32080.
+#   Caddy on cheap-1 routes craw.finddatatech.cloud → 127.0.0.1:3000 and
+#   token.finddatatech.cloud → 127.0.0.1:32080 (Safeline WAF fronts 80/443).
+# - LLM traffic goes to the sub2api gateway over the SAME tunnel
+#   (LLM_BASE_URL=http://127.0.0.1:32080). ClusterIP services are not
+#   reachable from a hostNetwork pod on cheap-5, so this loopback path is the
+#   deliberate design, not a workaround.
+# - Data lives on hostPath dirs (no PVC): /opt/platform → /data (SQLite +
+#   documents) and /opt/patch-dsh-home → /opt/dsh-home (dsh profile home).
 #
-# In-cluster pulls of harbor.local/* go through the k3s containerd mirror
-# (registries.yaml: harbor.local → http://localhost:30880, insecure_skip_verify).
-# HOWEVER, containerd does not honor the registries.yaml `auth` block for mirrored
-# endpoints (it keys auth by endpoint host, not mirror name), so a 401 Unauthorized
-# results unless a per-pod imagePullSecret supplies the credentials. Every other
-# harbor.local deployment in this cluster (lawcraw, law-bench, review-agent)
-# references a `harbor-pull` secret — we follow the same pattern. Create it once:
-#   kubectl -n platform-private create secret docker-registry harbor-pull \
-#     --docker-server=harbor.local \
-#     --docker-username=<robot-or-admin> \
-#     --docker-password=<secret>
+# Image distribution: images are imported directly into cheap-5's containerd
+# (`k3s ctr images import`) — imagePullPolicy: IfNotPresent with a bare local
+# tag. The Harbor + ArgoCD pipeline will replace this flow; when it does,
+# switch the tag to harbor.local/... and restore imagePullSecrets.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: platform
+  namespace: default
   labels:
-    app.kubernetes.io/name: platform
+    app: platform
 spec:
   replicas: 1
   strategy:
     # Stateful singleton: kill the old pod before starting the new one so the
-    # RWO PVC + the single agent session are never double-mounted.
+    # hostPath data and the single agent session are never double-mounted.
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: platform
+      app: platform
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: platform
+        app: platform
     spec:
-      imagePullSecrets:
-        # Every harbor.local/* deployment in this cluster (lawcraw, law-bench,
-        # review-agent) references a per-namespace `harbor-pull` secret. The k3s
-        # registries.yaml mirror resolves harbor.local → localhost:30880, but
-        # containerd keys mirror auth by endpoint host (localhost:30880), not
-        # mirror name — so the registries.yaml `auth` block is never sent and
-        # pulls 401 without this per-pod secret. Create it once (see top comment).
-        - name: harbor-pull
+      # Pin to cheap-5: the data hostPath and the reverse tunnel live there.
+      nodeName: cheap-5
+      hostNetwork: true
+      # Let hostNetwork pods still resolve cluster-internal names.
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
         - name: platform
-          # Image tag is updated automatically by CI (commit-back GitOps).
-          # To deploy a specific build locally, edit this tag or run
-          # `make k8s-deploy TAG=sha-<short>` (see Makefile).
-          image: harbor.local/paas_private/platform:sha-1654601
-          imagePullPolicy: Always
-          ports:
-            - name: http
-              containerPort: 3000
-              protocol: TCP
+          # Bare local tag: imported into cheap-5 containerd, not pulled.
+          # Bump the tag on every image rebuild (import + set image).
+          image: platform:llm2
+          imagePullPolicy: IfNotPresent
           env:
             - name: NODE_ENV
               value: production
             - name: HOST
               value: "0.0.0.0"
+            # 3100, not 3000: cheap-5 hostPort 3000 is taken by law-craw and
+            # CNI DNAT-intercepts local connects (see header).
             - name: PORT
-              value: "3000"
+              value: "3100"
             - name: PLATFORM_DATA_DIR
               value: /data
-            # LLM_API_KEY is optional: server.js has a fallback key baked in.
-            # Create the secret to override: kubectl -n platform-private create
-            # secret generic platform-secrets --from-literal=llm-api-key=...
+            # sub2api gateway through the reverse tunnel loopback.
+            - name: LLM_BASE_URL
+              value: http://127.0.0.1:32080
+            - name: DEFAULT_MODEL
+              value: deepseek-v4-flash-0731
+            # Create once:
+            #   kubectl -n default create secret generic platform-secrets \
+            #     --from-literal=llm-api-key=sk-...
             - name: LLM_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: platform-secrets
                   key: llm-api-key
                   optional: true
-          resources:
-            # Heavy single container: Node server + LiteLLM (Python venv) +
-            # Postgres + OpenConnector all in one pod. Tune to node capacity.
-            requests:
-              cpu: 1000m
-              memory: 1500Mi
-            limits:
-              cpu: 3000m
-              memory: 4Gi
           volumeMounts:
             - name: data
               mountPath: /data
-          # startupProbe gates liveness/readiness until server.js (and its
-          # sidecars) finish cold-start: first-run Postgres initdb + LiteLLM
-          # prisma db push + OpenConnector warmup can take 1-3 min. The
-          # supervisor's own START_TIMEOUT is 120s; give k8s a 300s window.
+            - name: dshhome
+              mountPath: /opt/dsh-home
+            # Hot-fix overlay for the image's /opt/dsh tree: the shipped image
+            # was built with legacy-peer-deps, which skipped 19 transitive peer
+            # packages the dsh runtime needs at boot (ERR_MODULE_NOT_FOUND on
+            # @deepseek-ai/dsh-sandbox first). /opt/dsh-fixed/dsh on cheap-5 is
+            # a complete linux-native install (npmmirror, same pins as the
+            # Dockerfile). Drop this mount once an image built with the fixed
+            # Dockerfile (explicit package list) is deployed.
+            - name: dshroot
+              mountPath: /opt/dsh
+          # startupProbe gates liveness until server.js + the dsh agent finish
+          # cold start. Liveness is deliberately lax (the supervisor restarts
+          # children internally; k8s should only intervene on true hangs).
           startupProbe:
             httpGet:
               path: /api/config
-              port: http
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 30
+              port: 3100
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 40
           livenessProbe:
             httpGet:
               path: /api/config
-              port: http
+              port: 3100
             periodSeconds: 30
             timeoutSeconds: 10
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /api/config
-              port: http
-            periodSeconds: 15
-            timeoutSeconds: 5
-            failureThreshold: 3
+            failureThreshold: 100
       volumes:
         - name: data
-          persistentVolumeClaim:
-            claimName: platform-data
+          hostPath:
+            path: /opt/platform
+            type: Directory
+        - name: dshhome
+          hostPath:
+            path: /opt/patch-dsh-home
+            type: Directory
+        - name: dshroot
+          hostPath:
+            path: /opt/dsh-fixed/dsh
+            type: Directory

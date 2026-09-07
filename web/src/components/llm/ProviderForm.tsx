@@ -24,6 +24,7 @@ export interface ProviderFormValue {
   name: string;
   baseUrl: string;
   apiKey: string;
+  reasoningEfforts: string;
 }
 
 interface Props {
@@ -42,12 +43,14 @@ export function ProviderForm({ open, provider, saving, error, onClose, onSubmit 
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [efforts, setEfforts] = useState("");
 
   useEffect(() => {
     if (open) {
       setName(provider?.name ?? "");
       setBaseUrl(provider?.baseUrl ?? "");
       setApiKey("");
+      setEfforts((provider?.reasoningEfforts ?? []).join(", "));
     }
   }, [open, provider]);
 
@@ -111,6 +114,18 @@ export function ProviderForm({ open, provider, saving, error, onClose, onSubmit 
             )}
           </label>
 
+          <label className="flex flex-col gap-1.5 text-sm">
+            <span className="font-medium">{t("modelsPage.fieldEfforts")}</span>
+            <Input
+              value={efforts}
+              onChange={(e) => setEfforts(e.target.value)}
+              placeholder="low, medium, high"
+              data-testid="llm-provider-efforts"
+              spellCheck={false}
+            />
+            <span className="text-xs text-muted-foreground">{t("modelsPage.effortsHint")}</span>
+          </label>
+
           {error && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
               {error}
@@ -123,7 +138,7 @@ export function ProviderForm({ open, provider, saving, error, onClose, onSubmit 
             {t("modelsPage.cancel")}
           </Button>
           <Button
-            onClick={() => onSubmit({ name: name.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim() })}
+            onClick={() => onSubmit({ name: name.trim(), baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), reasoningEfforts: efforts.trim() })}
             disabled={!canSave || saving}
             data-testid="llm-provider-save"
           >

@@ -89,19 +89,33 @@ export class ProviderError extends Error {
 
 const URL_RE = /^https?:\/\/[^\s]+$/i;
 
-function validateInput({ name, baseUrl, apiKey }, { requireKey }) {
+function validateInput({ name, baseUrl, apiKey, reasoningEfforts }, { requireKey }) {
   const errors = [];
   const cleanName = String(name || "").trim();
   if (cleanName.length < 1) errors.push("name is required");
   if (cleanName.length > 60) errors.push("name must be 60 characters or fewer");
   if (!URL_RE.test(String(baseUrl || "").trim())) errors.push("baseUrl must be a valid http(s) URL");
   if (requireKey && !String(apiKey || "").trim()) errors.push("apiKey is required");
+  // Optional thinking levels: accepted verbatim (identity wire values). We only
+  // reject shapes we cannot write, not level names — the operator knows their
+  // gateway better than we do.
+  const levels = normalizeEfforts(reasoningEfforts);
+  if (levels === null) errors.push("reasoningEfforts must be a list of level names");
   if (errors.length) throw new ProviderError("invalid", errors.join("; "));
   return {
     name: cleanName,
     baseUrl: normalizeBaseUrl(String(baseUrl).trim()),
     apiKey: String(apiKey || "").trim(),
+    reasoningEfforts: levels,
   };
+}
+
+// Accept an array or a comma-separated string; [] when unset. null = invalid.
+function normalizeEfforts(value) {
+  if (value === undefined || value === null || value === "") return [];
+  const raw = Array.isArray(value) ? value : String(value).split(",");
+  if (!raw.every((v) => typeof v === "string" || typeof v === "number")) return null;
+  return [...new Set(raw.map((v) => String(v).trim()).filter(Boolean))];
 }
 
 // ── Public CRUD (returns the persisted, client-safe record) ──────────────────
@@ -115,6 +129,7 @@ export function listUserProviders() {
     type: "openai-completions",
     hasKey: Boolean(p.apiKey),
     models: (p.models || DEFAULT_MODELS).map((m) => m.id),
+    reasoningEfforts: p.reasoningEfforts || [],
     lastTest: p.lastTest || null,
   }));
 }
@@ -124,7 +139,7 @@ function getProviderRecord(id) {
 }
 
 export function createProvider(input) {
-  const { name, baseUrl, apiKey } = validateInput(input, { requireKey: true });
+  const { name, baseUrl, apiKey, reasoningEfforts } = validateInput(input, { requireKey: true });
   const doc = readProvidersDoc();
   const existing = new Set(doc.providers.map((p) => p.id));
   if (doc.providers.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
@@ -138,6 +153,7 @@ export function createProvider(input) {
     apiKey,
     type: "openai-completions",
     models: DEFAULT_MODELS,
+    reasoningEfforts,
     createdAt: new Date().toISOString(),
     lastTest: null,
   };
@@ -160,6 +176,8 @@ export function updateProvider(id, input) {
     name: input.name !== undefined ? input.name : current.name,
     baseUrl: input.baseUrl !== undefined ? input.baseUrl : current.baseUrl,
     apiKey: input.apiKey && String(input.apiKey).trim() ? String(input.apiKey).trim() : current.apiKey,
+    reasoningEfforts:
+      input.reasoningEfforts !== undefined ? input.reasoningEfforts : current.reasoningEfforts,
   };
   const clean = validateInput(merged, { requireKey: true });
 
@@ -177,6 +195,7 @@ export function updateProvider(id, input) {
     name: clean.name,
     baseUrl: clean.baseUrl,
     apiKey: clean.apiKey,
+    reasoningEfforts: clean.reasoningEfforts,
     updatedAt: new Date().toISOString(),
   };
   writeJsonAtomic(STORE_PATH, doc);
@@ -207,6 +226,7 @@ function clientRecord(p) {
     type: "openai-completions",
     hasKey: Boolean(p.apiKey),
     models: (p.models || DEFAULT_MODELS).map((m) => m.id),
+    reasoningEfforts: p.reasoningEfforts || [],
     lastTest: p.lastTest || null,
   };
 }
@@ -229,14 +249,19 @@ export function buildUserProviderEntries() {
   const providers = {};
   const models = [];
   for (const p of readProvidersDoc().providers) {
+    // Identity wire values: the operator's level names are sent verbatim.
+    const levels = p.reasoningEfforts || [];
+    const effortMap = levels.length ? Object.fromEntries(levels.map((l) => [l, l])) : false;
     providers[p.id] = {
       apiKeyEnv: envRefForProvider(p.id),
       displayName: p.name,
       api: "openai-completions",
       baseURL: p.baseUrl,
-      models: (p.models || DEFAULT_MODELS).map((m) => ({ ...m, input: ["text"] })),
+      models: (p.models || DEFAULT_MODELS).map((m) => ({ ...m, input: ["text"], reasoningEfforts: effortMap })),
     };
-    for (const m of p.models || DEFAULT_MODELS) models.push({ id: m.id, name: m.name, provider: p.id });
+    for (const m of p.models || DEFAULT_MODELS) {
+      models.push({ id: m.id, name: m.name, provider: p.id, ...(levels.length ? { reasoningEfforts: levels } : {}) });
+    }
   }
   return { providers, models };
 }

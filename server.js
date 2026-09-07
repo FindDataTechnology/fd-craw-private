@@ -11,6 +11,8 @@ import * as chatHistory from "./chat-history.js";
 import * as openConnector from "./open-connector.js";
 import * as documents from "./documents.js";
 import * as db from "./db.js";
+import * as trace from "./server/trace.js";
+import * as bots from "./server/bots.js";
 import * as migrate from "./migrate.js";
 import * as cron from "./cron.js";
 import * as extensionStore from "./extension-store.js";
@@ -24,6 +26,8 @@ import { registerMiscRoutes, registerStaticAndFallback } from "./server/routes/m
 import { registerLlmRoutes } from "./server/routes/llm.js";
 import { registerExtensionRoutes } from "./server/routes/extensions.js";
 import { registerChatHistoryRoutes } from "./server/routes/chat-history.js";
+import { registerTraceRoutes } from "./server/routes/trace.js";
+import { registerBotRoutes, WEBHOOK_PREFIX } from "./server/routes/bots.js";
 import { registerOpenConnectorRoutes } from "./server/routes/openconnector.js";
 import { attachDshEvents } from "./server/dsh-events.js";
 import { attachAgentSession } from "./server/agent-session.js";
@@ -88,7 +92,14 @@ ctx.upload = multer({
 
 // Document collection: JSON bodies for text/url submissions; multipart file
 // uploads are kept in memory (LlamaIndex readers read the buffer directly).
-app.use(express.json());
+// Bot webhooks are excluded: they need the RAW request bytes (WeCom/WeChat send
+// XML, and every platform signs the body exactly as sent), so they mount their
+// own express.raw parser. Consuming the stream here would leave them with an
+// empty body and break signature verification.
+const jsonBodyParser = express.json();
+app.use((req, res, next) =>
+  req.path.startsWith(WEBHOOK_PREFIX) ? next() : jsonBodyParser(req, res, next),
+);
 // HTTP compression for static assets + API JSON (the entry chunk ships ~600KB
 // raw). Must mount before express.static (registered in routes/misc.js).
 app.use(compression());
@@ -104,6 +115,8 @@ registerMiscRoutes(ctx);
 registerLlmRoutes(ctx);
 registerExtensionRoutes(ctx);
 registerChatHistoryRoutes(ctx);
+registerTraceRoutes(ctx);
+registerBotRoutes(ctx);
 registerStaticAndFallback(ctx);
 registerOpenConnectorRoutes(ctx);
 
@@ -232,6 +245,10 @@ async function initDshAgent() {
       ctx.dshModels[0];
     provider = pick.provider;
     model = pick.id;
+    // Restore the persisted thinking level, but only if this model still
+    // declares it (writeLlmProfile already projected it into settings.yaml).
+    const savedEffort = ctx.db.getPreference(`llm.effort.${provider}`) || null;
+    ctx.currentEffort = savedEffort && (pick.reasoningEfforts || []).includes(savedEffort) ? savedEffort : null;
   } else {
     console.warn("[dsh] no LLM keys configured; chat non-functional (static + REST still served)");
   }
@@ -299,7 +316,10 @@ async function initDshAgent() {
   ctx.session = {
     prompt: async (text) => {
       ctx.isStreaming = true;
-      await ctx.dshBridge.prompt(ctx.dshSessionId, [{ type: "text", text }]);
+      const messageId = await ctx.dshBridge.prompt(ctx.dshSessionId, [{ type: "text", text }]);
+      // Trace: the durable message id keys this turn's trace rows.
+      ctx.dshCurrentTurnId = messageId;
+      trace.bindTurn(messageId);
     },
     model: { id: model },
     sessionManager: dshSm,
@@ -356,10 +376,15 @@ const documentsInit = (async () => {
 })();
 const dshInit = initDshAgent();
 await Promise.all([documentsInit, dshInit]);
+await trace.initTrace();
 
 // Agent is live: flip readiness and sync any client that connected mid-boot.
 ctx.ready.dsh = true;
 ctx.onDshReady?.();
+
+// Chat-platform bots. Starts after the bridge so a polled message never
+// arrives before there is an agent to answer it; inert with no bots configured.
+bots.initBots(ctx);
 
 // One-time import of legacy file stores (documents-store/, sessions-store/,
 // chat-history-store/) into the SQLite database. Runs only on a fresh database;
@@ -386,7 +411,9 @@ console.log("Platform fully initialized");
 
 async function shutdown() {
   cron.shutdown();
+  bots.stopAll();
   catalog.stopCatalog();
+  await trace.shutdownTrace();
   try {
     await ctx.dshBridge?.shutdown();
   } catch (err) {

@@ -26,7 +26,7 @@ export function attachWebSocket(ctx) {
 // path sends, once the dsh agent is live (the "ready" broadcast's payload).
 const syncReadyClient = async (ws) => {
   ws.send(JSON.stringify({ type: "ready" }));
-  ws.send(JSON.stringify({ type: "current_model", id: ctx.session?.model?.id || null }));
+  ws.send(JSON.stringify({ type: "current_model", id: ctx.session?.model?.id || null, effort: ctx.currentEffort }));
   ws.send(JSON.stringify({ type: "current_agent", id: ctx.currentAgentId }));
   ws.send(JSON.stringify({ type: "agents", agents: ctx.switchableAgents(ws.user) }));
   ws.send(JSON.stringify({ type: "models", models: await ctx.getAvailableModels() }));
@@ -51,7 +51,7 @@ ctx.wss.on("connection", (ws, req) => {
   if (!ctx.ready.dsh) ws.send(JSON.stringify({ type: "initializing" }));
   // Tell the client which model is currently active so the dropdown can sync.
   const currentModelId = ctx.session?.model?.id || null;
-  ws.send(JSON.stringify({ type: "current_model", id: currentModelId }));
+  ws.send(JSON.stringify({ type: "current_model", id: currentModelId, effort: ctx.currentEffort }));
   // Sync the agent switcher: active catalog agent + switchable agent list.
   ws.send(JSON.stringify({ type: "current_agent", id: ctx.currentAgentId }));
   ws.send(JSON.stringify({ type: "agents", agents: ctx.switchableAgents(ws.user) }));
@@ -214,6 +214,31 @@ ctx.wss.on("connection", (ws, req) => {
         // client as an orphan error — it renders as a toast, which is the
         // right weight for a transient control action.
         const r = await ctx.switchModelTo(data.id);
+        if (!r.ok && r.error) ws.send(JSON.stringify({ type: "error", message: r.error }));
+        break;
+      }
+
+      case "set_effort": {
+        if (!ctx.ready.dsh) {
+          ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
+          break;
+        }
+        const r = await ctx.switchEffortTo(data.effort || null);
+        if (!r.ok && r.error) ws.send(JSON.stringify({ type: "error", message: r.error }));
+        break;
+      }
+
+      case "list_workspaces": {
+        ws.send(JSON.stringify({ type: "workspaces", ...ctx.listWorkspaces() }));
+        break;
+      }
+
+      case "set_workspace": {
+        if (!ctx.ready.dsh) {
+          ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
+          break;
+        }
+        const r = await ctx.switchWorkspaceTo(data.path);
         if (!r.ok && r.error) ws.send(JSON.stringify({ type: "error", message: r.error }));
         break;
       }

@@ -5,12 +5,12 @@ TBD - created by syncing change add-forward-auth-agent-catalog. Update Purpose a
 ## Requirements
 ### Requirement: Catalog entry types
 
-The catalog SHALL accept entries of three types: `agent-local` (the built-in pi agent session), `agent-remote` (an external agent reached over an OpenAI-compatible HTTP API, with `mode` either `chat` or `link`), and `app` (a third-party bound application, with `kind` either `link` or `nango-connect`). Every entry SHALL have a unique `id`, MAY declare `roles` (a list of group names restricting visibility) and a display `name`.
+The catalog SHALL accept entries of three types: `agent-local` (the built-in agent session, now backed by the dsh runtime instead of the pi session), `agent-remote` (an external agent reached over an OpenAI-compatible HTTP API, with `mode` either `chat` or `link`), and `app` (a third-party bound application, with `kind` either `link` or `nango-connect`). Every entry SHALL have a unique `id`, MAY declare `roles` (a list of group names restricting visibility) and a display `name`.
 
 #### Scenario: Built-in agent is always present
 
 - **WHEN** the catalog is served
-- **THEN** the built-in `agent-local` entry represents the existing pi agent session, and selecting it behaves exactly as before this change
+- **THEN** the built-in `agent-local` entry represents the dsh-backed agent session, and selecting it behaves exactly as before this change (prompts route to the dsh runtime via the bridge)
 
 #### Scenario: Invalid entries are skipped
 
@@ -107,7 +107,7 @@ A `link`-mode `agent-remote` entry carries a `url`; the Agents page SHALL presen
 
 ### Requirement: v1 shared-session ceiling
 
-In v1 the local agent remains one shared session for all clients, remote-agent chats are broadcast to all connected clients and are not persisted into chat-history, and there is no per-user isolation of sessions or documents. This ceiling SHALL be documented rather than silently discovered.
+In v1 the local agent remains one shared session for all clients — now a single shared dsh runtime subprocess, not a per-connection or per-user dsh session. Remote-agent chats are broadcast to all connected clients and are not persisted into chat-history, and there is no per-user isolation of sessions or documents. This ceiling SHALL be documented rather than silently discovered.
 
 #### Scenario: Remote chat visibility
 
@@ -126,8 +126,8 @@ The `/agents` route SHALL be a top-level page (replacing the legacy location; no
 - **THEN** the Apps sub-tab SHALL be active and only app entries SHALL be visible
 - **AND** the URL SHALL retain the query parameter after switching tabs
 
-### Requirement: Catalog entry types remain unchanged
-The catalog SHALL continue to accept entries of three types: `agent-local`, `agent-remote`, and `app` (with its `kind` variants). This change only relocates the rendering surface to a tabbed layout under `/agents`; the entry schema, fetching, merge, role filter, and Nango broker are preserved unchanged.
+### Requirement: Catalog schema is unchanged by the agents page relocation
+The agents page relocation to `/agents` (with Agents + Apps sub-tabs) SHALL only change the rendering surface; the entry schema, fetching, merge, role filter, and Nango broker SHALL be preserved unchanged.
 
 #### Scenario: catalog behavior is preserved
 - **WHEN** the catalog is served

@@ -25,7 +25,10 @@ FROM node:25-bookworm-slim AS builder
 # python3/make/g++ for native addons (better-sqlite3); git + curl + tar for the
 # resource build scripts — build-openconnector clones a repo; build-node
 # curls the Node standalone release tarball and extracts it.
-RUN apt-get update \
+# deb.debian.org crawls at ~130KB/s from the China build host (mirrors.aliyun.com
+# is 100x faster); swap before any apt fetch in both stages.
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         python3 make g++ ca-certificates git curl tar \
     && rm -rf /var/lib/apt/lists/*
@@ -65,10 +68,38 @@ COPY dsh-profile-template/ ./dsh-profile-template/
 # 0.0.1 peer line (dsh-invariants ^0.0.1-rc.5) while dsh-base/protocol
 # 0.1.1-rc.2 declare ^0.1.1-rc.2 — a mix pnpm tolerates and npm hard-fails
 # with ERESOLVE (verified both ways locally before pushing).
+#
+# The explicit 0.1.1-rc.2 rows below exist because legacy-peer-deps disables
+# peer auto-installation for TRANSITIVE packages too: dsh's tree declares them
+# as peerDependencies only, so without them the runtime dies at boot with
+# ERR_MODULE_NOT_FOUND (first seen as @deepseek-ai/dsh-sandbox from
+# dsh-sandbox-policy). Enumerated by a peer-deps gap analysis over the
+# installed tree; validated by booting `dsh --profile platform` and completing
+# the sdk-client initialize handshake before this change was shipped.
 RUN npm config set fetch-retries 5 fetch-retry-mintimeout 20000 fetch-retry-maxtimeout 120000 fetch-timeout 600000 legacy-peer-deps true \
     && npm install --prefix /opt/dsh \
          @deepseek-ai/dsh@0.1.1-rc.2 \
          @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5 \
+         @deepseek-ai/dsh-sdk-protocol@0.0.1-rc.5 \
+         @deepseek-ai/cordis-plugin-group@1.0.2 \
+         @deepseek-ai/dsh-anonymous-user-id@0.1.1-rc.2 \
+         @deepseek-ai/dsh-atomic-write@0.1.1-rc.2 \
+         @deepseek-ai/dsh-authorization@0.1.1-rc.2 \
+         @deepseek-ai/dsh-bash-local@0.1.1-rc.2 \
+         @deepseek-ai/dsh-code-runtime@0.1.1-rc.2 \
+         @deepseek-ai/dsh-compaction@0.1.1-rc.2 \
+         @deepseek-ai/dsh-fs@0.1.1-rc.2 \
+         @deepseek-ai/dsh-invariants@0.1.1-rc.2 \
+         @deepseek-ai/dsh-output-retention@0.1.1-rc.2 \
+         @deepseek-ai/dsh-sandbox@0.1.1-rc.2 \
+         @deepseek-ai/dsh-scope@0.1.1-rc.2 \
+         @deepseek-ai/dsh-session-telemetry@0.1.1-rc.2 \
+         @deepseek-ai/dsh-session-title-llm@0.1.1-rc.2 \
+         @deepseek-ai/dsh-shell@0.1.1-rc.2 \
+         @deepseek-ai/dsh-spill@0.1.1-rc.2 \
+         @deepseek-ai/dsh-subagent-in-process-driver@0.1.1-rc.2 \
+         @deepseek-ai/dsh-timeout@0.1.1-rc.2 \
+         @deepseek-ai/dsh-workflow@0.1.1-rc.2 \
     && mkdir -p /opt/dsh-home/profiles/platform \
     && cp dsh-profile-template/package.json \
           dsh-profile-template/pnpm-workspace.yaml \
@@ -96,7 +127,8 @@ FROM node:25-bookworm-slim AS runtime
 # ca-certificates for outbound HTTPS (Volces upstreams); curl for the
 # Docker HEALTHCHECK. Everything else is bundled under resources/ and needs
 # no system packages.
-RUN apt-get update \
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 

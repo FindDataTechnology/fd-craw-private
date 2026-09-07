@@ -47,11 +47,21 @@ interface State {
   status: ConnStatus;
   models: ModelInfo[];
   currentModel: string | null;
+  // Active thinking level; null = the provider default.
+  currentEffort: string | null;
   agents: AgentInfo[];
   currentAgent: string | null;
   // Bumped on every `catalog_changed` so catalog-viewing pages refetch.
   catalogVersion: number;
   skills: SkillInfo[];
+  // Absolute path the dsh runtime is running in, plus previously used ones.
+  currentWorkspace: string | null;
+  workspaceRecents: string[];
+  // Which composer control is awaiting the server's confirming broadcast.
+  // dsh bakes model/effort/cwd into the `initialize` handshake, so each of
+  // these changes tears down and respawns the child — the send button stays
+  // disabled until it lands.
+  pendingConfig: "model" | "effort" | "workspace" | null;
   sessions: SessionMeta[];
   currentSessionId: string | null;
   turns: Turn[];
@@ -64,6 +74,9 @@ interface State {
   // Setters used by the WS hook.
   setStatus: (s: ConnStatus) => void;
   apply: (m: ServerMessage) => void;
+  // Marks a config control as awaiting its server broadcast. Cleared by the
+  // matching *_changed event, or by an error (the change was rejected).
+  setPendingConfig: (c: "model" | "effort" | "workspace" | null) => void;
   // Local UI commands (never sent to server).
   addUserTurnOptimistic: (text: string) => void;
   clearView: () => void;
@@ -189,15 +202,21 @@ export const useChatStore = create<State>((set) => ({
   status: "connecting",
   models: [],
   currentModel: null,
+  currentEffort: null,
   agents: [],
   currentAgent: null,
   catalogVersion: 0,
   skills: [],
+  currentWorkspace: null,
+  workspaceRecents: [],
+  pendingConfig: null,
   sessions: [],
   currentSessionId: null,
   turns: [],
   isStreaming: false,
   suppressed: false,
+
+  setPendingConfig: (c) => set({ pendingConfig: c }),
 
   setStatus: (s) =>
     set((state) => {
@@ -325,7 +344,9 @@ export const useChatStore = create<State>((set) => ({
           const tail = turns[turns.length - 1];
           if (!tail || tail.role !== "assistant" || !tail.streaming) {
             showToast(m.message);
-            return {};
+            // A rejected config change (bad path, agent busy) never sends its
+            // *_changed broadcast, so the pending control would hang forever.
+            return { pendingConfig: null };
           }
           turns[turns.length - 1] = {
             ...tail,
@@ -336,7 +357,26 @@ export const useChatStore = create<State>((set) => ({
 
         case "current_model":
         case "model_changed":
-          return { currentModel: m.id };
+          // `effort` is omitted on payloads that don't touch it; only overwrite
+          // the level when the server actually reported one.
+          return m.effort === undefined
+            ? { currentModel: m.id, pendingConfig: null }
+            : { currentModel: m.id, currentEffort: m.effort, pendingConfig: null };
+
+        case "effort_changed":
+          return { currentEffort: m.effort, pendingConfig: null };
+
+        case "workspaces":
+          return { currentWorkspace: m.current, workspaceRecents: m.recents };
+
+        case "workspace_changed":
+          return {
+            currentWorkspace: m.path,
+            // Server-side LRU order is authoritative, but keeping the head in
+            // sync locally avoids a round-trip before the popover reopens.
+            workspaceRecents: [m.path, ...state.workspaceRecents.filter((p) => p !== m.path)],
+            pendingConfig: null,
+          };
 
         case "models":
           return { models: m.models };

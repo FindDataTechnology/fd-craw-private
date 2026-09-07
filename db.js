@@ -155,6 +155,46 @@ const MIGRATIONS = [
       if (!cols.has("blocks")) db.exec(`ALTER TABLE chat_messages ADD COLUMN blocks TEXT`);
     },
   },
+  {
+    version: 7,
+    // Full-fidelity dsh notification log for the /trace viewer. One row per
+    // runtime notification, keyed by turn (the durable message id returned by
+    // prompt()). Payload is raw JSON; per-type summaries are derived at read
+    // time so new event types never need a migration.
+    statements: [
+      `CREATE TABLE IF NOT EXISTS trace_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        turn_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        ts INTEGER NOT NULL,
+        method TEXT NOT NULL,
+        event_type TEXT,
+        payload TEXT NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_trace_turn ON trace_events(turn_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_trace_ts ON trace_events(ts)`,
+    ],
+  },
+  {
+    version: 8,
+    // Social chat-platform bots (WeCom / Feishu / Telegram / WeChat OA).
+    // `secret` is the per-bot random path segment of the webhook URL (it
+    // defeats bot-id guessing; the platform's own signature check is the real
+    // verification). `credentials` is server-only JSON — never serialized to
+    // the browser (the REST layer masks it).
+    statements: [
+      `CREATE TABLE IF NOT EXISTS bots (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        secret TEXT NOT NULL,
+        credentials TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+    ],
+  },
 ];
 
 function nowIso() {
@@ -219,6 +259,12 @@ export async function initDb() {
 
 export function isDbReady() {
   return dbReady;
+}
+
+// Raw handle for feature modules that own their own tables/queries (trace).
+// Null when the DB failed to open — callers guard with isDbReady().
+export function getDb() {
+  return db;
 }
 
 export function getIndexVersion() {
@@ -772,4 +818,66 @@ export function setCustomSkillEnabled(name, enabled) {
     name
   );
   return getCustomSkill(name);
+}
+
+// ── Bots (social chat channels) ──────────────────────────────────────────────
+//
+// Rows carry the raw `credentials` JSON and the webhook `secret`; both are
+// server-only. Callers that serve the browser MUST go through the masking in
+// server/bots.js — never hand a row straight to res.json().
+
+const BOT_COLS =
+  "id, type, name, enabled, secret, credentials, created_at AS createdAt";
+
+function hydrateBot(row) {
+  if (!row) return null;
+  let credentials = {};
+  try { credentials = JSON.parse(row.credentials); } catch { /* corrupt row → no creds */ }
+  return { ...row, enabled: !!row.enabled, credentials };
+}
+
+export function listBots() {
+  if (!dbReady) return [];
+  return db.prepare(`SELECT ${BOT_COLS} FROM bots ORDER BY created_at`).all().map(hydrateBot);
+}
+
+export function getBot(id) {
+  if (!dbReady) return null;
+  return hydrateBot(stmt(`SELECT ${BOT_COLS} FROM bots WHERE id = ?`).get(id));
+}
+
+export function addBot({ id, type, name, credentials, secret, enabled = true }) {
+  if (!dbReady) return null;
+  stmt(
+    `INSERT INTO bots (id, type, name, enabled, secret, credentials, created_at)
+     VALUES (@id, @type, @name, @enabled, @secret, @credentials, @created_at)`
+  ).run({
+    id,
+    type,
+    name,
+    enabled: enabled ? 1 : 0,
+    secret,
+    credentials: JSON.stringify(credentials ?? {}),
+    created_at: nowIso(),
+  });
+  return getBot(id);
+}
+
+export function updateBot(id, { name, credentials, enabled }) {
+  if (!dbReady) return null;
+  const updates = [];
+  const params = { id };
+  if (name !== undefined) { updates.push("name = @name"); params.name = name; }
+  if (credentials !== undefined) {
+    updates.push("credentials = @credentials");
+    params.credentials = JSON.stringify(credentials);
+  }
+  if (enabled !== undefined) { updates.push("enabled = @enabled"); params.enabled = enabled ? 1 : 0; }
+  if (updates.length) stmt(`UPDATE bots SET ${updates.join(", ")} WHERE id = @id`).run(params);
+  return getBot(id);
+}
+
+export function deleteBot(id) {
+  if (!dbReady) return false;
+  return stmt("DELETE FROM bots WHERE id = ?").run(id).changes > 0;
 }

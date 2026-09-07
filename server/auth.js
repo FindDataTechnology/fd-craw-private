@@ -4,6 +4,16 @@
 // reachable ONLY through the forward-auth proxy — bind to localhost /
 // firewall it, otherwise these headers are attacker-controlled.
 
+// Paths exempt from the identity requirement, because the caller is an
+// external service that cannot supply the proxy header. Each exempt path MUST
+// carry its own authentication — this list is not a public-route escape hatch.
+//   /api/bots/webhook/ — chat platforms (WeCom/Feishu/Telegram/WeChat OA);
+//     authenticated by the per-bot path secret plus the platform's own
+//     signature check or payload decryption (see server/routes/bots.js).
+const AUTH_EXEMPT_PREFIXES = ["/api/bots/webhook/"];
+
+const isExempt = (p) => AUTH_EXEMPT_PREFIXES.some((prefix) => p.startsWith(prefix));
+
 export function userFromHeaders(headers) {
   const email = headers["x-forwarded-email"];
   if (!email) return null;
@@ -20,7 +30,7 @@ export function userFromHeaders(headers) {
 // raw socket) and applies the same check.
 export function registerAuth(ctx) {
   ctx.app.use((req, res, next) => {
-    if (!ctx.authEnabled) return next();
+    if (!ctx.authEnabled || isExempt(req.path)) return next();
     const user = userFromHeaders(req.headers);
     if (!user) return res.status(401).json({ error: "Authentication required" });
     req.user = user;

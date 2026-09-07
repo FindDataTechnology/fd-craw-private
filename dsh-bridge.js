@@ -199,12 +199,13 @@ export class DshBridge {
     }
   }
 
-  // Re-initialize the child with a new provider/model/patch. dsh bakes the model
-  // into the `initialize` handshake and exposes no stock `setModel`/reload RPC, so
-  // a live model switch OR an MCP add/remove (Task 4.5) means a fresh child.
+  // Re-initialize the child with a new provider/model/cwd/patch. dsh bakes all
+  // of these into the `initialize` handshake and exposes no stock
+  // `setModel`/`setCwd`/reload RPC, so a live model switch, a workspace switch,
+  // OR an MCP add/remove (Task 4.5) means a fresh child.
   // ponytail: this drops the child's in-memory session state (v1 ceiling); a
   // non-disruptive switch needs a custom dsh RPC.
-  async restart({ provider, model, mcpPatchPath } = {}) {
+  async restart({ provider, model, cwd, mcpPatchPath } = {}) {
     if (this.#restarting) {
       throw new Error("dsh restart already in progress");
     }
@@ -215,11 +216,18 @@ export class DshBridge {
       this.#restarts = 0;
       if (provider) this.#provider = provider;
       if (model) this.#model = model;
+      // Stored on the instance, so the unexpected-exit backoff path respawns
+      // in the switched directory rather than reverting to the startup one.
+      if (cwd) this.#cwd = cwd;
       if (mcpPatchPath !== undefined) this.#mcpPatchPath = mcpPatchPath;
       return await this.#spawn();
     } finally {
       this.#restarting = false;
     }
+  }
+
+  getCwd() {
+    return this.#cwd;
   }
 
   #requireReady() {

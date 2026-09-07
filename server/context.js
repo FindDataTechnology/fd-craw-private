@@ -75,6 +75,10 @@ export function createAppContext(config) {
     // The model the agent session starts on (set during async init; read by
     // the /api/supervisor/status route).
     defaultModel: null,
+    // Active thinking level (null = the provider's default). Persisted per
+    // provider in the prefs table; projected into settings.yaml by
+    // dsh-profile.writeLlmProfile.
+    currentEffort: null,
     // dsh bridge + session id.
     dshBridge: null,
     dshSessionId: null,
@@ -94,6 +98,13 @@ export function createAppContext(config) {
     dshToolNames: new Map(),
     dshTurnError: null,
     dshTurnBlocks: [],
+
+    // ── Bot session collectors (design D2) ────────────────────────────────────
+    // Per-session notification handlers for non-web chat sessions, keyed by
+    // session id. Registered by the bot turn runner; cleared when the turn
+    // completes. The session-aware event pump in dsh-events.js routes to these
+    // instead of the WS broadcast path.
+    sessionCollectors: new Map(),
 
     // ── WS clients + fan-out ────────────────────────────────────────────────
     clients: new Set(),
