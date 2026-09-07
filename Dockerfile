@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 # ── Full-stack single-container image for Platform ────────────────────────────
 #
-# Bundles the backend (server.js) AND its sidecars (LiteLLM + OpenConnector +
-# Postgres) into ONE container. The supervisor (scripts/start.js → local-services.js
-# → supervisor/lifecycle.js) spawns each sidecar as a child process on localhost,
-# exactly like `npm start` does locally — one image, one process tree, one PVC.
+# Runs the backend (server.js) in ONE container via the supervisor
+# (scripts/start.js → local-services.js → supervisor/lifecycle.js), exactly like
+# `npm start` does locally. dsh's native plugins cover LLM routing and SaaS
+# connectors, so there are no sidecar processes.
 #
 #   docker build -t harbor.local/paas_private/platform .
 #   docker run -p 3000:3000 -v platform-data:/data harbor.local/paas_private/platform
@@ -22,9 +22,8 @@
 # ── Builder ──────────────────────────────────────────────────────────────────
 FROM node:25-bookworm-slim AS builder
 
-# python3/make/g++ for native addons (better-sqlite3); git + curl + tar for the
-# resource build scripts — build-openconnector clones a repo; build-node
-# curls the Node standalone release tarball and extracts it.
+# python3/make/g++ for native addons (better-sqlite3); curl + tar for
+# build-node, which curls the Node standalone release tarball and extracts it.
 # deb.debian.org crawls at ~130KB/s from the China build host (mirrors.aliyun.com
 # is 100x faster); swap before any apt fetch in both stages.
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
@@ -116,8 +115,7 @@ RUN npm config set fetch-retries 5 fetch-retry-mintimeout 20000 fetch-retry-maxt
 COPY . .
 
 # Build the React frontend, then all bundled Linux resources.
-# predist = build-openconnector + build-node + verify-bundle (asserts every
-# selected component is present).
+# predist = build-node + verify-bundle.
 RUN npm run web:build \
     && npm run predist
 
@@ -135,7 +133,7 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
 WORKDIR /app
 
 # Production deps (native addons already compiled in the builder), built frontend,
-# and the bundled resources (OpenConnector, Node).
+# and the bundled Node.
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /opt/dsh /opt/dsh
 COPY --from=builder /opt/dsh-home /opt/dsh-home
@@ -180,6 +178,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -fsS http://localhost:3000/api/config || exit 1
 
-# start.js → local-services.js → Supervisor spawns server.js + OpenConnector
-# as localhost child processes, then keeps running.
+# start.js → local-services.js → Supervisor spawns server.js, then keeps running.
 CMD ["node", "scripts/start.js"]

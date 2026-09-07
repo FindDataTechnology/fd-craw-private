@@ -35,8 +35,8 @@ LIVE_SERVICE_URL ?= http://23.144.68.246:30950
 build:
 	docker build -t $(IMAGE) .
 
-# Run the full-stack image: one container, server.js + LiteLLM + OpenConnector +
-# Postgres as child processes. -e VOLCES_API_KEY optional (server.js has a
+# Run the image: one container, server.js as the single child process.
+# -e VOLCES_API_KEY optional (server.js has a
 # fallback). The data volume persists /data across restarts.
 run:
 	docker run -d --name platform-dev \
@@ -104,6 +104,6 @@ test-live:
 	LIVE_SERVICE_URL="$(LIVE_SERVICE_URL)" PW_LIVE=1 npx playwright test --project=live
 
 # The smoke variant spends one LLM token and writes one chat session to the
-# deployed PVC. Run on demand to verify the full server -> LiteLLM -> Volces path.
+# deployed PVC. Run on demand to verify the full server -> gateway path.
 test-live-smoke:
 	LIVE_SERVICE_URL="$(LIVE_SERVICE_URL)" PW_LIVE=1 LIVE_SMOKE=1 npx playwright test --project=live

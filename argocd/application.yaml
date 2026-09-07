@@ -9,7 +9,7 @@
 #
 # repoURL uses HTTPS to reuse the law-ai-official org repo credential already
 # configured in ArgoCD (law-bench, lawai-web use the same). targetRevision is
-# the working branch; switch to `main` once the branch is merged.
+# `main`, the repo's default branch.
 #
 # Namespace is platform-private (hyphen, not underscore) — k8s RFC 1123 labels
 # forbid underscores. The Harbor PROJECT stays paas_private (Harbor allows
@@ -25,7 +25,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/law-ai-official/law-private.git
-    targetRevision: embed-openconnector
+    targetRevision: main
     path: k8s
   destination:
     server: https://kubernetes.default.svc

@@ -6,20 +6,13 @@
 #
 # `build-node.js` auto-matches the bundled standalone Node to the Node running
 # the build (process.version), so the native-addon ABI parity holds on whichever
-# Node `setup-node` provides. OpenConnector's git-pinned SHA is the only
-# platform-specific build artifact (Node is cross-platform).
+# Node `setup-node` provides. The bundled Node is the only build artifact and is
+# cross-platform.
 #
 # Signing is gated on secrets: when CSC_LINK / WIN_CSC_LINK (+ notarization
 # secrets) are present the installers are signed/notarized; when absent the
 # build still succeeds unsigned (CI smoke). See openspec change
 # `ci-build-installers`.
-#
-# Component selection (openspec change `bundle-manifest`): dispatch with a
-# `components` input to build a lean installer without editing
-# platform.bundle.json. Empty input (and tag pushes) build the manifest's
-# components as-is. PLATFORM_BUNDLE_COMPONENTS is workflow-level so it reaches
-# every job's predist/dist/cache steps; LEAN_SUFFIX marks dispatch artifacts so
-# a lean build is distinguishable from a full bundle.
 
 name: release
 
@@ -28,18 +21,6 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      components:
-        description: 'Components to bundle (comma-separated openconnector, or all/none). Empty = use platform.bundle.json as-is.'
-        required: false
-        default: ''
-        type: string
-
-env:
-  # Empty on tag pushes (no inputs context) -> manifest unchanged.
-  PLATFORM_BUNDLE_COMPONENTS: ${{ inputs.components || '' }}
-  # "-lean" for dispatch builds that select a subset; "" for full builds.
-  LEAN_SUFFIX: ${{ inputs.components != '' && inputs.components != 'all' && '-lean' || '' }}
 
 permissions:
   contents: write # softprops/action-gh-release creates/edits the Release
@@ -83,23 +64,19 @@ jobs:
           architecture: ${{ matrix.arch }}
           cache: 'npm'
 
-      # Cache the bundled resources (OpenConnector + Node). predist is
-      # idempotent and skips when present, so a cache hit turns the heaviest
-      # step (OpenConnector git clone) into a no-op. Keyed by OS + arch +
-      # package.json + the build scripts + platform.bundle.json + the resolved
-      # PLATFORM_BUNDLE_COMPONENTS, so a component-selection change never
-      # restores a stale all-components cache (openspec change `bundle-manifest`).
+      # Cache the bundled Node. predist is idempotent and skips when present,
+      # so a cache hit turns the download into a no-op. Keyed by OS + arch +
+      # package.json + the build scripts.
       - name: Cache resources/
         uses: actions/cache@v4
         with:
           path: resources
-          key: resources-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'scripts/build-*.js', 'scripts/verify-bundle.js', 'platform.bundle.json') }}-${{ env.PLATFORM_BUNDLE_COMPONENTS }}
+          key: resources-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('package.json', 'scripts/build-*.js', 'scripts/verify-bundle.js') }}
           # Same-arch only: do NOT fall back across arches (an arm64 cache
           # restored into the x64 job would skip the rebuild and ship arm64
-          # binaries in an x64 dmg). Scoped to the component selection too:
-          # a lean build must never restore an all-components cache.
+          # binaries in an x64 dmg).
           restore-keys: |
-            resources-${{ matrix.os }}-${{ matrix.arch }}-${{ env.PLATFORM_BUNDLE_COMPONENTS }}-
+            resources-${{ matrix.os }}-${{ matrix.arch }}-
 
       # postinstall installs web/ deps + builds web/dist AND builds the bundled
       # resources (when not cached). predist then ensures the bundled Node is
@@ -140,11 +117,7 @@ jobs:
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
-          # LEAN_SUFFIX ("-lean") marks dispatch builds that selected a subset,
-          # so lean artifacts are distinguishable from full-bundle ones.
-          # Tag-triggered (release) builds always keep the plain names the
-          # `release` job downloads.
-          name: platform-${{ matrix.artifact }}${{ env.LEAN_SUFFIX }}
+          name: platform-${{ matrix.artifact }}
           path: |
             dist/*.dmg
             dist/*.exe
