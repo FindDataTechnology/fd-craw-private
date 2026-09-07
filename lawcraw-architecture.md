@@ -5,9 +5,9 @@
   - Runtime: Node.js (ESM 模块，无转译/打包，原生 buildless 开发)
   - Framework: Express 4.x
   - WebSocket: ws 8.x
-  - AI SDK: @earendil-works/pi-coding-agent + @earendil-works/pi-ai (核心代理框架)
+  - AI 运行时: DeepSeek Harness (dsh) —— 通过 @deepseek-ai/dsh-sdk-client 以 stdio JSON-RPC 子进程方式驱动
   - RAG: LlamaIndex.TS (文档索引/检索)
-  - MCP: @modelcontextprotocol/sdk (Model Context Protocol 集成)
+  - MCP: dsh 一方插件 @deepseek-ai/dsh-mcp-client (Model Context Protocol 集成)
   - 存储: better-sqlite3, 文件系统 (原子写入)
   - 其他: multer (文件上传), dotenv (环境配置), undici (HTTP), node-schedule
 
@@ -27,11 +27,11 @@
   - Electron 43.x + electron-builder (打包为 macOS .dmg)
   - 架构: Electron 作为进程监督器，动态端口分配，健康检查后启动后端子进程
 
-  可选集成
+  LLM 接入
 
-  - LiteLLM: Python (1.53.11) LLM 网关/代理，通过 pi-provider-litellm 集成
-  - OpenConnector: 外部运行时，提供 1000+ SaaS 操作集成，通过 MCP 暴露
   - Volces/火山引擎: 默认 LLM 提供者
+  - 路由配置: dsh 一方的 dsh-llm 插件，读 $DSH_HOME/settings.yaml + .credentials.yaml（热重载）
+  - 外部 MCP server: 按需在 mcp.json 里声明，由 dsh-mcp-client 接入
 
   开发工具
 

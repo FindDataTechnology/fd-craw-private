@@ -6,16 +6,14 @@
     "saving": "Enregistrement…",
     "add": "Ajouter",
     "edit": "Modifier",
-    "delete": "Supprimer"
+    "delete": "Supprimer",
+    "close": "Fermer"
   },
   "nav": {
     "chat": "Discussion",
     "knowledge": "Connaissance",
     "agents": "Agents",
     "bots": "Bots",
-    "mcp": "Serveurs MCP",
-    "skills": "Compétences",
-    "models": "Modèles",
     "trace": "Traçage",
     "openMenu": "Ouvrir le menu de navigation"
   },
@@ -54,17 +52,7 @@
     "new": "+ Nouveau",
     "noChats": "Aucune discussion. Cliquez sur « + Nouveau ».",
     "untitled": "Sans titre",
-    "loadingModels": "Chargement des modèles…",
-    "clearChat": "Effacer la discussion",
-    "language": "Langue",
-    "modelChipHint": "Gérer les modèles"
-  },
-  "settingsMenu": {
-    "title": "Paramètres",
-    "status": "État du système",
-    "models": "Modèles LLM",
-    "openconnector": "OpenConnector",
-    "help": "Aide"
+    "language": "Langue"
   },
   "modelsPage": {
     "title": "Modèles",
@@ -144,7 +132,9 @@
       "model": "Modèle",
       "modelUnset": "Aucun modèle",
       "effort": "Réflexion",
-      "effortDefault": "Par défaut"
+      "effortDefault": "Par défaut",
+      "agent": "Agent",
+      "agentUnset": "Par défaut"
     }
   },
   "chat": {
@@ -179,7 +169,8 @@
     "header": {
       "editTitle": "Renommer la session",
       "titlePlaceholder": "Titre de la session",
-      "rename": "Enregistrer le nouveau titre"
+      "rename": "Enregistrer le nouveau titre",
+      "sessionActions": "Actions de session"
     },
     "titleTooLong": "Le titre doit comporter 200 caractères ou moins",
     "connectionLost": "Connexion perdue — reconnexion en cours…",
@@ -242,7 +233,6 @@
     "activeConfig": "Configuration active",
     "resources": "Ressources",
     "activeAgent": "Agent actif",
-    "openconnector": "OpenConnector",
     "enabled": "Activé",
     "disabled": "Désactivé",
     "documents": "Documents",
@@ -263,7 +253,9 @@
     "confirmTitle": "Supprimer cette discussion ?",
     "confirmBody": "Cette action est irréversible.",
     "cannotDeleteActive": "Basculez d'abord vers une autre session",
-    "deleteFailed": "Échec de la suppression : {{error}}"
+    "deleteFailed": "Échec de la suppression : {{error}}",
+    "clear": "Effacer",
+    "cannotClearInactive": "Basculez d'abord sur cette discussion"
   },
   "documents": {
     "title": "Documents",
@@ -432,6 +424,25 @@
       "feishu": "Feishu / Lark",
       "wecom": "WeCom",
       "wechat-oa": "Compte officiel WeChat"
+    }
+  },
+  "settings": {
+    "title": "Paramètres",
+    "sections": {
+      "general": "Général",
+      "models": "Modèles",
+      "mcp": "Serveurs MCP",
+      "skills": "Compétences",
+      "status": "État du système"
+    },
+    "general": {
+      "theme": "Thème",
+      "themeHint": "Suivre le système ou en choisir un.",
+      "themeOption": {
+        "light": "Clair",
+        "dark": "Sombre",
+        "system": "Système"
+      }
     }
   }
 }

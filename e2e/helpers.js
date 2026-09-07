@@ -47,7 +47,7 @@ export function cleanupTempStoreDirs() {
 // ── Chat-page helpers (React app under /chat/) ────────────────────────────────
 //
 // The React SPA is the sole frontend. `/` is served by the SPA which routes
-// to /chat; Documents/Dashboard/OpenConnector/LiteLLM are React routes.
+// to /chat; Documents/Dashboard are React routes.
 
 // Default the app to English for the test run. The app reads
 // localStorage["platform.locale"] at i18n init (before any page script), so
@@ -105,10 +105,9 @@ export async function gotoTrace(page) {
   await expect(page.getByTestId("trace-page")).toBeVisible({ timeout: 15000 });
 }
 
-// Navigate to the React System Status page (was Dashboard at /dashboard).
+// Navigate to the React System Status page — now Settings → System Status.
 export async function gotoDashboard(page) {
-  await pinLocaleEn(page);
-  await page.goto("/dashboard");
+  await openSettings(page, "status");
   await expect(page.getByTestId("system-status-page")).toBeVisible({ timeout: 15000 });
 }
 
@@ -120,33 +119,44 @@ export async function gotoAgents(page, tab) {
   await expect(page.getByTestId("agents-page")).toBeVisible({ timeout: 15000 });
 }
 
-// Navigate to the React MCP Servers page.
-export async function gotoMcp(page) {
+// Open the Settings modal at a given section, by URL.
+//
+// The single way tests reach a Settings section — deep-linking rather than
+// clicking the gear and then the section keeps a spec from breaking every time
+// the modal chrome moves. Specs that test the modal's OWN behavior (gear click,
+// keyboard shortcut, dismissal) drive it directly instead; that is the point of
+// those specs.
+export async function openSettings(page, section = "general") {
   await pinLocaleEn(page);
-  await page.goto("/mcp");
+  await page.goto(`/settings/${section}`);
+  await expect(page.getByTestId("settings-panel")).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId("settings-panel")).toHaveAttribute("data-section", section);
+}
+
+// Navigate to the React MCP Servers page — now Settings → MCP.
+export async function gotoMcp(page) {
+  await openSettings(page, "mcp");
   await expect(page.getByTestId("extensions-page")).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId("extensions-page")).toHaveAttribute("data-extensions-type", "mcp");
 }
 
-// Navigate to the React Skills page.
+// Navigate to the React Skills page — now Settings → Skills.
 export async function gotoSkills(page) {
-  await pinLocaleEn(page);
-  await page.goto("/skills");
+  await openSettings(page, "skills");
   await expect(page.getByTestId("extensions-page")).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId("extensions-page")).toHaveAttribute("data-extensions-type", "skills");
 }
 
-// Navigate to the React LLM Models page.
+// Navigate to the React LLM Models page — now Settings → Models.
 export async function gotoModels(page) {
-  await pinLocaleEn(page);
-  await page.goto("/models");
+  await openSettings(page, "models");
   await expect(page.getByTestId("models-page")).toBeVisible({ timeout: 15000 });
 }
 
-// Navigate to the React Extensions page (legacy URL — redirects to /mcp).
+// Legacy /extensions URL — must redirect into Settings → MCP.
 export async function gotoExtensions(page) {
   await pinLocaleEn(page);
   await page.goto("/extensions");
-  await expect(page).toHaveURL(/\/mcp$/);
+  await expect(page).toHaveURL(/\/settings\/mcp$/);
   await expect(page.getByTestId("extensions-page")).toBeVisible({ timeout: 15000 });
 }

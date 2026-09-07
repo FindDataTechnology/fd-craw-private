@@ -15,7 +15,7 @@
 import { findFreePort } from "./ports.js";
 import { getDescriptors } from "./descriptors.js";
 import { spawnServer, stopChild } from "./process.js";
-import { httpProbe, tcpProbe } from "./health.js";
+import { httpProbe } from "./health.js";
 import { LogStore } from "./logs.js";
 
 const HEALTH_POLL_MS = 3000; // ongoing probe interval
@@ -24,19 +24,15 @@ const START_TIMEOUT_MS = 120000; // how long to wait for a server to go green (s
 const RESTART_BACKOFFS = [1000, 2000, 5000, 10000, 15000];
 
 export class Supervisor {
-  constructor({ nodeBin, projectRoot, dataDir, agentEnv = {}, serverPort = null, ocPort = null }) {
+  constructor({ nodeBin, projectRoot, dataDir, agentEnv = {}, serverPort = null }) {
     this.nodeBin = nodeBin;
     this.projectRoot = projectRoot;
     this.dataDir = dataDir || "";
     this.agentEnv = agentEnv;
-    // When set (dev launcher), a server is pinned to this port instead of a free
-    // port. server-js pins to PORT (default 3000) so the Vite dev proxy
-    // (:5173 -> :3000) and the WS client (ws://localhost:3000) keep working.
-    // openconnector pins to the port parsed from a localhost *_BASE_URL in
-    // .env (so the URL the user sees is the URL that's spawned). Null -> findFreePort.
-    // LiteLLM/Postgres removed — dsh-llm manages LLM natively, no child process.
+    // When set (dev launcher), server-js is pinned to this port instead of a
+    // free port, so the Vite dev proxy (:5173 -> :3000) and the WS client
+    // (ws://localhost:3000) keep working. Null -> findFreePort.
     this.fixedServerPort = serverPort;
-    this.fixedOcPort = ocPort;
     this.servers = new Map(); // id -> state object
     this.logs = new LogStore();
     this.shuttingDown = false;
@@ -46,10 +42,8 @@ export class Supervisor {
 
   async start() {
     this.serverPort = this.fixedServerPort || (await findFreePort("127.0.0.1"));
-    this.ocPort = this.fixedOcPort || (await findFreePort("127.0.0.1"));
     const descriptors = getDescriptors({
       serverPort: this.serverPort,
-      ocPort: this.ocPort,
       projectRoot: this.projectRoot,
       nodeBin: this.nodeBin,
       dataDir: this.dataDir,
@@ -60,11 +54,7 @@ export class Supervisor {
         descriptor: d,
         state: "pending",
         pid: null,
-        port: d.transport === "http-port"
-          ? (d.id === "server-js" ? this.serverPort
-            : d.id === "openconnector" ? this.ocPort
-            : null)
-          : null,
+        port: d.transport === "http-port" && d.id === "server-js" ? this.serverPort : null,
         restartCount: 0,
         lastCheck: null,
         lastError: null,
@@ -75,33 +65,10 @@ export class Supervisor {
     // Ongoing health polling for all enabled servers.
     this.healthTimer = setInterval(() => this._pollAll(), HEALTH_POLL_MS);
 
-    // Spawn optional bundled sidecar (openconnector) FIRST, fire-and-
-    // forget, so it warms up while server.js starts. server.js connects to it
-    // (HTTP + MCP) at its own startup with retry; this head start avoids a race
-    // where server.js would reach it before it is ready. It is optional:
-    // a failure is non-fatal (tracked by health polling / restart-on-crash).
-    // http-external / disabled sidecars are NOT spawned here - the main loop
-    // below still handles them (health-probe external, mark disabled).
-    // LiteLLM/Postgres removed — only openconnector remains as a sidecar.
-    const SIDECARS = ["openconnector"];
-    const spawnedSidecars = new Set();
-    for (const id of SIDECARS) {
-      const s = this.servers.get(id);
-      if (!s) continue;
-      const d = s.descriptor;
-      if (!d.enabled || d.kind === "http-external") continue;
-      spawnedSidecars.add(id);
-      this._startServer(id).catch((e) => {
-        const cur = this.servers.get(id);
-        if (cur) { cur.state = "unhealthy"; cur.lastError = `start failed: ${e.message}`; }
-      });
-    }
-
-    // Start the remaining servers in dependency order (server-js is non-optional
-    // and awaited; http-external/disabled sidecars are probed/marked here).
-    // Optional failures are non-fatal.
+    // Start servers in dependency order. server-js is non-optional and awaited;
+    // http-external/disabled entries are probed/marked here. Optional failures
+    // are non-fatal.
     for (const id of this._startupOrder()) {
-      if (spawnedSidecars.has(id)) continue; // already started above
       const s = this.servers.get(id);
       const d = s.descriptor;
       if (!d.enabled) { s.state = "disabled"; continue; }
@@ -175,11 +142,8 @@ export class Supervisor {
     return false;
   }
 
-  // Transport-appropriate probe: TCP for descriptors with healthKind "tcp"
-  // (bundled Postgres, which does not speak HTTP), HTTP GET otherwise.
   async _probeHealth(s) {
     const d = s.descriptor;
-    if (d.healthKind === "tcp") return tcpProbe("127.0.0.1", s.port);
     if (!d.url) return false;
     return httpProbe(d.url + (d.healthPath || ""));
   }

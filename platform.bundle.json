@@ -1,7 +1,4 @@
 {
-  "components": {
-    "openconnector": { "include": false }
-  },
   "mcpServers": {},
   "skills": [
     "computer-file-system",

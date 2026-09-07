@@ -1,6 +1,6 @@
 # Deployment — Docker, Harbor, ArgoCD
 
-Platform ships as a **single full-stack container**: `server.js` + LiteLLM + OpenConnector + Postgres, all spawned as localhost child processes by the supervisor (`scripts/start.js` → `local-services.js`), exactly like `npm start`. One image, one process tree, one PVC.
+Platform ships as a **single-process container**: the supervisor (`scripts/start.js` → `local-services.js`) spawns `server.js`, which in turn runs the dsh agent as its child — exactly like `npm start`. One image, one process tree, one data volume.
 
 ```
 GitHub push ──► docker-deploy.yml ──► build image ──► push to Harbor
@@ -16,9 +16,9 @@ GitHub push ──► docker-deploy.yml ──► build image ──► push to 
 
 | Piece | Where | What |
 |---|---|---|
-| `Dockerfile` | repo root | Multi-stage build: compiles native addons + builds `web/dist` + runs `npm run predist` (builds Linux LiteLLM/Python, OpenConnector, Postgres, Node bundles), then copies into a slim runtime. Entrypoint `node scripts/start.js`. |
-| `.dockerignore` | repo root | Excludes built resource payload dirs (`resources/node`, `resources/python`, `resources/postgres`, `resources/openconnector`, `resources/litellm/venv`, `resources/litellm/prisma-engine`, `resources/**/*.tar.*`) so a host's mac/win binaries never leak into the Linux image. Keeps the tracked `resources/litellm/default-config.yaml` seed. |
-| `k8s/` | `namespace.yaml`, `pvc.yaml`, `service.yaml`, `deployment.yaml` | Plain manifests (no Helm). Deployment = 1 replica, Recreate strategy (RWO PVC + stateful agent). Service = NodePort 30950. PVC = 10Gi local-path. |
+| `Dockerfile` | repo root | Multi-stage build: compiles native addons + installs the pinned dsh CLI/profile into `/opt/dsh` + builds `web/dist` + runs `npm run predist` (`build-node` → the standalone Node in `resources/node`, then `verify-bundle`), then copies into a slim runtime. Entrypoint `node scripts/start.js`. |
+| `.dockerignore` | repo root | Excludes the built `resources/node` payload and any leftover `resources/**/*.tar.*` archives so a host's mac/win binaries never leak into the Linux image — the image builds its own Linux payload. Also excludes secrets (`.env*`, `mcp.json`) and dev-only trees (`electron`, `openspec`, `e2e`, the local store dirs). |
+| `k8s/` | `service.yaml`, `deployment.yaml` | Plain manifests (no Helm). Deployment = 1 replica, Recreate strategy (single stateful agent). |
 | `argocd/application.yaml` | ArgoCD Application CR | Watches `k8s/` in this repo, auto-sync prune+selfHeal, `CreateNamespace=true`, in-cluster destination (`https://kubernetes.default.svc`). |
 | `.github/workflows/docker-deploy.yml` | CI | Builds + pushes to Harbor (insecure HTTP), then commit-backs the new `sha-<short>` tag into `k8s/deployment.yaml` (GitOps). |
 | `Makefile` | repo root | `make build/run/logs/k8s-apply/k8s-deploy/argocd-sync` shortcuts. |
@@ -81,12 +81,12 @@ ArgoCD then watches `k8s/` and auto-syncs. Thereafter **never edit the live reso
 
 ## Local testing (Docker)
 
-> Requires Docker. The build downloads python-build-standalone + Node + Postgres tarballs (~300MB) and runs `pip install litellm[proxy]` — expect **10-20 min** for a cold build, ~2 min with the GHA cache.
+> Requires Docker. The build compiles native addons, installs the pinned dsh packages from npm, and downloads the Node standalone tarball — expect **5-10 min** for a cold build, ~2 min with the GHA cache.
 
 ```bash
 make build                              # docker build -t platform:dev .
 make run                                # -p 3000:3000 -v platform-data-dev:/data
-# cold start: Postgres initdb + LiteLLM prisma db push + OC warmup → 60-120s
+# cold start: server.js boot + dsh initialize handshake → ~60s
 make logs                               # tail until "Platform ready"
 curl http://localhost:3000/api/config   # health check
 open http://localhost:3000              # the app
@@ -106,13 +106,9 @@ make run VOLCES_API_KEY=your-key
 
 ```
 [local-services] Platform ready: http://localhost:3000
-[local-services]   server-js: local (healthy)
-[local-services]   postgres: local (healthy)
-[local-services]   litellm: local (healthy)
-[local-services]   openconnector: local (healthy)
 ```
 
-If a sidecar shows `absent` instead of `local`, the bundle build failed — re-run `make build` and check the build log for the failing `scripts/build-*.js` step.
+If the container exits instead, the supervisor dumps `server.js`'s log tail right before it — read that for the failing step.
 
 ---
 
@@ -141,7 +137,7 @@ make argocd-sync
 
 ### Steady-state deploys (after CI is wired)
 
-Every push to `main` or `embed-litellm-openconnector` (that touches source) triggers CI → builds `sha-<short>` + `latest` → pushes both → commits `sha-<short>` into `k8s/deployment.yaml` → ArgoCD auto-sync rolls out. **You do nothing.**
+Every push to `main` (that touches source) triggers CI → builds `sha-<short>` + `latest` → pushes both → commits `sha-<short>` into `k8s/deployment.yaml` → ArgoCD auto-sync rolls out. **You do nothing.**
 
 ### Inspect the deployment
 
@@ -175,14 +171,9 @@ harbor 30880, argocd 30910, minio 30900, lawcraw 30500, litellm 30400, …
 
 ## Resource sizing
 
-The single container runs Node + a Python venv (LiteLLM) + Postgres + OpenConnector. Defaults in `k8s/deployment.yaml`:
+The container runs a single Node process (`server.js`) plus the dsh agent child it spawns. Set `resources.requests` / `resources.limits` in `k8s/deployment.yaml` to suit the node; a Node + dsh pair is comfortable around 1 CPU / 1.5Gi requested with headroom to ~2Gi.
 
-```yaml
-requests: { cpu: 1000m, memory: 1500Mi }
-limits:   { cpu: 3000m, memory: 4Gi  }
-```
-
-Tune to node capacity. The startup window is generous (`startupProbe` 300s) because first-run Postgres `initdb` + LiteLLM `prisma db push` can take 1-3 min on a cold PVC.
+The startup window is generous (`startupProbe` allows several minutes) because the first boot has to seed the SQLite store and complete the dsh `initialize` handshake before `/api/config` answers.
 
 ---
 
@@ -191,8 +182,8 @@ Tune to node capacity. The startup window is generous (`startupProbe` 300s) beca
 | Symptom | Cause / fix |
 |---|---|
 | `ImagePullBackOff` (401 Unauthorized) | Two root causes, both one-time: (1) the `paas_private` Harbor project doesn't exist yet — Harbor returns **401** for unknown projects, which looks like an auth failure but isn't (create it in the Harbor UI or via admin API); (2) the `harbor-pull` imagePullSecret is missing in `platform-private` — the k3s containerd mirror does NOT honor the `registries.yaml` `auth` block for mirrored endpoints (see architecture note). Run `make k8s-logs` and check the pod events; a `401 Unauthorized` from `localhost:30880` means one of these. |
-| Pod restarts (OOMKilled) | Raise `limits.memory` in `k8s/deployment.yaml`. 4GB is the floor for all four services. |
-| `startupProbe` fails → `CrashLoopBackOff` | `make k8s-logs`; look for the supervisor's per-service log dump. Most common: first-run `prisma db push` needs `DATABASE_URL` (the supervisor injects it from the seeded Postgres). |
+| Pod restarts (OOMKilled) | Raise `limits.memory` in `k8s/deployment.yaml`. |
+| `startupProbe` fails → `CrashLoopBackOff` | `make k8s-logs`; look for the supervisor's `server.js` log dump. Most common: the dsh CLI is missing from `PATH` or its profile home is unwritable, so the `initialize` handshake never completes. |
 | ArgoCD shows `OutOfSync` on `Namespace` | Harmless — `CreateNamespace=true` created it; ArgoCD will self-heal. Or `make argocd-sync`. |
 | Image built with mac binaries | `.dockerignore` wasn't in the build context, or you built from a dir with stale `resources/`. Rebuild from a clean checkout. |
 | CI loop (workflow re-triggers itself) | The `paths:` filter excludes `k8s/**` and the commit message has `[skip ci]`. If you edit the filter, keep both guards. |
@@ -231,17 +222,15 @@ LIVE_SERVICE_URL=http://staging-host:30950 npm run test:e2e:live
 - A `list_models` WS round-trip returns a `models` response (the deployed agent
   session is live) - no tokens spent.
 - The sidebar shows all nav entries; `/dashboard` resolves via the SPA fallback.
-- If OpenConnector / LiteLLM are enabled in the deployed config, their embedded
-  iframe panels mount (same-origin `/oc-web` / `/litellm-web`).
 
 The read-only suite **never** writes chat history, uploads documents, switches
 models, or spends LLM tokens.
 
 ### Opt-in LLM round-trip (`@live-smoke`)
 
-To verify the full server -> LiteLLM -> Volces path with one real chat turn
+To verify the full server -> Volces path with one real chat turn
 (which **does** spend one LLM token and writes one chat session to the deployed
-PVC), run the smoke variant - gated behind `LIVE_SMOKE=1` so it never runs by
+data dir), run the smoke variant - gated behind `LIVE_SMOKE=1` so it never runs by
 default:
 
 ```bash
@@ -261,12 +250,10 @@ npm run test:e2e:live:smoke
 ## File map
 
 ```
-Dockerfile                          # multi-stage full-stack image build
+Dockerfile                          # multi-stage single-process image build
 .dockerignore                       # excludes built resource payloads + secrets
 Makefile                            # build/run/k8s/argocd shortcuts
 k8s/
-  namespace.yaml                    # platform-private (ArgoCD-managed)
-  pvc.yaml                          # 10Gi local-path RWO → /data
   service.yaml                      # NodePort 30950 → :3000
   deployment.yaml                   # 1 replica, Recreate, image tag set by CI
 argocd/

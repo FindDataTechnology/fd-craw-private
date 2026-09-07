@@ -2,9 +2,8 @@
 //
 // The supervisor assigns each spawned port-speaking server a free localhost
 // port at launch (Decision D9) to avoid collisions with the user's existing
-// services (e.g. their LiteLLM on :4000, OpenConnector on :3000, or a `npm
-// start` dev server on :3000). The chosen port is passed to the child as PORT
-// and used to build the URL the BrowserWindow loads.
+// services (e.g. a `npm start` dev server on :3000). The chosen port is passed
+// to the child as PORT and used to build the URL the BrowserWindow loads.
 
 import net from "node:net";
 

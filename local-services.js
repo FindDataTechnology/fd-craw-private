@@ -1,78 +1,40 @@
 // ── Headless local-services launcher (dev `npm start`) ───────────────────────
 //
-// Brings up the bundled OpenConnector locally - and server.js - for
-// non-Electron runs, reusing the SAME shared supervisor primitives
-// (supervisor/lifecycle.js) as the desktop Electron app. One lifecycle
-// implementation, two entry points.
-//
-// Per-service URL resolution: a localhost *_BASE_URL (or empty) spawns the
-// bundled service locally on that port (empty -> a free port); anything else ->
-// use that remote URL as-is.
+// Brings up server.js for non-Electron runs, reusing the SAME shared supervisor
+// primitives (supervisor/lifecycle.js) as the desktop Electron app. One
+// lifecycle implementation, two entry points.
 //
 // server.js is pinned to PORT (default 3000) so the Vite dev proxy
 // (:5173 -> :3000) and the WS client (ws://localhost:3000) keep working.
-// OpenConnector runs on the ports parsed from their .env URLs (or
-// free ports), injected into server.js's env so its modules need no code change.
 //
-// LiteLLM removed — dsh-llm manages LLM natively via settings.yaml +
-// .credentials.yaml hot-reload, no bundled child process needed.
+// LiteLLM and OpenConnector are no longer bundled — dsh's native plugins cover
+// LLM routing and SaaS connectors, so server.js is the only child process.
 import dotenv from "dotenv";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Supervisor } from "./supervisor/lifecycle.js";
-import { hasBundledOpenConnector } from "./supervisor/descriptors.js";
-import { resolveBundleSafe } from "./bundle-manifest.js";
-import { findFreePort } from "./supervisor/ports.js";
 import { runFirstRun } from "./bootstrap/first-run.js";
 
-// Load .env with override so PROJECT config wins over inherited shell env - e.g.
-// a globally-exported OPENCONNECTOR_BASE_URL from .zshrc must not force external mode
-// when .env has cleared it for local mode. (server.js stays no-override: the
-// supervisor injects the resolved localhost URLs into its child env directly.)
+// Load .env with override so PROJECT config wins over inherited shell env.
+// (server.js stays no-override: the supervisor injects resolved config into its
+// child env directly.)
 dotenv.config({ override: true });
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = __dirname;
 
 // Keys forwarded from .env into the agent env. Mirrors SETTING_KEYS in
-// electron/config/settings.js - the supervisor's descriptors read these to
-// decide bundled-vs-external and to wire the OC child env. Keep in sync.
-// LiteLLM keys removed since there's no bundled LiteLLM child process.
+// electron/config/settings.js. Keep in sync.
 const SETTING_KEYS = [
   "LLM_API_KEY",
   "LLM_BASE_URL",
-  "LLM_UPSTREAM_BASE_URL",
-  "LLM_UPSTREAM_KEY_1",
-  "LLM_UPSTREAM_KEY_2",
-  "VOLCES_PLAN_BASE_URL",
-  "VOLCES_PLAN_KEY_1",
-  "VOLCES_PLAN_KEY_2",
   "DATABASE_URL",
-  "OPENCONNECTOR_BASE_URL",
-  "OPENCONNECTOR_RUNTIME_TOKEN",
-  "OPENCONNECTOR_ADMIN_TOKEN",
   "DEFAULT_MODEL",
   "DOCUMENTS_MODEL",
 ];
 
 const DEV_SETTINGS_FILE = "dev-settings.json";
-
-// Classify a service base URL: empty or localhost -> spawn the bundled service
-// locally (on the parsed port, or a free port if none); anything else -> use
-// that remote URL as-is (external). Returns { mode: "local"|"external", port }.
-function parseServiceUrl(raw) {
-  const url = (raw || "").trim();
-  if (!url) return { mode: "local", port: null };
-  try {
-    const u = new URL(url);
-    const isLocal = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "::1";
-    if (isLocal) return { mode: "local", port: u.port ? Number(u.port) : null };
-    return { mode: "external", port: null };
-  } catch {
-    return { mode: "external", port: null };
-  }
-}
 
 // Is a TCP port free on localhost? (bind + immediately release.)
 function isPortFree(port, host = "127.0.0.1") {
@@ -84,62 +46,27 @@ function isPortFree(port, host = "127.0.0.1") {
   });
 }
 
-// Use `preferred` if it is free, otherwise grab a free port. The .env URL port
-// is a HINT - if it collides with another service on the user's machine, we fall
-// back so the bundled service still starts. The supervisor injects the ACTUAL
-// URL into server.js, so server.js finds the service regardless.
-async function resolvePort(preferred, label) {
-  if (preferred && (await isPortFree(preferred))) return preferred;
-  if (preferred) console.warn(`[local-services] ${label}: port ${preferred} in use; using a free port instead`);
-  return findFreePort("127.0.0.1");
-}
-
 export async function main() {
   const env = process.env;
   const dataDir = env.PLATFORM_DATA_DIR || PROJECT_ROOT;
   const resourcesDir = path.join(PROJECT_ROOT, "resources");
   const nodeBin = env.PLATFORM_NODE_BIN || process.execPath;
 
-  // Resolve each service URL: a localhost URL (or empty) means "spawn the
-  // bundled service locally" on the parsed port (or a free port if empty); a
-  // non-localhost URL means "use that remote server as-is". So .env can
-  // explicitly say OPENCONNECTOR_BASE_URL=http://localhost:3001 to run the
-  // project's internal OpenConnector on port 3001 - and that's the URL server.js sees.
-  const oc = parseServiceUrl(env.OPENCONNECTOR_BASE_URL);
-
-  // First-run seeding: generate the credentials the bundled processes need
-  // (OC runtime/admin tokens) when absent. Idempotent + atomic. Persisted to
-  // dev-settings.json under the data dir (NOT the user's .env). Only fires for
-  // bundled services.
-  // LiteLLM seeding removed — no bundled LiteLLM child process needs LITELLM_API_KEY.
-  const seeded = runFirstRun({
+  runFirstRun({
     userDataDir: dataDir,
     resourcesDir,
     defaultSettings: {},
     settingsFileName: DEV_SETTINGS_FILE,
   });
 
-  // Assemble agentEnv: forward .env keys, but for LOCALLY-spawned services skip
-  // the *_BASE_URL (the supervisor injects the resolved localhost URL into
-  // server.js's env) and use the seeded (generated) credentials. For external
-  // services, forward the .env URL + credentials so the remote proxy is reached
-  // with the user's own key/token (the seeder's generated local creds are ignored).
   const agentEnv = {};
   for (const k of SETTING_KEYS) {
-    if (k === "OPENCONNECTOR_BASE_URL" && oc.mode === "local") continue;
     if (env[k] != null && env[k] !== "") agentEnv[k] = String(env[k]);
   }
-  if (oc.mode === "local") {
-    if (seeded.OPENCONNECTOR_RUNTIME_TOKEN) agentEnv.OPENCONNECTOR_RUNTIME_TOKEN = seeded.OPENCONNECTOR_RUNTIME_TOKEN;
-    if (seeded.OPENCONNECTOR_ADMIN_TOKEN) agentEnv.OPENCONNECTOR_ADMIN_TOKEN = seeded.OPENCONNECTOR_ADMIN_TOKEN;
-  }
 
-  // Resolve ports. server.js pins to PORT (default 3000) - the Vite dev proxy
-  // (:5173 -> :3000) and the WS client (ws://localhost:3000) expect it, so a
-  // conflict here is a hard error with a clear message. OpenConnector PREFER
-  // the port parsed from its .env URL but fall back to a free port if
-  // it's in use, so common ports (3001) on the user's machine don't block
-  // startup. server.js gets the actual URL injected either way.
+  // server.js pins to PORT (default 3000) — the Vite dev proxy (:5173 -> :3000)
+  // and the WS client (ws://localhost:3000) expect it, so a conflict here is a
+  // hard error with a clear message rather than a silent fallback.
   const serverPort = Number(env.PORT) || 3000;
   if (!(await isPortFree(serverPort))) {
     console.error(
@@ -149,7 +76,6 @@ export async function main() {
     );
     process.exit(1);
   }
-  const ocPort = await resolvePort(oc.port, "OpenConnector");
 
   const supervisor = new Supervisor({
     nodeBin,
@@ -157,7 +83,6 @@ export async function main() {
     dataDir,
     agentEnv,
     serverPort,
-    ocPort,
   });
 
   // Ordered shutdown on interrupt - the supervisor sets `shuttingDown` so its
@@ -177,9 +102,6 @@ export async function main() {
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-  // start() spawns server-js (non-optional; throws if unhealthy) and the
-  // optional openconnector (non-blocking: a failure marks them
-  // unhealthy without aborting). So a successful return means server.js is up.
   try {
     await supervisor.start();
   } catch (err) {
@@ -200,36 +122,6 @@ export async function main() {
     process.exit(1);
   }
 
-  // One-line per-service summary: local / external / absent / excluded.
-  // "excluded (manifest)" = the bundle manifest (or PLATFORM_BUNDLE_COMPONENTS
-  // override) deselected this component; the descriptor fell through to the
-  // http-external branch (D4). "absent" = selected but resources/ not built.
-  const bundleSel = resolveBundleSafe({ projectRoot: PROJECT_ROOT }).components;
   console.log(`\n[local-services] Platform ready: http://localhost:${supervisor.serverPort}`);
-  for (const s of st) {
-    if (s.id === "server-js") continue;
-    let mode;
-    if (s.state === "disabled" && s.kind === "http-external") {
-      mode = bundleSel[s.id] === false ? "excluded (manifest)" : "absent";
-    } else if (s.kind === "http-external") {
-      mode = "external";
-    } else {
-      mode = "local";
-    }
-    const url = s.url ? ` ${s.url}` : "";
-    console.log(`[local-services]   ${s.id}: ${mode} (${s.state})${url}`);
-  }
-  // If the user asked for local services (localhost URL) but the bundled
-  // resources aren't built, tell them how to get them. Only mention components
-  // the manifest actually selects — deselected components are intentionally
-  // absent (the summary already said "excluded (manifest)").
-  const missing = [];
-  if (bundleSel.openconnector && oc.mode === "local" && !hasBundledOpenConnector(PROJECT_ROOT)) missing.push("OpenConnector");
-  if (missing.length) {
-    console.warn(
-      `[local-services] ⚠️  Bundled ${missing.join(" + ")} resources not found. ` +
-        `Run \`npm run predist\` (or \`npm install\` without PLATFORM_SKIP_BUNDLE) to build them.`
-    );
-  }
   console.log("\n[local-services] Press Ctrl+C to stop.\n");
 }

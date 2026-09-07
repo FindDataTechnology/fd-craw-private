@@ -10,8 +10,6 @@ contextBridge.exposeInMainWorld("platform", {
   // Set a settings field
   setSettingField: (key, value) => ipcRenderer.invoke("settings:set-field", { key, value }),
 
-  // Regenerate OpenConnector tokens (never returns the tokens)
-  rotateOpenConnectorTokens: () => ipcRenderer.invoke("openconnector:rotate-tokens"),
 
   // Restart a service after changes
   restartService: (id) => ipcRenderer.invoke("service:restart", { id }),

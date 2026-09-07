@@ -7,21 +7,9 @@
 //     tree-sitter) run on the bundled Node's standard ABI - no rebuild.
 //   - extraResources: resources/node → <app>/Resources/node  (the bundled Node)
 //   - mac arm64 + win x64 targets. The bundled-resource build (scripts/build-*.js)
-//     is cross-platform Node; only OpenConnector needs host-specific build steps.
-//
-// Bundle manifest: which heavyweight components ship is driven by
-// platform.bundle.json (+ the PLATFORM_BUNDLE_COMPONENTS override) via
-// resolveBundle() — deselected components are NOT added to extraResources, so
-// they never land in the installer. An invalid manifest throws → the build
-// fails (the manifest IS the build input; silently falling back would ship the
-// wrong payload).
+//     is cross-platform Node.
 //
 // Build with:  npm run dist
-
-import { resolveBundle } from "./bundle-manifest.js";
-
-const bundle = resolveBundle();
-const sel = bundle.components;
 
 /** @type {import('electron-builder').Configuration['extraResources']} */
 const extraResources = [
@@ -31,29 +19,6 @@ const extraResources = [
     filter: ["**/*", "!*.tar.gz"],
   },
 ];
-
-if (sel.openconnector) {
-  extraResources.push({
-    from: "resources/openconnector/",
-    to: "openconnector/",
-    filter: [
-      "**/*",
-      "!**/*.md",
-      "!**/*.markdown",
-      "!**/LICENSE",
-      "!**/LICENCE",
-      "!**/*.map",
-      "!**/test/**",
-      "!**/tests/**",
-      "!**/docs/**",
-      "!**/.github/**",
-      "!**/examples/**",
-      "!**/docker/**",
-      "!**/assets/**",
-      "!**/web/**",
-    ],
-  });
-}
 
 /** @type {import('electron-builder').Configuration} */
 const config = {

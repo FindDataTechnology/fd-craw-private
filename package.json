@@ -10,9 +10,9 @@
   "scripts": {
     "start": "node scripts/start.js",
     "start:electron": "electron .",
-    "predist": "node scripts/build-openconnector.js && node scripts/build-node.js && node scripts/verify-bundle.js",
+    "predist": "node scripts/build-node.js && node scripts/verify-bundle.js",
     "dist": "npm run web:build && node node_modules/electron-builder/cli.js --publish never",
-    "clean:bundle": "rm -rf resources/openconnector",
+    "clean:bundle": "rm -rf resources/node",
     "test:e2e": "playwright test --project=fast",
     "test:e2e:smoke": "playwright test --project=smoke",
     "test:e2e:live": "PW_LIVE=1 playwright test --project=live",
@@ -25,7 +25,7 @@
     "web:build": "npm run check:locales && npm --prefix web run build",
     "web:build:e2e": "npm run check:locales && npm --prefix web run build:e2e",
     "web:dev": "npm --prefix web run dev",
-    "postinstall": "node scripts/postinstall-web.js && node scripts/postinstall-bundle.js"
+    "postinstall": "node scripts/postinstall-web.js"
   },
   "dependencies": {
     "@deepseek-ai/dsh-sdk-client": "^0.0.1-rc.1",
@@ -49,11 +49,6 @@
     "@playwright/test": "latest",
     "electron": "^43.1.1",
     "electron-builder": "^26.15.3",
-    "execa": "^10.0.0",
-    "tsx": "^4.23.1",
     "typescript": "^7.0.2"
-  },
-  "platformBundles": {
-    "openconnectorSha": "0dfc73e5f826f2efdcacf274347d7a8284b7d9dd"
   }
 }

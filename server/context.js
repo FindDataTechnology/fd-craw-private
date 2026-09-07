@@ -13,7 +13,6 @@
 
 import path from "node:path";
 import * as chatHistory from "../chat-history.js";
-import * as openConnector from "../open-connector.js";
 import * as documents from "../documents.js";
 import * as collections from "../collections.js";
 import * as db from "../db.js";
@@ -49,7 +48,6 @@ export function createAppContext(config) {
 
     // ── Service singletons ──────────────────────────────────────────────────
     chatHistory,
-    openConnector,
     documents,
     collections,
     db,

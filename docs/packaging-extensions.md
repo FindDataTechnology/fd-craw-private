@@ -2,18 +2,17 @@
 
 构建安装包（`npm run dist`）或打包应用时，你可以**预装** MCP 服务器、**随包分发**技能，让最终用户首次运行即获得——无需配置、无需编辑 `.env` 或 `mcp.json`。这由仓库根目录的打包清单 `platform.bundle.json` 驱动，它是"一次构建包含什么"的唯一事实来源，并随打包应用一起分发（见 `electron-builder.js` 的 `files:`）。
 
-清单有四个键。本文覆盖其中两个扩展相关键——`mcpServers` 与 `skills`——外加控制它们的 `permissions`。（`components` 用于选择重量级服务；见 [README 的 Bundle manifest 章节](../README.md)。）
+清单有三个键：`mcpServers`、`skills`，以及控制它们的 `permissions`。
 
 ```json
 {
-  "components": { "openconnector": { "include": true } },
   "mcpServers": {},
   "skills": ["computer-file-system", "computer-process", "computer-shell", "example-skill"],
   "permissions": {}
 }
 ```
 
-> **所有消费方都经 `bundle-manifest.js` 里的 `resolveBundle()` 读取此文件**——没人直接解析 JSON。无效清单（坏 JSON、未知键、错误权限键）会让构建脚本失败，运行时记错误日志并回退默认（全组件、无打包扩展）。
+> **所有消费方都经 `bundle-manifest.js` 里的 `resolveBundle()` 读取此文件**——没人直接解析 JSON。无效清单（坏 JSON、未知顶层键、错误权限键）会让构建脚本失败（`resolveBundle()` 抛 `BundleManifestError`）；运行时走 `resolveBundleSafe()`，记一条警告并回退空默认（无打包扩展），确保损坏的清单绝不阻止应用启动。
 
 ---
 
@@ -125,7 +124,6 @@ description: 这个技能做什么、何时使用。一两句话。
 
 ```json
 {
-  "components": { "openconnector": { "include": true } },
   "mcpServers": {
     "memory": {
       "command": "npx",
@@ -155,21 +153,11 @@ description: 这个技能做什么、何时使用。一两句话。
 ## 5. 构建与验证
 
 ```bash
-npm run predist   # 按解析出的组件集构建内置资源
+npm run predist   # 构建内置资源（build-node → resources/node，再 verify-bundle）
 npm run dist      # electron-builder → 安装包（mac .dmg / win .exe）
 ```
 
-清单相关开关：
-
-- `PLATFORM_BUNDLE_COMPONENTS=all|none|openconnector` —— 无需编辑文件即可覆盖组件选择（CI 精简构建、本地测试）。
-- `PLATFORM_BUNDLE_MANIFEST=/abs/path.json` —— 让运行时指向不同的清单文件。用它来**在发布前测试你的扩展清单**：
-
-```bash
-# 用一次性清单构建精简本地运行，观察 Installed 标签如何播种它
-PLATFORM_BUNDLE_MANIFEST=/tmp/test-bundle.json PLATFORM_BUNDLE_COMPONENTS=openconnector npm start
-```
-
-- CI：release 工作流的 `workflow_dispatch` 接受 `components` 输入（语法同 `PLATFORM_BUNDLE_COMPONENTS`）；精简 dispatch 构建的上传产物带 `-lean` 后缀。
+改完清单后，直接 `npm start` 跑一次本地运行，在 **Extensions → Installed** 标签里确认条目按预期播种（启用/禁用、是否锁定），再出安装包。清单校验失败时构建脚本会直接报错并指出是哪个键。
 
 ---
 
@@ -178,11 +166,11 @@ PLATFORM_BUNDLE_MANIFEST=/tmp/test-bundle.json PLATFORM_BUNDLE_COMPONENTS=openco
 | 位置 | 作用 |
 |---|---|
 | `platform.bundle.json` | 清单（开发时在仓库根，打包后在 `Resources/app/`）。 |
-| `bundle-manifest.js` | `resolveBundle()` / `resolveBundleSafe()` —— 唯一解析器；校验、覆盖。 |
+| `bundle-manifest.js` | `resolveBundle()` / `resolveBundleSafe()` —— 唯一解析器；校验、回退。 |
 | `server.js` `initAgent()` | 会话创建前连接启用的清单 `mcpServers`；把每项播种进扩展 DB（`origin: "bundled"`，INSERT-OR-IGNORE）。 |
 | `server.js` `/api/extensions/*` | 扩展管理 API —— 列表/增/改/删 MCP 配置与自定义技能。锁定的打包条目变更返回 400。 |
 | `extension-store.js` | DB 层（`seedMcpServer`、`seedExtensionConfig`）；`origin` / `locked` / `permissions` 列。 |
-| `electron-builder.js` | 分发 `platform.bundle.json` + `skills/**`；内置组件的 `extraResources`。 |
+| `electron-builder.js` | 分发 `platform.bundle.json` + `skills/**`。 |
 | 规范 | `openspec/specs/bundle-manifest/spec.md`（正式需求 + 场景）。 |
 
 ---
@@ -193,18 +181,17 @@ PLATFORM_BUNDLE_MANIFEST=/tmp/test-bundle.json PLATFORM_BUNDLE_COMPONENTS=openco
 
 When you build an installer (`npm run dist`) or bundle the app, you can **pre-install** MCP servers and **ship** skills so end users get them on first run — no setup, no editing `.env` or `mcp.json`. This is driven by the bundle manifest `platform.bundle.json` at the repo root, the single source of truth for what a build contains, shipped inside the packaged app (see `electron-builder.js` `files:`).
 
-The manifest has four keys. This doc covers the two for extensions — `mcpServers` and `skills` — plus the `permissions` that control them. (`components` selects heavyweight services; see the [Bundle manifest section in README](../README.md).)
+The manifest has three keys: `mcpServers`, `skills`, and the `permissions` that control them.
 
 ```json
 {
-  "components": { "openconnector": { "include": true } },
   "mcpServers": {},
   "skills": ["computer-file-system", "computer-process", "computer-shell", "example-skill"],
   "permissions": {}
 }
 ```
 
-> **Every consumer resolves this file through `resolveBundle()` in `bundle-manifest.js`** — nobody parses the JSON directly. An invalid manifest (bad JSON, unknown key, malformed permission key) fails the build scripts and makes the runtime log an error and fall back to the defaults (all components, no bundled extensions).
+> **Every consumer resolves this file through `resolveBundle()` in `bundle-manifest.js`** — nobody parses the JSON directly. An invalid manifest (bad JSON, unknown top-level key, malformed permission key) fails the build scripts (`resolveBundle()` throws `BundleManifestError`); at runtime `resolveBundleSafe()` logs a warning and falls back to the empty defaults (no bundled extensions), so a corrupt manifest never prevents the app from starting.
 
 ---
 
@@ -316,7 +303,6 @@ Ship a disabled-but-visible http MCP, a locked stdio MCP, and two new skills:
 
 ```json
 {
-  "components": { "openconnector": { "include": true } },
   "mcpServers": {
     "memory": {
       "command": "npx",
@@ -346,21 +332,11 @@ Result on first run: the `memory` MCP is connected, seeded, and locked; `corp-ga
 ## 5. Build and verify
 
 ```bash
-npm run predist   # build the bundled resources for the resolved component set
+npm run predist   # build the bundled resources (build-node → resources/node, then verify-bundle)
 npm run dist      # electron-builder → installers (mac .dmg / win .exe)
 ```
 
-Manifest-aware knobs:
-
-- `PLATFORM_BUNDLE_COMPONENTS=all|none|openconnector` — override component selection without editing the file (CI lean builds, local testing).
-- `PLATFORM_BUNDLE_MANIFEST=/abs/path.json` — point the runtime at a different manifest file. Use this to **test your extensions manifest before shipping**:
-
-```bash
-# build a lean local run with a throwaway manifest and see the Installed tab seed it
-PLATFORM_BUNDLE_MANIFEST=/tmp/test-bundle.json PLATFORM_BUNDLE_COMPONENTS=openconnector npm start
-```
-
-- CI: the release workflow's `workflow_dispatch` takes a `components` input (same syntax as `PLATFORM_BUNDLE_COMPONENTS`); lean dispatch builds upload artifacts with a `-lean` suffix.
+After editing the manifest, run `npm start` once locally and check the **Extensions → Installed** tab to confirm entries seeded as intended (enabled/disabled, locked or not) before cutting an installer. If validation fails, the build scripts error out naming the offending key.
 
 ---
 
@@ -369,9 +345,9 @@ PLATFORM_BUNDLE_MANIFEST=/tmp/test-bundle.json PLATFORM_BUNDLE_COMPONENTS=openco
 | Where | What |
 |---|---|
 | `platform.bundle.json` | Manifest (repo root in dev, inside `Resources/app/` when packaged). |
-| `bundle-manifest.js` | `resolveBundle()` / `resolveBundleSafe()` — the only parser; validation, overrides. |
+| `bundle-manifest.js` | `resolveBundle()` / `resolveBundleSafe()` — the only parser; validation, fallback. |
 | `server.js` `initAgent()` | Connects enabled manifest `mcpServers` before session creation; seeds each into the extensions DB (`origin: "bundled"`, INSERT-OR-IGNORE). |
 | `server.js` `/api/extensions/*` | Extensions management API — list/add/edit/delete MCP configs and custom skills. Locked bundled entries reject mutation with 400. |
 | `extension-store.js` | DB layer (`seedMcpServer`, `seedExtensionConfig`); `origin` / `locked` / `permissions` columns. |
-| `electron-builder.js` | Ships `platform.bundle.json` + `skills/**`; `extraResources` for bundled components. |
+| `electron-builder.js` | Ships `platform.bundle.json` + `skills/**`. |
 | Spec | `openspec/specs/bundle-manifest/spec.md` (formal requirements + scenarios). |

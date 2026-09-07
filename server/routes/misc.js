@@ -1,15 +1,14 @@
 // Misc routes: identity introspection, agent/app catalog, Nango connect
 // broker, server config, supervisor status, preferences — plus the static SPA
 // serving, registered separately (registerStaticAndFallback) so the
-// composition root can place it after the app's /api routes and before the
-// OpenConnector catch-all proxies, exactly matching the pre-split order.
+// composition root can place it after the app's /api routes.
 
 import path from "node:path";
 import express from "express";
 import { WEB_DIST } from "../context.js";
 
 export function registerMiscRoutes(ctx) {
-  const { app, catalog, openConnector, db } = ctx;
+  const { app, catalog, db } = ctx;
 
   // Identity introspection: lets the frontend render login state without
   // inspecting headers. email/groups are null when auth is off.
@@ -83,10 +82,9 @@ export function registerMiscRoutes(ctx) {
     res.status(ctx.ready.dsh ? 200 : 503).json({ ready: ctx.ready.dsh });
   });
 
-  // ── Server config (e.g. openconnector / documents state) ──────────────────
+  // ── Server config (documents state) ───────────────────────────────────────
   app.get("/api/config", (_req, res) => {
     res.json({
-      openconnectorEnabled: openConnector.openConnectorEnabled,
       documentsEnabled: db.isDbReady(),
     });
   });
@@ -107,13 +105,6 @@ export function registerMiscRoutes(ctx) {
           pid: process.pid,
           port: ctx.PORT,
           url: `http://localhost:${ctx.PORT}`,
-        },
-        {
-          id: "openconnector",
-          name: "OpenConnector runtime",
-          kind: openConnector.openConnectorEnabled ? "http-external" : "disabled",
-          state: openConnector.openConnectorEnabled ? "healthy" : "disabled",
-          url: openConnector.getRuntimeBase() || null,
         },
       ],
       provider: ctx.defaultModel ? ctx.defaultModel.provider : null,
@@ -144,19 +135,14 @@ export function registerMiscRoutes(ctx) {
 }
 
 // Static SPA serving + deep-link fallback. Must be registered after the app's
-// /api routes and before the OpenConnector /assets|/v1|/api catch-all proxies
-// (so dist files win over the proxy, matching the pre-split order).
+// /api routes and before the /external/:appId proxies (so dist files win).
 export function registerStaticAndFallback(ctx) {
   const { app } = ctx;
-  // The React app's Vite `base` is `/chat/`, so its assets self-reference as
-  // `/chat/assets/...` — no conflict with legacy `/assets/...` from OpenConnector.
   app.use(express.static(WEB_DIST));
   // SPA fallback: any GET that isn't an API route, proxy path, or static asset
-  // serves index.html so the client router handles it. /v1/* is excluded so the
-  // OpenConnector /v1 reverse-proxy routes - registered after this - are not
-  // shadowed by this fallback (which would serve index.html for the embedded
-  // SPA's API calls).
-  app.get(/^\/(?!api\/|oc-web|external\/|assets\/|v1\/|v2\/|ui|key\/|spend\/|model\/|sso\/|login|logout|user\/|get_image|get_favicon|get\/).*/, (_req, res) => {
+  // serves index.html so the client router handles it. `assets/` stays excluded
+  // so a missing bundle 404s instead of silently returning index.html.
+  app.get(/^\/(?!api\/|external\/|assets\/).*/, (_req, res) => {
     res.sendFile(path.join(WEB_DIST, "index.html"));
   });
 }

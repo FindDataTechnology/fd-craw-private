@@ -41,11 +41,13 @@ test.describe("Models page", () => {
     await expect(page.getByTestId("llm-add-provider")).toBeVisible();
   });
 
-  test("sidebar model chip navigates to /models", async ({ page }) => {
+  test("sidebar gear opens Settings, where Models lives", async ({ page }) => {
     await pinLocaleEn(page);
     await page.goto("/chat/");
-    await page.getByTestId("model-chip").click();
-    await expect(page).toHaveURL(/\/models$/);
+    await page.getByTestId("settings-btn").click();
+    await expect(page.getByTestId("settings-panel")).toBeVisible();
+    await page.getByTestId("settings-section-models").click();
+    await expect(page).toHaveURL(/\/settings\/models$/);
     await expect(page.getByTestId("models-page")).toBeVisible();
   });
 

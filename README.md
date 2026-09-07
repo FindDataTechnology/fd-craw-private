@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/FindDataTechnology/fd-craw-private/actions/workflows/ci.yml/badge.svg)](https://github.com/FindDataTechnology/fd-craw-private/actions/workflows/ci.yml)
 
-> **当前版本 v1.3.0** · 基于 DeepSeek Harness (dsh) 运行时构建的浏览器聊天界面，支持第一方知识 RAG（Documents）与 OpenConnector SaaS 动作代理。
+> **当前版本 v1.3.0** · 基于 DeepSeek Harness (dsh) 运行时构建的浏览器聊天界面，内置第一方知识 RAG（Documents）。
 
 本文档默认使用**中文**，英文版见文末 [English](#english)。
 
@@ -11,7 +11,7 @@
 ## 目录
 
 - [快速开始](#快速开始)
-- [本地服务（npm start）](#本地服务npm-start)
+- [启动方式（npm start）](#启动方式npm-start)
 - [配置](#配置)
 - [架构概览](#架构概览)
 - [如何添加 MCP 服务器](#如何添加-mcp-服务器)
@@ -30,24 +30,28 @@ npm start          # http://localhost:3000（无头启动器）
 npm run web:dev    # Vite 开发服务器 :5173，HMR（后端需同时在 :3000 运行）
 ```
 
-`npm start` 运行无头启动器（`scripts/start.js`），在 `resources/` 已构建的前提下，把项目**内置的本地** OpenConnector（Node/tsx）作为 localhost 子进程拉起，再启动 `server.js`。LLM 管理由 dsh 自带的 `dsh-llm` 插件（`settings.yaml` + `.credentials.yaml` 热重载）负责。
+`npm start` 运行无头启动器（`scripts/start.js`），由 supervisor 托管 `server.js` 这唯一一个子进程——负责加载 `.env`、健康检查、崩溃重启与日志采集。LLM 路由由 dsh 自带的 `dsh-llm` 插件（`settings.yaml` + `.credentials.yaml` 热重载）负责，SaaS 连接器由 `dsh-mcp-client` 插件负责，因此项目不再打包或部署任何额外的网关/代理服务。
 
-> 直接 `node server.js` 只会跑后端，不会拉起 OC 子进程；此时 OpenConnector 面板会退回"未配置"占位态。
+> 直接 `node server.js` 也能跑起后端，但会跳过 supervisor 的配置注入与守护；日常开发请用 `npm start`。
 
-### 先构建资源
+### 打包前先构建资源
 
 ```bash
-npm run predist   # 构建 OpenConnector、独立 Node
-npm start         # 然后才能拉起本地服务
+npm run predist   # 下载与当前 Node 版本匹配的独立 Node 到 resources/node/
+npm run dist      # 然后才能打包安装程序
 ```
 
 ---
 
-## 本地服务（npm start）
+## 启动方式（npm start）
 
-- **本地模式：** `.env` 里设 `OPENCONNECTOR_BASE_URL=http://localhost:3001`——启动器会在该端口拉起内置服务。
-- **远程模式：** 把 URL 改成远程地址，启动器直接使用，不拉起本地进程。
-- **未打包：** 启动器退化为仅运行 `server.js`。
+启动器只管理 `server.js` 一个进程：
+
+- **端口：** 固定 `PORT`（默认 3000），保证 Vite 开发代理（:5173 → :3000）与 WS 客户端可用。
+- **健康检查：** 探测 `/api/config`，未就绪不放行。
+- **优雅降级：** 缺失的可选配置只记录警告，服务始终能启动。
+
+如果你想接入自建的 LLM 代理或 SaaS 连接器网关，自行部署后按 MCP 服务器（`mcp.json`）或目录里的 `external-service` 条目接入即可。
 
 完整架构参考见 `CLAUDE.md`。
 
@@ -60,13 +64,15 @@ npm start         # 然后才能拉起本地服务
 | 变量 | 作用 |
 |---|---|
 | `LLM_API_KEY` / `LLM_BASE_URL` | 默认 LLM 提供商（OpenAI 兼容网关）。`server.js` 内置回退 key。 |
-| `OPENCONNECTOR_BASE_URL` (+ `TOKEN` 系列) | 启用 OpenConnector 面板与内嵌 UI（`/oc-web`）。未设 = 禁用。 |
+| `DEFAULT_MODEL` | 默认聊天模型（须是 `dsh-profile.js` 声明的模型 id 之一）。 |
 | `PORT` / `HOST` | 监听地址（默认 `3000` / `localhost`）。 |
 | `PLATFORM_DATA_DIR` | 磁盘存储根目录（SQLite、会话等）。 |
 | `AUTH_MODE` | 可选登录。`forward_auth` 信任反代注入的身份头。未设 = 开放访问。 |
 | `AGENTS_CONFIG_URL` / `CATALOG_REFRESH_SECS` | Agent/应用目录云端 JSON，每 N 秒刷新（默认 60）。 |
 | `NANGO_SECRET_KEY` | Nango connect session 密钥（服务端用，不发往浏览器）。 |
 | `DOCUMENTS_MODEL` | Documents RAG 模型（默认 `deepseek-v4-pro`）。 |
+
+想接入自建的 LLM 代理或 SaaS 连接器网关？自行部署后，按 MCP 服务器（`mcp.json`）或目录里的 `external-service` 条目接入即可——项目本身不再附带这两类服务。
 
 ---
 
@@ -77,9 +83,9 @@ npm start         # 然后才能拉起本地服务
 - **`dsh-profile.js`** — 写 dsh profile（`settings.yaml`、MCP patch、skills patch）。
 - **`documents.js`** — 第一方文档 RAG（LlamaIndex.TS + PageIndex + SQLite）。
 - **`chat-history.js`** — 只读聊天持久化（每个 turn 镜像到 SQLite）。
-- **`open-connector.js`** — OpenConnector 反向代理。**token 留在服务端**。
+- **`server/routes/external-services.js`** — 目录中 `external-service` 应用的 `/external/:appId` 反向代理。**token 留在服务端**。
 - **`electron/`** — 桌面 supervisor（进程管理，不跑业务逻辑）。
-- **`web/`** — 唯一前端（Vite + React 19 + TypeScript + Tailwind v4 + shadcn）。路由：`/chat`、`/documents`、`/dashboard`、`/extensions`、`/agents`、`/openconnector`。
+- **`web/`** — 唯一前端（Vite + React 19 + TypeScript + Tailwind v4 + shadcn）。路由：`/chat`、`/knowledge`、`/dashboard`、`/mcp`、`/skills`、`/models`、`/trace`、`/agents`、`/bots`、`/external/:appId`。
 - **`skills/`** — 本地技能（`SKILL.md`），用 `/skill:<name>` 调用。
 
 ---
@@ -131,7 +137,7 @@ description: 一句话描述功能。
 ## 如何打包软件
 
 ```bash
-npm run predist   # 构建内置资源
+npm run predist   # 构建打包资源（独立 Node）
 npm run dist      # electron-builder → .dmg (mac) / .exe (win)
 npm run start:electron  # 桌面开发模式
 ```
@@ -165,7 +171,7 @@ Platform 现在基于 **DeepSeek Harness (dsh)**，一个 subprocess 运行时�
 
 # English
 
-> **Current version v1.3.0** — a browser-based chat interface built on the **DeepSeek Harness (dsh)** runtime, with first-party document RAG (Documents) and an OpenConnector SaaS-actions proxy.
+> **Current version v1.3.0** — a browser-based chat interface built on the **DeepSeek Harness (dsh)** runtime, with first-party document RAG (Documents).
 
 ## Quick start
 
@@ -175,15 +181,15 @@ npm start          # http://localhost:3000 (headless launcher)
 npm run web:dev    # Vite on :5173 with HMR (backend must also run on :3000)
 ```
 
-`npm start` runs the headless launcher (`scripts/start.js`) to bring up the **bundled local** OpenConnector (Node/tsx) as a localhost child process, then starts `server.js`. LLM management is handled natively by the bundled `dsh-llm` plugin (`settings.yaml` + `.credentials.yaml` hot-reload) — no LiteLLM child process.
+`npm start` runs the headless launcher (`scripts/start.js`), which supervises a single child process — `server.js` — handling `.env` loading, health checks, restart-on-crash and log capture. LLM routing is handled natively by the bundled `dsh-llm` plugin (`settings.yaml` + `.credentials.yaml` hot-reload) and SaaS connectors by `dsh-mcp-client`, so the project bundles and deploys no additional gateway or proxy service.
 
-> Directly running `node server.js` will NOT spawn OC; the OpenConnector panel will show "not configured".
+> Running `node server.js` directly also works, but skips the supervisor's config injection and supervision. Use `npm start` for day-to-day work.
 
-### Build resources first
+### Build resources before packaging
 
 ```bash
-npm run predist   # build OpenConnector, standalone Node
-npm start         # then start the local services
+npm run predist   # download the standalone Node matching your Node version into resources/node/
+npm run dist      # then package the installers
 ```
 
 ---
@@ -195,13 +201,15 @@ Everything sensitive lives in **`.env`** and **`mcp.json`** (both gitignored; te
 | Variable | Purpose |
 |---|---|
 | `LLM_API_KEY` / `LLM_BASE_URL` | Default LLM provider (OpenAI-compatible gateway). Fallback key baked into `server.js`. |
-| `OPENCONNECTOR_BASE_URL` (+ `TOKEN`s) | Enables the OpenConnector panel and embedded UI (`/oc-web`). Unset = disabled. |
+| `DEFAULT_MODEL` | Default chat model (must be one of the model ids declared in `dsh-profile.js`). |
 | `PORT` / `HOST` | Bind address (default `3000` / `localhost`). |
 | `PLATFORM_DATA_DIR` | Root for all on-disk stores (SQLite, sessions, cron). |
 | `AUTH_MODE` | Optional login. `forward_auth` trusts proxy-injected identity headers. Unset = open access. |
 | `AGENTS_CONFIG_URL` / `CATALOG_REFRESH_SECS` | Cloud JSON for agent/app catalog, refreshed every N seconds (default 60). |
 | `NANGO_SECRET_KEY` | Server-side Nango secret for connect sessions (never sent to browser). |
 | `DOCUMENTS_MODEL` | Documents RAG model (default `deepseek-v4-pro`). |
+
+Want a self-hosted LLM proxy or a SaaS-connector gateway? Run it yourself and wire it in as an MCP server (`mcp.json`) or as an `external-service` entry in the catalog — the project no longer ships either one.
 
 ---
 
@@ -212,9 +220,9 @@ Everything sensitive lives in **`.env`** and **`mcp.json`** (both gitignored; te
 - **`dsh-profile.js`** — writes dsh profile (`settings.yaml`, MCP patch, skills patch).
 - **`documents.js`** — first-party document RAG (LlamaIndex.TS + PageIndex + SQLite).
 - **`chat-history.js`** — read-only chat persistence (mirrors each turn to SQLite).
-- **`open-connector.js`** — OpenConnector reverse proxy. **Tokens stay server-side.**
+- **`server/routes/external-services.js`** — `/external/:appId` reverse proxy for catalog `external-service` apps. **Tokens stay server-side.**
 - **`electron/`** — desktop supervisor (process management only).
-- **`web/`** — sole frontend (Vite + React 19 + TypeScript + Tailwind v4 + shadcn). Routes: `/chat`, `/documents`, `/dashboard`, `/extensions`, `/agents`, `/openconnector`.
+- **`web/`** — sole frontend (Vite + React 19 + TypeScript + Tailwind v4 + shadcn). Routes: `/chat`, `/knowledge`, `/dashboard`, `/mcp`, `/skills`, `/models`, `/trace`, `/agents`, `/bots`, `/external/:appId`.
 - **`skills/`** — local skills (`SKILL.md`), invoked via `/skill:<name>`.
 
 ---
@@ -266,7 +274,7 @@ Restart and invoke via `/skill:my-skill <args>`. Template: `skills/example-skill
 ## How to package the software
 
 ```bash
-npm run predist   # build bundled resources
+npm run predist   # build packaging resources (standalone Node)
 npm run dist      # electron-builder → .dmg (mac) / .exe (win)
 npm run start:electron  # desktop dev mode
 ```

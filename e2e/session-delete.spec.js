@@ -101,3 +101,50 @@ test.describe("session right-click delete", () => {
     expect(r.status()).toBe(409);
   });
 });
+
+// Clear lives in the same menu as Delete now (it was a standing sidebar
+// button). It clears the DISPLAYED turns, and the store's clearView takes no
+// session id — so it is only meaningful for the active session and is disabled
+// elsewhere. Without that guard, clearing an inactive row would silently wipe
+// the active conversation's view.
+test.describe("session menu — clear", () => {
+  test("enabled on the active session, disabled on any other", async ({ page }) => {
+    await gotoChat(page);
+
+    const rows = page.getByTestId("session-row");
+    await expect(rows.first()).toBeVisible({ timeout: 15000 });
+
+    const active = page.locator('[data-testid="session-row"][data-current="true"]').first();
+    await active.click({ button: "right" });
+    await expect(page.getByTestId("session-menu-clear")).toBeEnabled();
+    await page.keyboard.press("Escape");
+
+    const inactive = page.locator('[data-testid="session-row"][data-current="false"]').first();
+    const hasInactive = (await inactive.count()) > 0;
+    test.skip(!hasInactive, "needs a second session");
+
+    await inactive.click({ button: "right" });
+    await expect(page.getByTestId("session-menu-clear")).toBeDisabled();
+  });
+
+  test("clearing the active session empties the log", async ({ page }) => {
+    await gotoChat(page);
+    // Seed a turn through the e2e seam so this needs no LLM call.
+    await page.evaluate(() => {
+      window.__chatStore.setState({
+        turns: [{ id: "t1", role: "user", text: "hello", blocks: [] }],
+      });
+    });
+    await expect
+      .poll(() => page.evaluate(() => window.__chatStore.getState().turns.length))
+      .toBeGreaterThan(0);
+
+    const active = page.locator('[data-testid="session-row"][data-current="true"]').first();
+    await active.click({ button: "right" });
+    await page.getByTestId("session-menu-clear").click();
+
+    await expect
+      .poll(() => page.evaluate(() => window.__chatStore.getState().turns.length))
+      .toBe(0);
+  });
+});

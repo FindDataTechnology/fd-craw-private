@@ -15,9 +15,8 @@
 // specific release). Runs during `npm run predist`. Skips if already built.
 //
 // mac arm64/x64 + win x64 (the electron-builder targets) + linux x64 (Docker
-// image build) are built; the script exits 0 (no-op) elsewhere. Mirrors
-// scripts/build-openconnector.js: uses `curl` + `tar` (both shipped on
-// Windows 10+, macOS, and Linux) so no bash.
+// image build) are built; the script exits 0 (no-op) elsewhere. Uses `curl` +
+// `tar` (both shipped on Windows 10+, macOS, and Linux) so no bash.
 
 import fs from "node:fs";
 import path from "node:path";

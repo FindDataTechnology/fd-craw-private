@@ -39,7 +39,7 @@ export function registerPreferencesIpc(supervisor) {
   // Allow only these keys to be read/written
   const ALLOWED_VISIBLE_KEYS = ["LLM_API_KEY", "LLM_BASE_URL", "DEFAULT_MODEL", "DOCUMENTS_MODEL"];
   const ALLOWED_WRITE_KEYS = ["LLM_API_KEY", "LLM_BASE_URL", "DEFAULT_MODEL", "DOCUMENTS_MODEL"];
-  const ALLOWED_SERVICE_RESTART = ["server-js", "openconnector"];
+  const ALLOWED_SERVICE_RESTART = ["server-js"];
 
   // Get whitelisted visible settings
   ipcMain.handle("settings:get-visible", () => {
@@ -48,7 +48,6 @@ export function registerPreferencesIpc(supervisor) {
     for (const k of ALLOWED_VISIBLE_KEYS) {
       if (k in all) visible[k] = all[k];
     }
-    // Never return OC tokens
     return visible;
   });
 
@@ -60,17 +59,6 @@ export function registerPreferencesIpc(supervisor) {
     const current = readSettings();
     current[key] = value;
     writeSettings(current);
-    return { ok: true };
-  });
-
-  // Rotate OpenConnector tokens (never return the new tokens to renderer)
-  ipcMain.handle("openconnector:rotate-tokens", async () => {
-    const crypto = require("node:crypto");
-    const current = readSettings();
-    current.OPENCONNECTOR_RUNTIME_TOKEN = crypto.randomBytes(32).toString("hex");
-    current.OPENCONNECTOR_ADMIN_TOKEN = crypto.randomBytes(32).toString("hex");
-    writeSettings(current);
-    // Tokens never leave main process
     return { ok: true };
   });
 

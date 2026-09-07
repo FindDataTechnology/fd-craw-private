@@ -26,17 +26,13 @@ export function ExtensionsPage({ type }: ExtensionsPageProps) {
     load();
   }, [load]);
 
-  const title = type === "mcp" ? t("extensions.mcp.title") : t("extensions.skills.title");
-  const description = type === "mcp" ? t("extensions.mcp.description") : t("extensions.skills.description");
-
+  // No page header: this renders as a Settings section, and the modal's nav
+  // already names it. The old <h1> duplicated that label, and its subtitle
+  // read `extensions.mcp.description` — a key that was never defined in any
+  // locale (check-locales verifies parity across locales, not existence, so it
+  // passed). Deleting the header removes the duplication and the broken key.
   return (
     <div className="flex flex-col h-full bg-background" data-testid="extensions-page" data-extensions-type={type}>
-      {/* Header */}
-      <div className="border-b border-border px-6 py-4">
-        <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
-        <p className="text-sm text-muted-foreground mt-1">{description}</p>
-      </div>
-
       {/* Tabs */}
       <div className="border-b border-border px-6">
         <nav className="flex gap-4">

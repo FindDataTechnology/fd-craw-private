@@ -89,10 +89,6 @@ export default defineConfig({
             ...process.env,
             PORT: String(E2E_PORT),
             HOST: "127.0.0.1",
-            // The e2e suite runs `node server.js` directly (no launcher, no bundled
-            // OC). Disable OpenConnector so server.js doesn't spend ~30s retrying its
-            // MCP connection. OC views are tested via stubConfig, not a real runtime.
-            OPENCONNECTOR_BASE_URL: "",
             // Hermetic-mode defaults: only fill gaps — dotenv keeps real .env values.
             LLM_API_KEY: process.env.LLM_API_KEY || "sk-e2e-dummy-key",
             LLM_BASE_URL: process.env.LLM_BASE_URL || "http://127.0.0.1:9/v1",

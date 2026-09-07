@@ -113,7 +113,6 @@
 <body>
   <div class="tabs">
     <div class="tab active" data-tab="general">General</div>
-    <div class="tab" data-tab="openconnector">OpenConnector</div>
   </div>
 
   <div class="tab-panel active" data-panel="general">
@@ -132,14 +131,6 @@
     <div class="actions">
       <button id="saveGeneral">Save & Restart Server</button>
       <span id="generalStatus"></span>
-    </div>
-  </div>
-
-  <div class="tab-panel" data-panel="openconnector">
-    <p>OpenConnector authentication tokens are generated automatically and never shown in the UI for security. Clicking "Regenerate" will invalidate all existing tokens and create new ones.</p>
-    <div class="actions">
-      <button id="rotateTokens" class="secondary">Regenerate Tokens</button>
-      <span id="ocStatus"></span>
     </div>
   </div>
 

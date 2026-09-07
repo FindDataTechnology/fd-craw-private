@@ -1,19 +1,23 @@
-// Left nav: brand, tabs, session list, model select + status + clear.
+// Left nav: brand, work-surface tabs, session list, status + settings.
+//
+// The tabs are WORK SURFACES only — places you go to look at or produce
+// something. Configuration (models, MCP, skills, system status) lives in the
+// Settings modal behind the gear, so the nav stays a short, stable list rather
+// than mixing the product with its admin panel.
+//
 // Nav items use react-router <NavLink> for in-app navigation (no page reload,
 // WebSocket stays connected). The active route is highlighted automatically.
 // All visible labels resolve through the i18n bundle (keys, not literals);
 // tab identity/ordering/icons are stable across locales.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { Bot, BookOpen, MessageSquare, Settings, Sparkles, Waypoints } from "lucide-react";
 import { useChatStore } from "@/hooks/useChatStore";
-import { useLanguage } from "@/i18n/useLanguage";
-import type { Locale } from "@/i18n/config";
 import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
-import { SettingsMenu } from "@/components/SettingsMenu";
 import { ChatSessionMenu } from "@/components/ChatSessionMenu";
-import { HelpDialog } from "@/components/HelpDialog";
+import { settingsPath } from "@/components/settings/sections";
 
 interface Props {
   send: (m: ClientMessage) => void;
@@ -21,39 +25,29 @@ interface Props {
   onNavigate?: () => void;
 }
 
+// Icon is part of a tab's identity and stays fixed across locales — the label
+// translates, the glyph does not.
 const NAV_BASE = [
-  { to: "/chat", key: "nav.chat", testId: "nav-chat" },
-  { to: "/knowledge", key: "nav.knowledge", testId: "nav-knowledge" },
-  { to: "/agents", key: "nav.agents", testId: "nav-agents" },
-  { to: "/bots", key: "nav.bots", testId: "nav-bots" },
-  { to: "/mcp", key: "nav.mcp", testId: "nav-mcp" },
-  { to: "/skills", key: "nav.skills", testId: "nav-skills" },
-  { to: "/models", key: "nav.models", testId: "nav-models" },
-  { to: "/trace", key: "nav.trace", testId: "nav-trace" },
+  { to: "/chat", key: "nav.chat", testId: "nav-chat", icon: MessageSquare },
+  { to: "/knowledge", key: "nav.knowledge", testId: "nav-knowledge", icon: BookOpen },
+  { to: "/agents", key: "nav.agents", testId: "nav-agents", icon: Sparkles },
+  { to: "/bots", key: "nav.bots", testId: "nav-bots", icon: Bot },
+  { to: "/trace", key: "nav.trace", testId: "nav-trace", icon: Waypoints },
 ];
 
 export function Sidebar({ send, onNavigate }: Props) {
   const { t, i18n } = useTranslation();
-  const { locale, locales, changeLocale } = useLanguage();
   const status = useChatStore((s) => s.status);
-  const models = useChatStore((s) => s.models);
-  const currentModel = useChatStore((s) => s.currentModel);
-  const currentEffort = useChatStore((s) => s.currentEffort);
   const sessions = useChatStore((s) => s.sessions);
   const currentSessionId = useChatStore((s) => s.currentSessionId);
-  const isStreaming = useChatStore((s) => s.isStreaming);
-  const clearView = useChatStore((s) => s.clearView);
-  const agents = useChatStore((s) => s.agents);
-  const currentAgent = useChatStore((s) => s.currentAgent);
   const catalogVersion = useChatStore((s) => s.catalogVersion);
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Right-click context menu on session rows: one trigger ref per row, one
   // popover anchored to the row that fired the event.
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [menuTarget, setMenuTarget] = useState<{ id: string; el: HTMLElement } | null>(null);
-  // The help center's second entry point (settings menu → 帮助).
-  const [helpOpen, setHelpOpen] = useState(false);
 
   // The server bumps catalogVersion via `catalog_changed`; refetch the
   // switchable agent list so catalog/role edits appear live.
@@ -81,23 +75,27 @@ export function Sidebar({ send, onNavigate }: Props) {
       <div className="border-b border-border p-4 text-base font-semibold">{t("sidebar.brand")}</div>
 
       <div className="flex flex-col gap-0.5 p-2">
-        {nav.map((n) => (
-          <NavLink
-            key={n.to}
-            to={n.to}
-            data-testid={n.testId}
-            onClick={() => onNavigate?.()}
-            className={({ isActive }) =>
-              cn(
-                "rounded-md px-3 py-2 text-left text-sm text-muted-foreground",
-                "hover:bg-muted hover:text-foreground",
-                isActive && "bg-primary-deep text-primary-foreground hover:bg-primary-deep hover:text-primary-foreground",
-              )
-            }
-          >
-            {t(n.key)}
-          </NavLink>
-        ))}
+        {nav.map((n) => {
+          const Icon = n.icon;
+          return (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              data-testid={n.testId}
+              onClick={() => onNavigate?.()}
+              className={({ isActive }) =>
+                cn(
+                  "flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground",
+                  "hover:bg-muted hover:text-foreground",
+                  isActive && "bg-primary-deep text-primary-foreground hover:bg-primary-deep hover:text-primary-foreground",
+                )
+              }
+            >
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {t(n.key)}
+            </NavLink>
+          );
+        })}
       </div>
 
       {/* Session list */}
@@ -177,73 +175,29 @@ export function Sidebar({ send, onNavigate }: Props) {
         />
       )}
 
-      {/* Footer: agent + model select, status, clear */}
-      <div className="flex flex-col gap-2 border-t border-border p-3">
-        <select
-          value={currentAgent ?? "local"}
-          disabled={isStreaming || agents.length === 0}
-          onChange={(e) => send({ type: "set_agent", id: e.target.value })}
-          data-testid="agent-select"
-          className={cn(
-            "w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs text-foreground",
-            "focus:border-primary focus:outline-none",
-            "disabled:cursor-not-allowed disabled:opacity-50",
-          )}
-        >
-          {agents.length === 0 && <option>{t("common.loading")}</option>}
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name || a.id}
-            </option>
-          ))}
-        </select>
-        {/* Model chip: read-only. The real configuration (add/edit/remove
-            providers, set the default) lives on the /models page; the chip
-            shows the current default model and navigates there on click. The
-            legacy in-sidebar <select> is removed per the model-selection spec. */}
-        <button
-          type="button"
-          onClick={() => navigate("/models")}
-          title={t("sidebar.modelChipHint")}
-          data-testid="model-chip"
-          className={cn(
-            "w-full truncate rounded-md border border-input bg-background px-2 py-1.5 text-left text-xs text-foreground",
-            "hover:border-primary/60 hover:bg-accent",
-            "disabled:cursor-not-allowed disabled:opacity-50",
-          )}
-        >
-          {currentModel
-            ? (models.find((m) => m.id === currentModel)?.name || currentModel) +
-              (currentEffort ? ` · ${currentEffort}` : "")
-            : t("sidebar.loadingModels")}
-        </button>
+      {/* Footer: one row. Connection status on the left, Settings on the right.
+          The agent select, model chip, clear button and locale select that used
+          to stack here have moved to the control strip, the session menu, and
+          Settings respectively — none of them belonged in a permanent rail. */}
+      <div
+        className="flex shrink-0 items-center justify-between gap-2 border-t border-border p-3"
+        data-testid="sidebar-footer"
+      >
         <StatusRow status={status} />
         <button
-          onClick={clearView}
-          data-testid="clear-btn"
-          className="rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          type="button"
+          onClick={() => {
+            navigate(settingsPath("general"), { state: { backgroundLocation: location } });
+            onNavigate?.();
+          }}
+          aria-label={t("settings.title")}
+          title={t("settings.title")}
+          data-testid="settings-btn"
+          className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
         >
-          {t("sidebar.clearChat")}
+          <Settings className="h-4 w-4" />
         </button>
-        <select
-          value={locale}
-          onChange={(e) => changeLocale(e.target.value as Locale)}
-          data-testid="locale-select"
-          aria-label={t("sidebar.language")}
-          className={cn(
-            "w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs text-foreground",
-            "focus:border-primary focus:outline-none",
-          )}
-        >
-          {locales.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.label}
-            </option>
-          ))}
-        </select>
-        <SettingsMenu onHelp={() => setHelpOpen(true)} />
       </div>
-      <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </nav>
   );
 }

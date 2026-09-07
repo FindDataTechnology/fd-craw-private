@@ -6,16 +6,14 @@
     "saving": "Saving…",
     "add": "Add",
     "edit": "Edit",
-    "delete": "Delete"
+    "delete": "Delete",
+    "close": "Close"
   },
   "nav": {
     "chat": "Chat",
     "knowledge": "Knowledge",
     "agents": "Agents",
     "bots": "Bots",
-    "mcp": "MCP Servers",
-    "skills": "Skills",
-    "models": "Models",
     "trace": "Trace",
     "openMenu": "Open navigation menu"
   },
@@ -54,17 +52,7 @@
     "new": "+ New",
     "noChats": "No chats yet. Click \"+ New\".",
     "untitled": "Untitled",
-    "loadingModels": "Loading models…",
-    "clearChat": "Clear chat",
-    "language": "Language",
-    "modelChipHint": "Manage models"
-  },
-  "settingsMenu": {
-    "title": "Settings",
-    "status": "System Status",
-    "models": "LLM Models",
-    "openconnector": "OpenConnector",
-    "help": "Help"
+    "language": "Language"
   },
   "modelsPage": {
     "title": "Models",
@@ -144,7 +132,9 @@
       "model": "Model",
       "modelUnset": "No model",
       "effort": "Thinking",
-      "effortDefault": "Default"
+      "effortDefault": "Default",
+      "agent": "Agent",
+      "agentUnset": "Default"
     }
   },
   "chat": {
@@ -179,7 +169,8 @@
     "header": {
       "editTitle": "Rename session",
       "titlePlaceholder": "Session title",
-      "rename": "Save new title"
+      "rename": "Save new title",
+      "sessionActions": "Session actions"
     },
     "titleTooLong": "Title must be 200 characters or fewer",
     "connectionLost": "Connection lost — reconnecting…",
@@ -242,7 +233,6 @@
     "activeConfig": "Active Configuration",
     "resources": "Resources",
     "activeAgent": "Active Agent",
-    "openconnector": "OpenConnector",
     "enabled": "Enabled",
     "disabled": "Disabled",
     "documents": "Documents",
@@ -263,7 +253,9 @@
     "confirmTitle": "Delete this chat?",
     "confirmBody": "This cannot be undone.",
     "cannotDeleteActive": "Switch to another session first",
-    "deleteFailed": "Failed to delete: {{error}}"
+    "deleteFailed": "Failed to delete: {{error}}",
+    "clear": "Clear",
+    "cannotClearInactive": "Switch to this chat first"
   },
   "documents": {
     "title": "Documents",
@@ -432,6 +424,25 @@
       "feishu": "Feishu / Lark",
       "wecom": "WeCom",
       "wechat-oa": "WeChat Official Account"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "sections": {
+      "general": "General",
+      "models": "Models",
+      "mcp": "MCP Servers",
+      "skills": "Skills",
+      "status": "System Status"
+    },
+    "general": {
+      "theme": "Theme",
+      "themeHint": "Follow your system, or pick one.",
+      "themeOption": {
+        "light": "Light",
+        "dark": "Dark",
+        "system": "System"
+      }
     }
   }
 }

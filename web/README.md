@@ -3,8 +3,8 @@
 Platform 的 React 聊天界面。本目录是自包含的 Vite + React + TypeScript 工作区；仓库根目录的 Node 后端不受迁移影响。
 
 - **定位**：Platform 的唯一前端 —— 一个 React SPA（Vite + React 19 + TypeScript + Tailwind v4 + shadcn 风格原语 + `react-router-dom`），承载所有视图。Markdown 渲染、代码高亮，以及把 thinking / tool / skill 块按产出它们的 assistant 分组展示的对话轮次。旧的 vanilla `public/` 目录已删除。
-- **路由**：`/chat`（默认）、`/chat/:sessionId`、`/documents`、`/dashboard`、`/extensions`、`/openconnector`、`/litellm`。OpenConnector + LiteLLM 是第三方项目，以 `<iframe>` 包在 `/oc-web`、`/litellm-web` 同源代理里；Documents、Dashboard、Extensions 是一方 React 页面。
-- **页面结构**：`src/pages/`（`ChatPage`、`DocumentsPage`、`DashboardPage`、`ExtensionsPage`、`EmbeddedServicePages`）。状态放在 `src/hooks/` 的 zustand store（`useChatStore`、`useDocumentsStore`、`useExtensionsStore`）；API 客户端在 `src/lib/`。侧边栏（`src/components/Sidebar.tsx`）用 `<NavLink>` 做应用内导航，跨视图不重载、WebSocket 保持连接。
+- **路由**：`/chat`（默认）、`/chat/:sessionId`、`/knowledge`、`/dashboard`、`/mcp`、`/skills`、`/models`、`/trace`、`/trace/:turnId`、`/agents`、`/bots`、`/external/:appId`。除 `/external/:appId` 外全部是一方 React 页面；`/external/:appId` 把目录（`agents.json`）里声明的 `external-service` 应用以 `<iframe>` 嵌进同源的 `/external/:appId` 代理，token 由服务端注入、不进浏览器。
+- **页面结构**：`src/pages/`（`ChatPage`、`DocumentsPage`、`DashboardPage`、`ExtensionsPage`、`ModelsPage`、`TracePage`、`AgentsPage`、`BotsPage`、`EmbeddedServicePages`）。状态放在 `src/hooks/` 的 zustand store（`useChatStore`、`useDocumentsStore`、`useExtensionsStore`）；API 客户端在 `src/lib/`。侧边栏（`src/components/Sidebar.tsx`）用 `<NavLink>` 做应用内导航，跨视图不重载、WebSocket 保持连接。
 - **国际化（i18n）**：用 react-i18next，语言文件在 `src/locales/{en,zh-CN,es,fr,ja}/common.json`。`en` 是源与默认，`zh-CN` 等是并行翻译。活动语言在启动时解析（本地存储选择 → 浏览器语言最佳匹配 → `en`），见 `src/i18n/config.ts` 与 `src/i18n/useLanguage.ts`。
 - **规范**：`openspec/changes/port-views-react-bundle-dmg/`。
 
@@ -25,8 +25,8 @@ npm start            # 在 / 提供 React SPA（唯一前端）
 ```bash
 npm run web:dev
 # Vite 在 http://localhost:5173/
-# Node 后端必须同时在 :3000 运行；开发服务器把 /api、/oc-web、/external
-# 等代理到它，WebSocket 由客户端在运行时直连 :3000（见 src/hooks/useWebSocket.ts）。
+# Node 后端必须同时在 :3000 运行；开发服务器把 /api 与 /external
+# 代理到它，WebSocket 由客户端在运行时直连 :3000（见 src/hooks/useWebSocket.ts）。
 ```
 
 ### 跳过构建
@@ -44,7 +44,7 @@ PLATFORM_SKIP_WEB_BUILD=1 npm install
 ```
 web/
 ├── package.json            # 仅前端依赖
-├── vite.config.ts          # base: "/"、开发代理（api/oc-web/external 等）
+├── vite.config.ts          # base: "/"、开发代理（/api、/external）
 ├── tsconfig.json           # strict、noUncheckedIndexedAccess
 ├── components.json         # shadcn CLI 配置（备用）
 ├── index.html              # Vite 入口
@@ -69,7 +69,11 @@ web/
     │   ├── DocumentsPage.tsx
     │   ├── DashboardPage.tsx
     │   ├── ExtensionsPage.tsx
-    │   └── EmbeddedServicePages.tsx  # OpenConnector / LiteLLM iframe 封装
+    │   ├── ModelsPage.tsx
+    │   ├── TracePage.tsx
+    │   ├── AgentsPage.tsx
+    │   ├── BotsPage.tsx
+    │   └── EmbeddedServicePages.tsx  # ExternalService 应用的 iframe 封装
     └── components/
         ├── Sidebar.tsx
         ├── Chat.tsx
@@ -112,8 +116,8 @@ Shiki 是最大的单一依赖。为控制体积，我们从 `shiki/core` 与显
 React chat surface for the Platform. This directory is a self-contained Vite + React + TypeScript workspace; the Node backend under the repo root is untouched.
 
 - **Purpose**: the sole frontend — a React SPA (Vite + React 19 + TypeScript + Tailwind v4 + shadcn-style primitives + `react-router-dom`) hosting every view. Markdown rendering, code highlighting, and turns that group thinking / tool / skill blocks under the assistant that produced them. The legacy vanilla `public/` directory has been deleted.
-- **Routes**: `/chat` (default), `/chat/:sessionId`, `/documents`, `/dashboard`, `/extensions`, `/openconnector`, `/litellm`. OpenConnector + LiteLLM are third-party projects embedded as `<iframe>` wrappers around the `/oc-web` and `/litellm-web` same-origin proxies. Documents, Dashboard, and Extensions are first-party React pages.
-- **Page structure**: `src/pages/` (`ChatPage`, `DocumentsPage`, `DashboardPage`, `ExtensionsPage`, `EmbeddedServicePages`). State lives in `src/hooks/` zustand stores (`useChatStore`, `useDocumentsStore`, `useExtensionsStore`); API clients in `src/lib/`. The sidebar (`src/components/Sidebar.tsx`) uses `<NavLink>` for in-app navigation so the WebSocket stays connected across views.
+- **Routes**: `/chat` (default), `/chat/:sessionId`, `/knowledge`, `/dashboard`, `/mcp`, `/skills`, `/models`, `/trace`, `/trace/:turnId`, `/agents`, `/bots`, `/external/:appId`. Everything except `/external/:appId` is a first-party React page; `/external/:appId` embeds an `external-service` app declared in the catalog (`agents.json`) as an `<iframe>` over the same-origin `/external/:appId` proxy, with tokens injected server-side so none reach the browser.
+- **Page structure**: `src/pages/` (`ChatPage`, `DocumentsPage`, `DashboardPage`, `ExtensionsPage`, `ModelsPage`, `TracePage`, `AgentsPage`, `BotsPage`, `EmbeddedServicePages`). State lives in `src/hooks/` zustand stores (`useChatStore`, `useDocumentsStore`, `useExtensionsStore`); API clients in `src/lib/`. The sidebar (`src/components/Sidebar.tsx`) uses `<NavLink>` for in-app navigation so the WebSocket stays connected across views.
 - **i18n**: react-i18next; locale files in `src/locales/{en,zh-CN,es,fr,ja}/common.json`. `en` is source-of-truth and default; `zh-CN` etc. are parallel translations. The active locale resolves at boot (stored choice → browser best match → `en`) — see `src/i18n/config.ts` and `src/i18n/useLanguage.ts`.
 - **Spec**: `openspec/changes/port-views-react-bundle-dmg/`.
 
@@ -133,7 +137,7 @@ Then open <http://localhost:3000/>.
 npm run web:dev
 # Vite on http://localhost:5173/
 # The Node backend must ALSO be running on :3000; the dev server proxies
-# /api, /oc-web, /external etc. to it, and the client connects the
+# /api and /external to it, and the client connects the
 # WebSocket directly to :3000 (see src/hooks/useWebSocket.ts).
 ```
 
@@ -150,7 +154,7 @@ If `web/dist/index.html` already exists, `npm install` won't rebuild it either.
 ```
 web/
 ├── package.json            # frontend-only deps
-├── vite.config.ts          # base: "/", dev proxy
+├── vite.config.ts          # base: "/", dev proxy (/api, /external)
 ├── tsconfig.json           # strict, noUncheckedIndexedAccess
 ├── components.json         # shadcn CLI config
 ├── index.html              # Vite entry
@@ -175,7 +179,11 @@ web/
     │   ├── DocumentsPage.tsx
     │   ├── DashboardPage.tsx
     │   ├── ExtensionsPage.tsx
-    │   └── EmbeddedServicePages.tsx
+    │   ├── ModelsPage.tsx
+    │   ├── TracePage.tsx
+    │   ├── AgentsPage.tsx
+    │   ├── BotsPage.tsx
+    │   └── EmbeddedServicePages.tsx  # ExternalService iframe wrapper
     └── components/
         ├── Sidebar.tsx
         ├── Chat.tsx

@@ -53,7 +53,10 @@ async function getHighlighter() {
         import("shiki/engine/oniguruma"),
       ]);
       return createHighlighterCore({
-        themes: [import("@shikijs/themes/github-dark-dimmed")],
+        themes: [
+          import("@shikijs/themes/github-dark-dimmed"),
+          import("@shikijs/themes/github-light"),
+        ],
         langs: [
           import("@shikijs/langs/typescript"),
           import("@shikijs/langs/tsx"),
@@ -154,9 +157,14 @@ function HighlightedCode({ code, lang }: { code: string; lang: string }) {
     (async () => {
       try {
         const h = await getHighlighter();
+        // Dual-theme output: shiki emits both palettes as --shiki-light /
+        // --shiki-dark custom properties per token, and CSS picks (see
+        // globals.css). Switching themes is then a repaint, not a re-highlight
+        // — no async work, no re-render, nothing to thread the theme through.
         const out = h.codeToHtml(code, {
           lang: effectiveLang,
-          theme: "github-dark-dimmed",
+          themes: { light: "github-light", dark: "github-dark-dimmed" },
+          defaultColor: false,
         });
         if (live) setHtml(out);
       } catch {

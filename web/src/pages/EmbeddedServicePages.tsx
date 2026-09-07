@@ -1,7 +1,7 @@
-// Embedded service views: OpenConnector + ExternalService apps (NEW API-style)
-// shown as same-origin iframes. These are third-party projects with their own
-// native UIs - we embed, not reimplement. Tokens are injected server-side by
-// the /oc-web (and /external/:appId) proxies; no secrets reach this renderer.
+// Embedded service views: ExternalService apps (NEW API-style) shown as
+// same-origin iframes. These are third-party projects with their own native
+// UIs - we embed, not reimplement. Tokens are injected server-side by the
+// /external/:appId proxy; no secrets reach this renderer.
 //
 // Only the wrapper chrome (loading state, blocked-frame fallback, not-configured
 // message) is localized here; the iframe internals have their own i18n.
@@ -9,23 +9,6 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
-
-interface Config {
-  openconnectorEnabled?: boolean;
-}
-
-function useConfig() {
-  const [config, setConfig] = useState<Config | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/config")
-      .then((r) => r.json())
-      .then((c) => { if (!cancelled) setConfig(c); })
-      .catch(() => { if (!cancelled) setConfig({}); });
-    return () => { cancelled = true; };
-  }, []);
-  return config;
-}
 
 function EmbeddedFrame({ src, testId }: { src: string; testId: string }) {
   const { t } = useTranslation();
@@ -68,20 +51,6 @@ function EmbeddedFrame({ src, testId }: { src: string; testId: string }) {
         </div>
       )}
     </div>
-  );
-}
-
-export function OpenConnectorPage() {
-  const { t } = useTranslation();
-  const config = useConfig();
-  if (!config) return <div className="p-6 text-muted-foreground">{t("common.loading")}</div>;
-  if (!config.openconnectorEnabled) {
-    return <Placeholder title="OpenConnector" testId="openconnector-disabled" />;
-  }
-  return (
-    <main className="flex h-full min-w-0 flex-col" data-testid="openconnector-page">
-      <EmbeddedFrame src="/oc-web" testId="openconnector-iframe" />
-    </main>
   );
 }
 

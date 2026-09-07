@@ -305,7 +305,6 @@ function toMcpClientEntry(name, config) {
 //
 // Sources (design D4 — host-side config sources unchanged):
 //   mcp.json            — operator config (base layer)
-//   OpenConnector /mcp  — when OPENCONNECTOR_BASE_URL set (Task 4.2)
 //   SQLite MCP table    — user edits via REST; overrides on collision (Task 4.1)
 export async function writeMcpPatch() {
   // 1. mcp.json (operator config, base layer).
@@ -314,16 +313,8 @@ export async function writeMcpPatch() {
     mcpJsonServers = JSON.parse(readFileSync("mcp.json", "utf8")).mcpServers || {};
   } catch { /* no mcp.json or parse error — MCP disabled via file */ }
 
-  // 2. OpenConnector /mcp endpoint (http transport, runtime token Bearer).
-  let ocConfig = null;
-  try {
-    const oc = await import("./open-connector.js");
-    ocConfig = oc.buildMcpServerConfig();
-  } catch { /* open-connector module unavailable */ }
-
-  // Merge: mcp.json base → OC overrides → DB (enabled overrides, disabled drops).
+  // Merge: mcp.json base → DB (enabled overrides, disabled drops).
   const servers = { ...mcpJsonServers };
-  if (ocConfig) servers["open-connector"] = ocConfig;
   try {
     const db = await import("./db.js");
     if (db.isDbReady()) {

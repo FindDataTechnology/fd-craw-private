@@ -1,38 +1,35 @@
-// Routes for the React SPA. The new canonical tab set is
-// Chat, Knowledge, Agents, MCP Servers, Skills, Models.
-// Legacy paths (Extensions, Documents) redirect to their new homes.
+// Routes for the React SPA.
 //
-// Code splitting: the chat surface (the product's primary view) and the
-// dashboard stay in the eager entry chunk; every admin/one-off page loads
-// lazily on first navigation (shiki's language chunks already split
-// themselves the same way).
+// Two kinds of surface, and the split is the whole point of the shell:
+//   - Work surfaces (Chat, Knowledge, Agents, Bots, Trace) are nav tabs. You
+//     come here to look at or produce something.
+//   - Configuration lives in the Settings modal at /settings/:section. You come
+//     to change a setting and leave — so it overlays rather than replaces, and
+//     dismissing puts you back where you were.
+// Legacy standalone config routes (/models, /mcp, /skills, /dashboard, and the
+// older /extensions/*) redirect into their Settings section so bookmarks live.
+//
+// Code splitting: the chat surface (the product's primary view) stays in the
+// eager entry chunk; every other page loads lazily on first navigation.
 
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useChatStore } from "@/hooks/useChatStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { Sidebar } from "@/components/Sidebar";
 import { ToastHost } from "@/components/Toast";
 import { ChatPage } from "@/pages/ChatPage";
-import { DashboardPage } from "@/pages/DashboardPage";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { settingsPath } from "@/components/settings/sections";
 
 const DocumentsPage = lazy(() =>
   import("@/pages/DocumentsPage").then((m) => ({ default: m.DocumentsPage })),
 );
-const ExtensionsPage = lazy(() =>
-  import("@/pages/ExtensionsPage").then((m) => ({ default: m.ExtensionsPage })),
-);
 const AgentsPage = lazy(() => import("@/pages/AgentsPage").then((m) => ({ default: m.AgentsPage })));
 const BotsPage = lazy(() => import("@/pages/BotsPage").then((m) => ({ default: m.BotsPage })));
-const ModelsPage = lazy(() => import("@/pages/ModelsPage").then((m) => ({ default: m.ModelsPage })));
-const TracePage = lazy(() =>
-  import("@/pages/TracePage").then((m) => ({ default: m.TracePage })),
-);
+const TracePage = lazy(() => import("@/pages/TracePage").then((m) => ({ default: m.TracePage })));
 const TraceDetailPage = lazy(() =>
   import("@/pages/TracePage").then((m) => ({ default: m.TraceDetailPage })),
-);
-const OpenConnectorPage = lazy(() =>
-  import("@/pages/EmbeddedServicePages").then((m) => ({ default: m.OpenConnectorPage })),
 );
 const ExternalServicePage = lazy(() =>
   import("@/pages/EmbeddedServicePages").then((m) => ({ default: m.ExternalServicePage })),
@@ -45,21 +42,43 @@ function RouteFallback() {
 export default function App() {
   const { send } = useWebSocket();
   const toggleAllThinking = useChatStore((s) => s.toggleAllThinking);
+  const location = useLocation();
+  const navigate = useNavigate();
   // Off-canvas nav drawer (below md the 240px rail would starve the content
   // column to a sliver — the drawer restores it without a second layout).
   const [navOpen, setNavOpen] = useState(false);
 
   // Ctrl/Cmd + O toggles all thinking blocks (foldable-observation-shortcut).
+  // Ctrl/Cmd + , opens Settings — the universal shortcut for it.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() === "o") {
         e.preventDefault();
         toggleAllThinking();
+      } else if (e.key === ",") {
+        e.preventDefault();
+        // Already open? The modal owns its section state; do not stack.
+        if (location.pathname.startsWith("/settings")) return;
+        navigate(settingsPath("general"), { state: { backgroundLocation: location } });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleAllThinking]);
+  }, [toggleAllThinking, navigate, location]);
+
+  // The modal renders over whatever the user was looking at. On a direct load
+  // of /settings/* there is no background, so /chat stands in — the same
+  // resolution `/` and unmatched paths already use.
+  const state = location.state as { backgroundLocation?: typeof location } | null;
+  const settingsOpen = location.pathname.startsWith("/settings");
+  const backgroundLocation = state?.backgroundLocation;
+  const routedLocation = settingsOpen
+    ? (backgroundLocation ?? { ...location, pathname: "/chat", search: "", hash: "" })
+    : location;
+  const backgroundPath = backgroundLocation
+    ? `${backgroundLocation.pathname}${backgroundLocation.search ?? ""}`
+    : "/chat";
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">
@@ -72,7 +91,7 @@ export default function App() {
       {navOpen && (
         <>
           <div
-            className="fixed inset-0 z-40 bg-black/60 md:hidden"
+            className="fixed inset-0 z-40 bg-scrim md:hidden"
             onClick={() => setNavOpen(false)}
             aria-hidden="true"
           />
@@ -82,42 +101,59 @@ export default function App() {
         </>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/chat" replace />} />
-          {/* One route with an OPTIONAL session param: navigating /chat ↔
-              /chat/:id must NOT remount ChatPage — a remount re-runs the
-              deep-link effect, which re-sends switch_session and fights the
-              server's session_loaded broadcasts (turns clobbered to zero). */}
-          <Route path="/chat/:sessionId?" element={<ChatPage send={send} onToggleNav={() => setNavOpen((v) => !v)} />} />
+        <Suspense fallback={<RouteFallback />}>
+          <Routes location={routedLocation}>
+            <Route path="/" element={<Navigate to="/chat" replace />} />
+            {/* One route with an OPTIONAL session param: navigating /chat ↔
+                /chat/:id must NOT remount ChatPage — a remount re-runs the
+                deep-link effect, which re-sends switch_session and fights the
+                server's session_loaded broadcasts (turns clobbered to zero). */}
+            <Route
+              path="/chat/:sessionId?"
+              element={<ChatPage send={send} onToggleNav={() => setNavOpen((v) => !v)} />}
+            />
 
-          {/* Knowledge (was Documents) — same page, new label + route. */}
-          <Route path="/knowledge" element={<DocumentsPage />} />
-          <Route path="/documents" element={<Navigate to="/knowledge" replace />} />
+            {/* Work surfaces — the five nav tabs. */}
+            <Route path="/knowledge" element={<DocumentsPage />} />
+            <Route path="/agents" element={<AgentsPage />} />
+            <Route path="/bots" element={<BotsPage />} />
+            <Route path="/trace" element={<TracePage />} />
+            <Route path="/trace/:turnId" element={<TraceDetailPage />} />
 
-          <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/documents" element={<Navigate to="/knowledge" replace />} />
+            <Route path="/external/:appId" element={<ExternalServicePage />} />
 
-          {/* Top-level extension management — was nested under /extensions. */}
-          <Route path="/mcp" element={<ExtensionsPage type="mcp" />} />
-          <Route path="/skills" element={<ExtensionsPage type="skills" />} />
-          <Route path="/extensions" element={<Navigate to="/mcp" replace />} />
-          <Route path="/extensions/mcp" element={<Navigate to="/mcp" replace />} />
-          <Route path="/extensions/skills" element={<Navigate to="/skills" replace />} />
+            {/* Configuration moved into the Settings modal. These redirects
+                keep existing deep links and bookmarks resolving. */}
+            <Route path="/models" element={<Navigate to={settingsPath("models")} replace />} />
+            <Route path="/mcp" element={<Navigate to={settingsPath("mcp")} replace />} />
+            <Route path="/skills" element={<Navigate to={settingsPath("skills")} replace />} />
+            <Route path="/extensions" element={<Navigate to={settingsPath("mcp")} replace />} />
+            <Route path="/extensions/mcp" element={<Navigate to={settingsPath("mcp")} replace />} />
+            <Route
+              path="/extensions/skills"
+              element={<Navigate to={settingsPath("skills")} replace />}
+            />
+            <Route path="/dashboard" element={<Navigate to={settingsPath("status")} replace />} />
 
-          <Route path="/models" element={<ModelsPage />} />
-
-          <Route path="/trace" element={<TracePage />} />
-          <Route path="/trace/:turnId" element={<TraceDetailPage />} />
-
-          <Route path="/agents" element={<AgentsPage />} />
-          <Route path="/bots" element={<BotsPage />} />
-          <Route path="/openconnector" element={<OpenConnectorPage />} />
-          <Route path="/external/:appId" element={<ExternalServicePage />} />
-          <Route path="*" element={<Navigate to="/chat" replace />} />
-        </Routes>
-      </Suspense>
-      <ToastHost />
+            <Route path="*" element={<Navigate to="/chat" replace />} />
+          </Routes>
+        </Suspense>
+        <ToastHost />
       </div>
+
+      {settingsOpen && (
+        <Routes>
+          <Route
+            path="/settings"
+            element={<Navigate to={settingsPath("general")} replace state={location.state} />}
+          />
+          <Route
+            path="/settings/:section"
+            element={<SettingsDialog backgroundPath={backgroundPath} />}
+          />
+        </Routes>
+      )}
     </div>
   );
 }

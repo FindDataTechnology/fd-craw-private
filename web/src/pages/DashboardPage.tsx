@@ -1,14 +1,18 @@
-// System Status page (route `/dashboard`): read-only system health view.
-// Fetches /api/supervisor/status (non-secret fields only). Three sections:
-//   1. Health — supervised services (servers, OpenConnector, LiteLLM, ...)
-//   2. Active Configuration — current provider / model / agent / OpenConnector flag
-//   3. Resources — document count, MCP tool count, collection count, uptime
-// Each Active Configuration row links to the page that controls it.
-// The page is reachable from the sidebar Settings menu and from /dashboard.
+// System Status (Settings → System Status, route `/settings/status`): read-only
+// system health view. Fetches /api/supervisor/status (non-secret fields only).
+// Sections: Health, Active Configuration, Resources, MCP.
+//
+// Each row links to the surface that controls it, and there are two kinds.
+// Models and MCP are Settings sections, so their links switch panes inside the
+// open modal — and must carry `location.state` forward, or the modal forgets
+// what it was covering and closing drops the user on /chat. Agents is a work
+// surface, so its link leaves /settings and the modal unmounts. That asymmetry
+// is intentional, not an oversight.
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { settingsPath } from "@/components/settings/sections";
 import { cn } from "@/lib/utils";
 
 interface ServerRow {
@@ -25,7 +29,6 @@ interface Status {
   provider: string | null;
   currentModel: string | null;
   currentAgent?: string | null;
-  openconnectorEnabled?: boolean;
   documentCount: number;
   documentByStatus?: Record<string, number>;
   collectionCount: number;
@@ -49,6 +52,7 @@ const STATE_DOT: Record<string, string> = {
 
 export function DashboardPage() {
   const { t } = useTranslation();
+  const location = useLocation();
   const [status, setStatus] = useState<Status | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,19 +126,14 @@ export function DashboardPage() {
               <ConfigRow
                 label={t("systemStatus.provider", { name: status.provider ?? "—" })}
                 value={status.currentModel ?? "—"}
-                to="/models"
+                to={settingsPath("models")}
+                state={location.state}
                 manageLabel={t("systemStatus.manage")}
               />
               <ConfigRow
                 label={t("systemStatus.activeAgent")}
                 value={status.currentAgent ?? "—"}
                 to="/agents"
-                manageLabel={t("systemStatus.manage")}
-              />
-              <ConfigRow
-                label={t("systemStatus.openconnector")}
-                value={status.openconnectorEnabled ? t("systemStatus.enabled") : t("systemStatus.disabled")}
-                to="/openconnector"
                 manageLabel={t("systemStatus.manage")}
               />
             </dl>
@@ -168,7 +167,8 @@ export function DashboardPage() {
             <div className="mt-2 flex items-baseline gap-3">
               <span className="text-2xl font-semibold" data-testid="mcp-count">{status.mcpToolCount}</span>
               <Link
-                to="/mcp"
+                to={settingsPath("mcp")}
+                state={location.state}
                 className="text-xs text-primary hover:underline"
                 data-testid="mcp-manage-link"
               >
@@ -186,11 +186,14 @@ function ConfigRow({
   label,
   value,
   to,
+  state,
   manageLabel,
 }: {
   label: string;
   value: string;
   to: string;
+  // Carried only by links that stay inside the Settings modal.
+  state?: unknown;
   manageLabel: string;
 }) {
   return (
@@ -199,6 +202,7 @@ function ConfigRow({
       <dd className="truncate text-sm" data-testid="config-row-value">{value}</dd>
       <Link
         to={to}
+        state={state}
         className="text-xs text-primary hover:underline"
         data-testid="config-row-manage"
       >

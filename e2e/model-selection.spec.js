@@ -21,16 +21,17 @@ async function restoreModel(page, modelId) {
   await page.goto("/chat/");
   await page.getByTestId("composer-input").fill(`/model ${modelId}`);
   await page.getByTestId("composer-send").click();
-  await expect(page.getByTestId("model-chip")).toContainText(/.+/, { timeout: 20000 });
+  await expect(page.getByTestId("strip-model")).toContainText(/.+/, { timeout: 20000 });
 }
 
 async function ensureModelsLoaded(page) {
-  // The chip is disabled-looking while no models are loaded; once it shows a
-  // non-"loading" label the model list has arrived.
-  await expect(page.getByTestId("model-chip")).toBeVisible({ timeout: 10000 });
+  // The strip's model control is disabled while no models are loaded, and
+  // reads "No model" until one is active; either means the list has not
+  // arrived yet.
+  await expect(page.getByTestId("strip-model")).toBeVisible({ timeout: 10000 });
   await expect
-    .poll(async () => (await page.getByTestId("model-chip").textContent()) || "", { timeout: 5000 })
-    .not.toContain("loading");
+    .poll(async () => (await page.getByTestId("strip-model").textContent()) || "", { timeout: 5000 })
+    .not.toContain("No model");
 }
 
 test.describe("model selection", () => {
@@ -59,19 +60,22 @@ test.describe("model selection", () => {
     }
   });
 
-  test("model chip loads models and reflects active model", async ({ page }) => {
-    const chip = page.getByTestId("model-chip");
-    await expect(chip).toBeVisible();
+  test("strip model control loads models and reflects active model", async ({ page }) => {
+    const control = page.getByTestId("strip-model");
+    await expect(control).toBeVisible();
     await expect(async () => {
-      const text = (await chip.textContent()) || "";
+      const text = (await control.textContent()) || "";
       expect(text.trim().length).toBeGreaterThan(0);
     }).toPass({ timeout: 3000 });
   });
 
-  test("model chip navigates to /models", async ({ page }) => {
-    await page.getByTestId("model-chip").click();
-    await expect(page).toHaveURL(/\/models$/);
-    await expect(page.getByTestId("models-page")).toBeVisible();
+  test("strip model control opens the picker in place", async ({ page }) => {
+    await ensureModelsLoaded(page);
+    await page.getByTestId("strip-model").click();
+    await expect(page.getByTestId("strip-model-menu")).toBeVisible();
+    await expect(page.getByTestId("strip-menu-item").first()).toBeVisible();
+    // Opening the picker must NOT navigate away from the conversation.
+    await expect(page).toHaveURL(/\/chat/);
   });
 
   test("set default model via the Models page", async ({ page }) => {
@@ -149,18 +153,13 @@ test.describe("model selection", () => {
       expect(content).toMatch(/Model switched to|Current model:/);
     }).toPass({ timeout: 20000 });
 
-    // The chip reflects the active model; poll because the dsh restart takes a
+    // The strip reflects the active model; poll because the dsh restart takes a
     // few seconds and current_model is re-sent on the next WS connection.
-    const NAMES = {
-      "deepseek-v4-pro-0813": "DeepSeek V4 Pro",
-      "deepseek-v4-flash-0731": "DeepSeek V4 Flash",
-      "glm-5.2": "GLM 5.2",
-    };
     await expect
-      .poll(async () => (await page.getByTestId("model-chip").textContent()) || "", {
+      .poll(async () => (await page.getByTestId("strip-model").textContent()) || "", {
         timeout: 20000,
       })
-      .toContain(NAMES[targetId] || targetId);
+      .toContain(targetId);
   });
 
   test("invalid model id shows error", async ({ page }) => {

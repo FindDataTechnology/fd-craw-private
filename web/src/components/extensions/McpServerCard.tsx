@@ -47,7 +47,7 @@ export function McpServerCard({ server, onEdit }: McpServerCardProps) {
               {typeLabel}
             </span>
             {isAuto && (
-              <span data-testid="mcp-auto-badge" className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 flex items-center gap-1">
+              <span data-testid="mcp-auto-badge" className="text-xs px-2 py-0.5 rounded-full bg-warning/15 text-warning flex items-center gap-1">
                 <Zap className="h-3 w-3" />
                 {t("extensions.status.auto")}
               </span>

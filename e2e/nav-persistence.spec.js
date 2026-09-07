@@ -31,9 +31,9 @@ test.describe("navigation persistence", () => {
     expect(loads).toBe(0);
   });
 
-  test("new tabs render their pages (MCP, Skills, Models, Agents)", async ({ page }) => {
+  test("work-surface tabs render their pages (Knowledge, Agents, Bots, Trace)", async ({ page }) => {
     await gotoChat(page);
-    for (const id of ["nav-mcp", "nav-skills", "nav-models", "nav-agents"]) {
+    for (const id of ["nav-knowledge", "nav-agents", "nav-bots", "nav-trace"]) {
       await page.getByTestId(id).click();
       await expect(page.getByTestId("status-text")).toHaveText("Connected");
     }

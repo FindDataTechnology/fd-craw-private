@@ -27,8 +27,8 @@ export function McpMarketCard({ server, onInstall }: McpMarketCardProps) {
               data-testid="mcp-config-badge"
               className={`text-xs px-2 py-0.5 rounded-full ${
                 server.requiresConfig
-                  ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
-                  : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+                  ? "bg-warning/15 text-warning"
+                  : "bg-success/15 text-success"
               }`}
             >
               {server.requiresConfig

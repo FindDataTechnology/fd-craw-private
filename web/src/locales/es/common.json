@@ -6,16 +6,14 @@
     "saving": "Guardando…",
     "add": "Agregar",
     "edit": "Editar",
-    "delete": "Eliminar"
+    "delete": "Eliminar",
+    "close": "Cerrar"
   },
   "nav": {
     "chat": "Chat",
     "knowledge": "Conocimiento",
     "agents": "Agentes",
     "bots": "Bots",
-    "mcp": "Servidores MCP",
-    "skills": "Habilidades",
-    "models": "Modelos",
     "trace": "Traza",
     "openMenu": "Abrir menú de navegación"
   },
@@ -54,17 +52,7 @@
     "new": "+ Nuevo",
     "noChats": "Aún no hay chats. Haz clic en \"+ Nuevo\".",
     "untitled": "Sin título",
-    "loadingModels": "Cargando modelos…",
-    "clearChat": "Borrar chat",
-    "language": "Idioma",
-    "modelChipHint": "Gestionar modelos"
-  },
-  "settingsMenu": {
-    "title": "Ajustes",
-    "status": "Estado del sistema",
-    "models": "Modelos LLM",
-    "openconnector": "OpenConnector",
-    "help": "Ayuda"
+    "language": "Idioma"
   },
   "modelsPage": {
     "title": "Modelos",
@@ -144,7 +132,9 @@
       "model": "Modelo",
       "modelUnset": "Sin modelo",
       "effort": "Razonamiento",
-      "effortDefault": "Predeterminado"
+      "effortDefault": "Predeterminado",
+      "agent": "Agente",
+      "agentUnset": "Predeterminado"
     }
   },
   "chat": {
@@ -179,7 +169,8 @@
     "header": {
       "editTitle": "Renombrar sesión",
       "titlePlaceholder": "Título de la sesión",
-      "rename": "Guardar nuevo título"
+      "rename": "Guardar nuevo título",
+      "sessionActions": "Acciones de sesión"
     },
     "titleTooLong": "El título debe tener 200 caracteres o menos",
     "connectionLost": "Conexión perdida — reconectando…",
@@ -242,7 +233,6 @@
     "activeConfig": "Configuración activa",
     "resources": "Recursos",
     "activeAgent": "Agente activo",
-    "openconnector": "OpenConnector",
     "enabled": "Habilitado",
     "disabled": "Deshabilitado",
     "documents": "Documentos",
@@ -263,7 +253,9 @@
     "confirmTitle": "¿Eliminar este chat?",
     "confirmBody": "Esta acción no se puede deshacer.",
     "cannotDeleteActive": "Cambia a otra sesión primero",
-    "deleteFailed": "Error al eliminar: {{error}}"
+    "deleteFailed": "Error al eliminar: {{error}}",
+    "clear": "Vaciar",
+    "cannotClearInactive": "Cambia primero a este chat"
   },
   "documents": {
     "title": "Documentos",
@@ -432,6 +424,25 @@
       "feishu": "Feishu / Lark",
       "wecom": "WeCom",
       "wechat-oa": "Cuenta Oficial de WeChat"
+    }
+  },
+  "settings": {
+    "title": "Ajustes",
+    "sections": {
+      "general": "General",
+      "models": "Modelos",
+      "mcp": "Servidores MCP",
+      "skills": "Habilidades",
+      "status": "Estado del sistema"
+    },
+    "general": {
+      "theme": "Tema",
+      "themeHint": "Sigue tu sistema o elige uno.",
+      "themeOption": {
+        "light": "Claro",
+        "dark": "Oscuro",
+        "system": "Sistema"
+      }
     }
   }
 }

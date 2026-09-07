@@ -1,17 +1,21 @@
 // ChatHeader — sticky session header for the in-session state.
 //
-// Shows the session title (editable: click → input, Enter commits, Esc
-// cancels), a single-line status strip (`model · agent · <StatusDot />`),
-// and a "find in sidebar" focus toggle on the right (no-op for v1 — the
-// sidebar already highlights the current session). The title-edit logic is
-// local state with a 300ms debounce on keystrokes; Enter commits immediately.
-// The WS `rename_session` broadcasts `session_renamed` to all clients.
+// Two things only: the editable session title (click → input, Enter commits,
+// Esc cancels) and an overflow (⋯) that opens the session context menu for the
+// active session. The old `model · agent · status` strip is gone — the control
+// strip beneath the composer reports model and agent (and is where you change
+// them), and the sidebar footer reports connection status. Three places
+// showing the same state was three places to keep in sync.
+//
+// The title-edit logic is local state with a 300ms debounce on keystrokes;
+// Enter commits immediately. The WS `rename_session` broadcasts
+// `session_renamed` to all clients.
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Pencil, X, Check } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Pencil, X, Check, MoreHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
-import { cn } from "@/lib/utils";
+import { ChatSessionMenu } from "@/components/ChatSessionMenu";
 
 interface Props {
   send: (m: { type: "rename_session"; id: string; title: string }) => void;
@@ -23,17 +27,24 @@ export function ChatHeader({ send }: Props) {
   const { t } = useTranslation();
   const currentSessionId = useChatStore((s) => s.currentSessionId);
   const sessions = useChatStore((s) => s.sessions);
-  const currentModel = useChatStore((s) => s.currentModel);
-  const currentAgent = useChatStore((s) => s.currentAgent);
-  const agents = useChatStore((s) => s.agents);
-  const status = useChatStore((s) => s.status);
   const renameSession = useChatStore((s) => s.renameSession);
 
   const session = sessions.find((s) => s.id === currentSessionId);
-  const agentName = useMemo(() => {
-    if (!currentAgent || currentAgent === "local") return null;
-    return agents.find((a) => a.id === currentAgent)?.name || currentAgent;
-  }, [currentAgent, agents]);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const overflowRef = useRef<HTMLButtonElement>(null);
+
+  // Delete from the header targets the ACTIVE session, which the server 409s
+  // and the menu disables — so this only ever runs if that guard changes.
+  const handleDeleteSession = useCallback(async (id: string) => {
+    const r = await fetch(`/api/chat-history/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.error || `HTTP ${r.status}`);
+    }
+  }, []);
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session?.title || "");
@@ -153,22 +164,29 @@ export function ChatHeader({ send }: Props) {
         )}
       </div>
 
-      <div role="status" className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground" data-testid="chat-header-status">
-        {currentModel && <span data-testid="chat-header-model">{currentModel}</span>}
-        {currentModel && agentName && <span>·</span>}
-        {agentName && <span data-testid="chat-header-agent">{agentName}</span>}
-        {(currentModel || agentName) && <span>·</span>}
-        <span
-          data-testid="chat-header-status-dot"
-          className={cn(
-            "inline-block h-2 w-2 shrink-0 rounded-full",
-            status === "connected" && "bg-success",
-            status === "connecting" && "bg-warning",
-            status === "disconnected" && "bg-destructive",
-          )}
-          aria-hidden="true"
-        />
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          ref={overflowRef}
+          onClick={() => setMenuOpen(true)}
+          data-testid="chat-header-overflow"
+          aria-label={t("chat.header.sessionActions")}
+          aria-haspopup="menu"
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
       </div>
+
+      {menuOpen && overflowRef.current && (
+        <ChatSessionMenu
+          sessionId={session.id}
+          isCurrent
+          onDelete={handleDeleteSession}
+          triggerRef={{ current: overflowRef.current }}
+          onClose={() => setMenuOpen(false)}
+        />
+      )}
     </header>
   );
 }

@@ -1,13 +1,17 @@
-// ChatSessionMenu — right-click context menu for a single session row in the
-// sidebar. Opens on `contextmenu` (right-click) and on Shift+F10. Contains a
-// single "Delete" entry (with a confirmation dialog). The Delete entry is
-// disabled (with a tooltip) on the currently active session — the server will
-// also 409 the request, but disabling in the UI prevents the obviously-wrong
-// action. The menu dismisses on outside click, Escape, or item activation.
+// ChatSessionMenu — context menu for a single session. Two entry points, one
+// component: right-click (or Shift+F10) on a sidebar row, and the chat header's
+// overflow (⋯) for the active session.
+//
+// Contains "Clear" (clears the displayed turns) and "Delete" (with a
+// confirmation dialog). Delete is disabled with a tooltip on the currently
+// active session — the server also 409s it, but disabling prevents the
+// obviously-wrong action. The menu dismisses on outside click, Escape, or item
+// activation.
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { useChatStore } from "@/hooks/useChatStore";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -21,6 +25,7 @@ interface Props {
 
 export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, onClose }: Props) {
   const { t } = useTranslation();
+  const clearView = useChatStore((s) => s.clearView);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -102,6 +107,26 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
         <button
           type="button"
           role="menuitem"
+          data-testid="session-menu-clear"
+          onClick={() => {
+            if (!isCurrent) return;
+            clearView();
+            onClose();
+          }}
+          disabled={!isCurrent}
+          title={isCurrent ? undefined : t("sessionMenu.cannotClearInactive")}
+          className={cn(
+            "block w-full px-3 py-1.5 text-left text-xs",
+            isCurrent
+              ? "text-foreground hover:bg-muted"
+              : "cursor-not-allowed text-muted-foreground opacity-50",
+          )}
+        >
+          {t("sessionMenu.clear")}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
           data-testid="session-menu-delete"
           onClick={handleDeleteClick}
           disabled={isCurrent}
@@ -144,7 +169,7 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
               onClick={handleConfirm}
               disabled={deleting}
               data-testid="session-delete-confirm"
-              className="rounded-md bg-destructive px-3 py-1.5 text-xs text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
+              className="rounded-md bg-destructive-deep px-3 py-1.5 text-xs text-destructive-foreground hover:bg-destructive-deep/90 disabled:opacity-50"
             >
               {t("common.delete")}
             </button>

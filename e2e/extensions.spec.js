@@ -13,9 +13,11 @@ test.describe("Extensions Page - UI Rendering", () => {
   test("page loads with correct tab names (Enabled/Store)", async ({ page }) => {
     await gotoExtensions(page);
 
-    // Check main heading (the extensions page is split: /mcp shows "MCP").
-    // Level-1 scoped: the section heading inside is also "MCP".
-    await expect(page.getByRole("heading", { name: /^MCP$/i, level: 1 })).toBeVisible();
+    // No page-level <h1>: as a Settings section, the modal's nav already names
+    // this pane, so the old heading was a duplicate. The section heading inside
+    // the pane remains.
+    await expect(page.getByRole("heading", { name: /^MCP$/i, level: 1 })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /^MCP$/i })).toBeVisible();
 
     // Check tab names (new naming)
     await expect(page.getByRole("button", { name: /enabled/i })).toBeVisible();

@@ -55,7 +55,7 @@ export function ModelList({ providerId, models, onChanged }: Props) {
             className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-1.5 text-xs"
           >
             <span className="flex items-center gap-2 font-mono text-foreground">
-              {active && <Check className="h-3.5 w-3.5 text-green-600" data-testid="llm-default-check" />}
+              {active && <Check className="h-3.5 w-3.5 text-success" data-testid="llm-default-check" />}
               {m}
             </span>
             <span className="flex items-center gap-2">

@@ -6,16 +6,14 @@
     "saving": "保存中…",
     "add": "追加",
     "edit": "編集",
-    "delete": "削除"
+    "delete": "削除",
+    "close": "閉じる"
   },
   "nav": {
     "chat": "チャット",
     "knowledge": "ナレッジ",
     "agents": "エージェント",
     "bots": "ボット",
-    "mcp": "MCP サーバー",
-    "skills": "スキル",
-    "models": "モデル",
     "trace": "トレース",
     "openMenu": "ナビゲーションメニューを開く"
   },
@@ -54,17 +52,7 @@
     "new": "+ 新規",
     "noChats": "チャットはまだありません。「+ 新規」をクリックしてください。",
     "untitled": "無題",
-    "loadingModels": "モデルを読み込み中…",
-    "clearChat": "チャットを消去",
-    "language": "言語",
-    "modelChipHint": "モデルを管理"
-  },
-  "settingsMenu": {
-    "title": "設定",
-    "status": "システム状態",
-    "models": "LLM モデル",
-    "openconnector": "OpenConnector",
-    "help": "ヘルプ"
+    "language": "言語"
   },
   "modelsPage": {
     "title": "モデル",
@@ -144,7 +132,9 @@
       "model": "モデル",
       "modelUnset": "未選択",
       "effort": "思考の深さ",
-      "effortDefault": "デフォルト"
+      "effortDefault": "デフォルト",
+      "agent": "エージェント",
+      "agentUnset": "デフォルト"
     }
   },
   "chat": {
@@ -179,7 +169,8 @@
     "header": {
       "editTitle": "セッション名を変更",
       "titlePlaceholder": "セッション名",
-      "rename": "新しい名前を保存"
+      "rename": "新しい名前を保存",
+      "sessionActions": "セッション操作"
     },
     "titleTooLong": "タイトルは 200 文字以下にしてください",
     "connectionLost": "接続が切断されました。自動的に再接続しています…",
@@ -242,7 +233,6 @@
     "activeConfig": "現在の設定",
     "resources": "リソース",
     "activeAgent": "現在のエージェント",
-    "openconnector": "OpenConnector",
     "enabled": "有効",
     "disabled": "無効",
     "documents": "ドキュメント",
@@ -263,7 +253,9 @@
     "confirmTitle": "このチャットを削除しますか？",
     "confirmBody": "この操作は取り消せません。",
     "cannotDeleteActive": "まず別のセッションに切り替えてください",
-    "deleteFailed": "削除に失敗しました: {{error}}"
+    "deleteFailed": "削除に失敗しました: {{error}}",
+    "clear": "クリア",
+    "cannotClearInactive": "先にこのチャットに切り替えてください"
   },
   "documents": {
     "title": "ドキュメント",
@@ -432,6 +424,25 @@
       "feishu": "Feishu / Lark",
       "wecom": "WeCom",
       "wechat-oa": "WeChat 公式アカウント"
+    }
+  },
+  "settings": {
+    "title": "設定",
+    "sections": {
+      "general": "一般",
+      "models": "モデル",
+      "mcp": "MCP サーバー",
+      "skills": "スキル",
+      "status": "システム状態"
+    },
+    "general": {
+      "theme": "テーマ",
+      "themeHint": "システムに従うか、選択してください。",
+      "themeOption": {
+        "light": "ライト",
+        "dark": "ダーク",
+        "system": "システム"
+      }
     }
   }
 }

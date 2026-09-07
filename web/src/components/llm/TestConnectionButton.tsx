@@ -52,7 +52,7 @@ function TestStatus({ result }: { result: LastTest }) {
   if (result.ok) {
     return (
       <span
-        className="inline-flex items-center gap-1 text-xs text-green-600"
+        className="inline-flex items-center gap-1 text-xs text-success"
         data-testid="llm-test-ok"
       >
         <Check className="h-3.5 w-3.5" />

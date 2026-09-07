@@ -8,7 +8,6 @@ import { randomUUID } from "node:crypto";
 import multer from "multer";
 import compression from "compression";
 import * as chatHistory from "./chat-history.js";
-import * as openConnector from "./open-connector.js";
 import * as documents from "./documents.js";
 import * as db from "./db.js";
 import * as trace from "./server/trace.js";
@@ -28,7 +27,7 @@ import { registerExtensionRoutes } from "./server/routes/extensions.js";
 import { registerChatHistoryRoutes } from "./server/routes/chat-history.js";
 import { registerTraceRoutes } from "./server/routes/trace.js";
 import { registerBotRoutes, WEBHOOK_PREFIX } from "./server/routes/bots.js";
-import { registerOpenConnectorRoutes } from "./server/routes/openconnector.js";
+import { registerExternalServiceRoutes } from "./server/routes/external-services.js";
 import { attachDshEvents } from "./server/dsh-events.js";
 import { attachAgentSession } from "./server/agent-session.js";
 import { attachWebSocket } from "./server/ws.js";
@@ -46,7 +45,7 @@ const HOST = process.env.HOST || "localhost";
 
 // Volces (火山引擎) chat provider is optional: an unset LLM_API_KEY means the
 // provider is not registered and the server starts with no chat provider (chat
-// non-functional, logged), mirroring the LiteLLM graceful-degrade convention.
+// non-functional, logged) — the project's graceful-degrade convention.
 // The documents RAG reads LLM_API_KEY separately via initStore().
 
 // Default chat model. When set, the dsh session starts on this model id;
@@ -108,8 +107,7 @@ app.use(compression());
 registerAuth(ctx);
 
 // Route registration. Order is semantic: app /api routes first, then the
-// static SPA + deep-link fallback, then the OpenConnector catch-all proxies
-// (/assets|/v1|/api) and /external/:appId — exactly the pre-split order.
+// static SPA + deep-link fallback and /external/:appId.
 registerDocumentRoutes(ctx);
 registerMiscRoutes(ctx);
 registerLlmRoutes(ctx);
@@ -118,7 +116,7 @@ registerChatHistoryRoutes(ctx);
 registerTraceRoutes(ctx);
 registerBotRoutes(ctx);
 registerStaticAndFallback(ctx);
-registerOpenConnectorRoutes(ctx);
+registerExternalServiceRoutes(ctx);
 
 // dsh → WS event translation (attaches ctx.handleDshEvent + ctx.finishTurn).
 attachDshEvents(ctx);
@@ -131,8 +129,8 @@ attachWebSocket(ctx);
 
 // Seed startup MCP configs into the extensions DB so the UI "Installed" tab
 // shows them. INSERT OR IGNORE preserves user edits. Origins: mcp.json entries
-// stay "user" (operator config); OpenConnector and manifest mcpServers entries
-// are pre-installed by the package ("bundled"). Manifest entries take
+// stay "user" (operator config); manifest mcpServers entries are pre-installed
+// by the package ("bundled"). Manifest entries take
 // locked/permissions from the permissions map ("mcp:<name>" → { allow, deny,
 // locked }). Seeding lives here (not in bootstrap/first-run.js) because
 // better-sqlite3 only loads under the Node that runs server.js — the Electron
@@ -140,20 +138,10 @@ attachWebSocket(ctx);
 // ponytail: shared by the dsh bridge + extension REST routes (design D4 —
 // host-side config sources unchanged); writeMcpPatch reads the DB but does not
 // seed it, so the seeding must happen here before the patch is written.
-function seedStartupMcpConfigs(mcpJsonServers, ocMcpConfig) {
+function seedStartupMcpConfigs(mcpJsonServers) {
   if (!db.isDbReady()) return;
   for (const [name, config] of Object.entries(mcpJsonServers)) {
     extensionStore.seedMcpServer({ name, config, enabled: true });
-  }
-  if (ocMcpConfig) {
-    const policy = ctx.splitPolicy(ctx.bundle.permissions["mcp:open-connector"]);
-    extensionStore.seedMcpServer({
-      name: "open-connector",
-      config: ocMcpConfig,
-      enabled: true,
-      origin: ctx.bundle.components.openconnector ? "bundled" : "user",
-      ...policy,
-    });
   }
   for (const [name, entry] of Object.entries(ctx.bundle.mcpServers)) {
     const { enabled = true, ...config } = entry;
@@ -193,11 +181,10 @@ async function initDshAgent() {
   // runtime patch but does NOT seed the DB — seeding is UI-only (Task 4.1).
   let dshMcpJson = {};
   try { dshMcpJson = JSON.parse(await readFile(path.resolve("mcp.json"), "utf8")).mcpServers || {}; } catch {}
-  const dshOcMcp = openConnector.buildMcpServerConfig();
-  seedStartupMcpConfigs(dshMcpJson, dshOcMcp);
+  seedStartupMcpConfigs(dshMcpJson);
 
   // Write the dsh-mcp-client patch overlay (one loader entry per MCP server
-  // from mcp.json + DB + OpenConnector /mcp). The bridge passes it via --patch;
+  // from mcp.json + DB). The bridge passes it via --patch;
   // null = no servers configured, flag omitted (Task 4.1/4.2).
   const mcpPatchPath = await writeMcpPatch();
 
@@ -352,7 +339,6 @@ server.listen(PORT, HOST, () => {
   console.log(`Platform listening at http://${HOST}:${PORT} (agent init in background)`);
 });
 
-openConnector.initOpenConnector();
 await chatHistory.initChatHistory();
 await workdirStore.initWorkdirStore();
 // Open the SQLite project database (chat, documents, index, preferences) before

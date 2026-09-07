@@ -1,18 +1,23 @@
 // ControlStrip — the row of runtime controls beneath the composer textarea:
-// workspace, commands, model, reasoning effort.
+// workspace, agent, model, reasoning effort, commands.
 //
-// Every control here except commands changes dsh runtime config, and dsh bakes
-// config into the `initialize` handshake — there is no setModel/setCwd RPC. So
-// each change restarts the child process. That cost is deliberately visible:
-// the changed control shows a spinner and the send button disables until the
+// This is the SOLE surface for per-turn runtime configuration. Persistent
+// configuration (which providers exist, what the default is) lives in Settings.
+// That split is why the sidebar no longer carries a model chip or agent select.
+//
+// Workspace, model and effort change dsh runtime config, and dsh bakes config
+// into the `initialize` handshake — there is no setModel/setCwd RPC. So each of
+// those restarts the child process. That cost is deliberately visible: the
+// changed control shows a spinner and the send button disables until the
 // server's confirming broadcast lands (see `pendingConfig` in the store).
+// Agent is the exception — it switches synchronously, no restart, no spinner.
 //
 // Nothing here holds optimistic local state. A control renders what the store
 // says the runtime IS, not what was requested — so a dropdown briefly shows
 // the old value after a click. That is correct: the strip reports reality.
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Folder, Loader2, SlidersHorizontal, Sparkles, TerminalSquare } from "lucide-react";
+import { Bot, ChevronDown, Folder, Loader2, SlidersHorizontal, Sparkles, TerminalSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import type { ClientMessage } from "@/types/ws";
@@ -26,7 +31,7 @@ interface Props {
 }
 
 // Shared popover shell for the three menu-style controls. Dismisses on outside
-// click, Escape, and selection — same behavior as <SettingsMenu>.
+// click, Escape, and selection — same behavior as the settings modal.
 function StripMenu({
   label,
   value,
@@ -141,6 +146,14 @@ export function ControlStrip({ send, onOpenCommands }: Props) {
   const pendingConfig = useChatStore((s) => s.pendingConfig);
   const setPendingConfig = useChatStore((s) => s.setPendingConfig);
   const turns = useChatStore((s) => s.turns);
+  const agents = useChatStore((s) => s.agents);
+  const currentAgent = useChatStore((s) => s.currentAgent);
+  const isStreaming = useChatStore((s) => s.isStreaming);
+
+  const agentLabel =
+    agents.find((a) => a.id === currentAgent)?.name ??
+    currentAgent ??
+    t("composer.strip.agentUnset");
 
   const [pathDraft, setPathDraft] = useState("");
   const [pathError, setPathError] = useState<string | null>(null);
@@ -243,21 +256,39 @@ export function ControlStrip({ send, onOpenCommands }: Props) {
         )}
       </StripMenu>
 
-      <button
-        type="button"
-        onClick={onOpenCommands}
-        disabled={status !== "connected"}
-        aria-label={t("composer.strip.commands")}
-        data-testid="strip-commands"
-        className={cn(
-          "flex items-center gap-1 rounded-md px-1.5 py-1 text-xs",
-          "text-muted-foreground hover:bg-muted hover:text-foreground",
-          "disabled:cursor-not-allowed disabled:opacity-40",
-        )}
-      >
-        <TerminalSquare className="h-3.5 w-3.5 shrink-0" />
-        <span>{t("composer.strip.commands")}</span>
-      </button>
+      {/* Agent. Unlike every other control here, switching the agent does NOT
+          restart the dsh child — `switchAgentTo` flips the id and broadcasts
+          synchronously — so there is no pending spinner to show. It still
+          renders store state only, and is still rejected while streaming.
+          Hidden below two agents: a control that displays one unchangeable
+          value is noise, and the catalog is optional. */}
+      {agents.length > 1 && (
+        <StripMenu
+          label={t("composer.strip.agent")}
+          value={agentLabel}
+          icon={<Bot className="h-3.5 w-3.5 shrink-0" />}
+          disabled={disabled || isStreaming}
+          testId="strip-agent"
+        >
+          {(close) => (
+            <div className="max-h-72 overflow-y-auto py-1">
+              {agents.map((a) => (
+                <MenuItem
+                  key={a.id}
+                  active={a.id === currentAgent}
+                  primary={a.name || a.id}
+                  secondary={a.name ? a.id : undefined}
+                  onClick={() => {
+                    close();
+                    if (a.id === currentAgent) return;
+                    send({ type: "set_agent", id: a.id });
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </StripMenu>
+      )}
 
       <StripMenu
         label={t("composer.strip.model")}
@@ -315,6 +346,22 @@ export function ControlStrip({ send, onOpenCommands }: Props) {
           )}
         </StripMenu>
       )}
+
+      <button
+        type="button"
+        onClick={onOpenCommands}
+        disabled={status !== "connected"}
+        aria-label={t("composer.strip.commands")}
+        data-testid="strip-commands"
+        className={cn(
+          "flex items-center gap-1 rounded-md px-1.5 py-1 text-xs",
+          "text-muted-foreground hover:bg-muted hover:text-foreground",
+          "disabled:cursor-not-allowed disabled:opacity-40",
+        )}
+      >
+        <TerminalSquare className="h-3.5 w-3.5 shrink-0" />
+        <span>{t("composer.strip.commands")}</span>
+      </button>
     </div>
   );
 }

@@ -59,22 +59,3 @@ document.getElementById('saveGeneral').addEventListener('click', async () => {
   setTimeout(() => { statusEl.textContent = ''; }, 5000);
 });
 
-// Rotate OC tokens
-document.getElementById('rotateTokens').addEventListener('click', async () => {
-  if (!confirm('Really regenerate OpenConnector tokens? All existing connections will need to be reauthorized with the new tokens.')) {
-    return;
-  }
-  const statusEl = document.getElementById('ocStatus');
-  const result = await window.platform.rotateOpenConnectorTokens();
-  if (!result.ok) {
-    statusEl.className = 'error';
-    statusEl.textContent = '✗ Failed: ' + (result.error || 'unknown error');
-    return;
-  }
-  // Need to restart both OC and server-js (server-js has old tokens in env)
-  await window.platform.restartService('openconnector');
-  await window.platform.restartService('server-js');
-  statusEl.className = 'success';
-  statusEl.textContent = '✓ Regenerated tokens and restarted services';
-  setTimeout(() => { statusEl.textContent = ''; }, 5000);
-});

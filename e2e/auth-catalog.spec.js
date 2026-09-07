@@ -153,7 +153,6 @@ test.describe("AUTH_MODE=forward_auth", () => {
         CATALOG_REFRESH_SECS: "0", // deterministic: refresh only via POST
         NANGO_SECRET_KEY: "test-nango-secret",
         REMOTE_AGENT_KEY: "test-remote-key",
-        OPENCONNECTOR_BASE_URL: "",
         CHAT_HISTORY_STORE_DIR: path.join(tmpRoot, "chat"),
         DOCUMENTS_STORE_DIR: path.join(tmpRoot, "docs"),
         SESSIONS_STORE_DIR: path.join(tmpRoot, "sessions"),

@@ -63,6 +63,32 @@ test.describe("chat main-page polish", () => {
     await waitForIdle(page, 30000);
   });
 
+  test("8.3b header carries a title and an overflow, and no status strip", async ({ page }) => {
+    await page.getByTestId("new-chat-btn").click();
+    const input = page.getByTestId("composer-input");
+    await input.fill("trigger in-session state");
+    await waitForIdle(page, 30000);
+    await page.getByTestId("composer-send").click();
+    await expect(page.getByTestId("chat-header")).toBeVisible({ timeout: 10000 });
+    await waitForIdle(page, 30000);
+
+    await expect(page.getByTestId("chat-header-title")).toBeVisible();
+    await expect(page.getByTestId("chat-header-overflow")).toBeVisible();
+
+    // The duplicated `model · agent · status` strip is gone — the control strip
+    // reports model and agent, the sidebar footer reports connection status.
+    await expect(page.getByTestId("chat-header-status")).toHaveCount(0);
+    await expect(page.getByTestId("chat-header-model")).toHaveCount(0);
+    await expect(page.getByTestId("chat-header-agent")).toHaveCount(0);
+
+    // The overflow opens the same session menu the sidebar right-click opens.
+    await page.getByTestId("chat-header-overflow").click();
+    await expect(page.getByTestId("session-menu")).toBeVisible();
+    await expect(page.getByTestId("session-menu-clear")).toBeVisible();
+    // Delete is disabled on the active session, which this always is.
+    await expect(page.getByTestId("session-menu-delete")).toBeDisabled();
+  });
+
   test("8.4 in-session title rename updates the sidebar row", async ({ page }) => {
     await page.getByTestId("new-chat-btn").click();
     const input = page.getByTestId("composer-input");

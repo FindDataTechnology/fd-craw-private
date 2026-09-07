@@ -38,7 +38,7 @@ test.describe("live service @live", () => {
 
   test("deployed sidebar shows all nav entries", async ({ page }) => {
     await gotoChat(page);
-    for (const id of ["nav-chat", "nav-knowledge", "nav-agents", "nav-mcp", "nav-skills", "nav-models"]) {
+    for (const id of ["nav-chat", "nav-knowledge", "nav-agents", "nav-bots", "nav-trace"]) {
       await expect(page.getByTestId(id)).toBeVisible();
     }
   });
@@ -85,18 +85,6 @@ test.describe("live service @live", () => {
     );
     // -1 means `models` arrived but wasn't an array; still proves a round-trip.
     expect(gotModels).toBeGreaterThanOrEqual(0);
-  });
-
-  test("deployed embedded panels mount if enabled", async ({ request, page }) => {
-    // Read the deployed config once to know which panels are enabled, then
-    // assert the corresponding iframe (or the disabled placeholder) mounts.
-    const cfg = await (await request.get("/api/config")).json();
-    await pinLocaleEn(page);
-
-    if (cfg.openconnectorEnabled) {
-      await page.goto("/openconnector", { waitUntil: "domcontentloaded" });
-      await expect(page.getByTestId("openconnector-iframe")).toBeVisible({ timeout: 15000 });
-    }
   });
 });
 
