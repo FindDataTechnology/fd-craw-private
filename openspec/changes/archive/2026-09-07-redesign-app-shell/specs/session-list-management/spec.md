@@ -1,8 +1,5 @@
-# session-list-management Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change ui-nav-restructure. Update Purpose after archive.
-## Requirements
 ### Requirement: Right-click context menu on each session row
 Each session row in the sidebar SHALL expose a right-click context menu containing at minimum the actions **Clear** and **Delete** (Delete with confirmation). The menu SHALL open on `contextmenu` (right-click) and on `Shift+F10`. The menu SHALL be dismissable by clicking outside, pressing Escape, or selecting an item. The menu SHALL appear positioned to the row's pointer location and SHALL NOT overflow the viewport.
 
@@ -22,28 +19,7 @@ The same menu SHALL be reachable for the active session from the chat header's o
 - **THEN** the session context menu SHALL open for the active session
 - **AND** it SHALL offer the same actions as the right-click menu on that session's row
 
-### Requirement: Delete action with confirmation
-Selecting **Delete** from the session context menu SHALL open a confirmation dialog ("Delete this chat? This cannot be undone." with Cancel / Delete buttons). On confirm, the client SHALL call `DELETE /api/chat-history/sessions/:id`. On success, the row SHALL disappear from the list (the broadcast `sessions` event updates the store). On failure, the client SHALL show an inline error and the row SHALL remain.
-
-#### Scenario: confirm and delete
-- **WHEN** the user clicks Delete in the context menu
-- **AND** confirms in the dialog
-- **THEN** the client SHALL call `DELETE /api/chat-history/sessions/<id>`
-- **AND** on a 200 response, the session row SHALL be removed from the list
-- **AND** on a non-2xx response, an inline error message SHALL be shown and the row SHALL remain
-
-#### Scenario: cancel keeps the session
-- **WHEN** the user clicks Delete and then Cancel in the dialog
-- **THEN** no request SHALL be sent
-- **AND** the session row SHALL remain unchanged
-
-### Requirement: Active session cannot be deleted from the menu
-If the right-clicked session is the current/active session, the Delete entry SHALL be disabled (greyed out) with a tooltip explaining "Switch to another session first". This mirrors the server-side 409 — the UI prevents the obviously-wrong action.
-
-#### Scenario: delete disabled on active session
-- **WHEN** the user opens the context menu on the currently active session
-- **THEN** the Delete entry SHALL be disabled and show the tooltip
-- **AND** clicking it SHALL NOT trigger any request
+## ADDED Requirements
 
 ### Requirement: Clear action in the session context menu
 Selecting **Clear** from the session context menu SHALL clear the displayed turns for that session in the client view. The action SHALL be available from both the right-click menu on a session row and the chat header overflow menu.
@@ -65,4 +41,3 @@ This action was previously a permanently-visible "Clear chat" button in the side
 - **WHEN** the sidebar renders
 - **THEN** the footer SHALL NOT contain a "Clear chat" button
 - **AND** the clear action SHALL be reachable only from the session context menu
-

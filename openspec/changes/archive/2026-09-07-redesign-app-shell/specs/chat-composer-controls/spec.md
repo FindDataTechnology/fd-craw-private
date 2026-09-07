@@ -1,9 +1,4 @@
-# chat-composer-controls Specification
-
-## Purpose
-TBD — created by archiving change composer-control-strip. Update Purpose after archive.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Composer renders a control strip beneath the input
 
@@ -74,42 +69,7 @@ The strip SHALL indicate when a runtime restart is in progress, and the composer
 - **THEN** the strip SHALL NOT display a pending state for the agent control
 - **AND** the send button SHALL NOT be disabled on account of the agent change
 
-### Requirement: Commands control opens the existing slash-command picker
-
-The commands control SHALL open the same `SlashCommandPicker` used by typed `/` input, with an empty query, showing built-in commands and loaded skills in the existing sections. Selecting an entry SHALL insert its token into the textarea exactly as the typed path does. No second command list SHALL be maintained.
-
-#### Scenario: clicking the commands control opens the picker
-
-- **WHEN** the user activates the commands control
-- **THEN** the slash-command picker SHALL open showing all built-in commands and all loaded skills
-- **AND** keyboard navigation, filtering, and Escape-to-dismiss SHALL behave identically to the typed-`/` path
-
-#### Scenario: selecting a command inserts its token
-
-- **WHEN** the user selects an entry from the picker opened via the control
-- **THEN** the entry's token SHALL be inserted into the textarea followed by a space
-- **AND** focus SHALL return to the textarea
-
-### Requirement: Reasoning-effort control appears only for models that support it
-
-The effort control SHALL render only when the active model's `ModelInfo` includes a non-empty `reasoningEfforts` array. When the field is absent or empty, the control SHALL NOT be rendered.
-
-#### Scenario: reasoning model shows the effort control
-
-- **WHEN** the active model declares `reasoningEfforts: ["low","medium","high"]`
-- **THEN** the strip SHALL render the effort control offering those three values
-- **AND** SHALL display the currently active effort
-
-#### Scenario: non-reasoning model omits the effort control
-
-- **WHEN** the active model's `ModelInfo` has no `reasoningEfforts` field
-- **THEN** the strip SHALL NOT render an effort control
-- **AND** SHALL NOT render a disabled placeholder in its position
-
-#### Scenario: switching to a non-reasoning model removes the control
-
-- **WHEN** the active model changes to one without `reasoningEfforts`
-- **THEN** the effort control SHALL be removed from the strip
+## ADDED Requirements
 
 ### Requirement: Control strip is the sole surface for per-turn runtime configuration
 

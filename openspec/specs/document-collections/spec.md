@@ -1,7 +1,7 @@
 # document-collections Specification
 
 ## Purpose
-TBD - created by archiving change doc-uploads-litellm-collections. Update Purpose after archive.
+Group uploaded documents into named collections so a chat turn can scope retrieval to a chosen subset of the knowledge base.
 ## Requirements
 
 <!-- All requirements removed by bundle-weknora-knowledge change -->

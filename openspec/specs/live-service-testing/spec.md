@@ -36,11 +36,6 @@ The default `@live` tests SHALL only assert observable, side-effect-free behavio
 - **WHEN** the test loads `/chat` on the deployed service
 - **THEN** the status element SHALL become "Connected"
 
-#### Scenario: embedded panel iframes mount
-- **WHEN** the test navigates to the OpenConnector and LiteLLM panel routes on the deployed service
-- **THEN** an iframe element SHALL be present for each
-- **AND** each iframe's `src` SHALL point at the same-origin proxy path (`/oc-web` or `/litellm-web`)
-
 #### Scenario: default live tests do not mutate deployed state
 - **WHEN** the default `@live` suite runs against the deployed service
 - **THEN** no chat prompt SHALL be submitted

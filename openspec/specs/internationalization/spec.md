@@ -44,11 +44,11 @@ The user's selected locale SHALL be written to `localStorage["platform.locale"]`
 - **THEN** the UI SHALL re-render in Simplified Chinese immediately
 - **AND** no request to restart `server.js` or any child service SHALL be made
 
-### Requirement: Sidebar language switcher lists all supported locales
-The sidebar SHALL expose a language-selection control (`data-testid="locale-select"`) whose options are the supported locales, each labeled by that locale's own-language display name (e.g. `English`, `简体中文`, `Español`, `Français`, `日本語`). Selecting an option SHALL set the active locale, persist it, and re-render the shell in the chosen locale.
+### Requirement: Settings language switcher lists all supported locales
+The Settings surface's General section SHALL expose a language-selection control (`data-testid="locale-select"`) whose options are the supported locales, each labeled by that locale's own-language display name (e.g. `English`, `简体中文`, `Español`, `Français`, `日本語`). Selecting an option SHALL set the active locale, persist it, and re-render the shell in the chosen locale. The control SHALL NOT be rendered anywhere else in the application.
 
 #### Scenario: switcher lists every supported locale
-- **WHEN** the sidebar renders
+- **WHEN** the Settings surface is open on the General section
 - **THEN** the locale select SHALL contain one option per supported locale
 - **AND** each option's label SHALL be that locale's endonym
 
@@ -56,7 +56,11 @@ The sidebar SHALL expose a language-selection control (`data-testid="locale-sele
 - **WHEN** the user selects `日本語` in the locale select
 - **THEN** the active locale SHALL become `ja`
 - **AND** `localStorage["platform.locale"]` SHALL be `ja`
-- **AND** the shell SHALL re-render with Japanese strings
+- **AND** the shell SHALL re-render with Japanese strings, including the surface behind the Settings overlay
+
+#### Scenario: switcher is not present in the sidebar
+- **WHEN** the sidebar renders in any locale
+- **THEN** it SHALL NOT contain a locale-selection control
 
 ### Requirement: All user-visible frontend strings resolve through the i18n bundle
 No component or page in `web/src` SHALL render a hard-coded user-visible display string; every such string SHALL be obtained via the i18n `t()` function against a stable key in the `common` namespace, with dynamic values passed as interpolation variables. Switching the active locale SHALL update every displayed string without a page reload.

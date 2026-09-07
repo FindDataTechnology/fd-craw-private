@@ -39,11 +39,11 @@ The Electron supervisor SHALL spawn a Redis binary (or Memurai on Windows) as a 
 - **THEN** the supervisor SHALL NOT spawn a Redis process
 
 ### Requirement: WeKnora connects to the existing embedded PostgreSQL
-WeKnora SHALL connect to the existing embedded PostgreSQL instance (from the `bundle-postgres-embed-litellm` change) using the same connection parameters. WeKnora SHALL create its own schema or database within the shared Postgres instance. No second Postgres instance SHALL be spawned.
+WeKnora SHALL connect to the existing embedded PostgreSQL instance using the same connection parameters. WeKnora SHALL create its own schema or database within the shared Postgres instance. No second Postgres instance SHALL be spawned.
 
 #### Scenario: WeKnora uses the shared Postgres
 - **WHEN** the supervisor spawns WeKnora
-- **THEN** WeKnora SHALL be configured with the same Postgres connection parameters as LiteLLM
+- **THEN** WeKnora SHALL be configured with the shared embedded Postgres connection parameters
 - **AND** SHALL create its own schema or database within the shared instance
 - **AND** SHALL NOT spawn a second Postgres process
 

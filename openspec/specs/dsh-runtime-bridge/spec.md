@@ -52,7 +52,7 @@ The server SHALL forward each accepted WebSocket `prompt` message to the dsh run
 
 ### Requirement: dsh runtime is configured via a profile that composes core plugins
 
-The server SHALL pass the dsh runtime a profile/bundle configuration (or CLI flags) that composes: `core/session`, `core/agent-loop`, `core/tools`, `dsh-tool-bash`, `dsh-tool-fs` (read/write/edit/grep), `dsh-mcp-client`, and the platform's Volces/LiteLLM llm adapter. The profile SHALL be the single source of which plugins the runtime loads; the server SHALL NOT duplicate tool or MCP wiring in JavaScript.
+The server SHALL pass the dsh runtime a profile/bundle configuration (or CLI flags) that composes: `core/session`, `core/agent-loop`, `core/tools`, `dsh-tool-bash`, `dsh-tool-fs` (read/write/edit/grep), `dsh-mcp-client`, and the platform's Volces llm adapter. The profile SHALL be the single source of which plugins the runtime loads; the server SHALL NOT duplicate tool or MCP wiring in JavaScript.
 
 #### Scenario: profile composes built-in tools
 - **WHEN** the dsh runtime starts with the platform profile

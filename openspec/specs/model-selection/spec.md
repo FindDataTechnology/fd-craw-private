@@ -5,7 +5,7 @@ TBD - created by archiving change add-mcp-skills-model-select. Update Purpose af
 ## Requirements
 ### Requirement: Server lists available models to the client
 
-The server SHALL respond to a `list_models` WebSocket message with the set of models available to the agent, each including its id, display name, provider, and — when the model declares reasoning efforts in the generated dsh profile — a `reasoningEfforts` array of selectable thinking levels. The model list SHALL be sourced from the dsh runtime's reported models (requested over the JSON-RPC bridge) rather than the pi `ModelRegistry`, and scoped to the providers the server is configured to use (Volces and/or LiteLLM adapters). When LiteLLM is configured, LiteLLM-routed models SHALL be included and correctly identified.
+The server SHALL respond to a `list_models` WebSocket message with the set of models available to the agent, each including its id, display name, provider, and — when the model declares reasoning efforts in the generated dsh profile — a `reasoningEfforts` array of selectable thinking levels. The model list SHALL be sourced from the dsh runtime's reported models (requested over the JSON-RPC bridge) rather than the pi `ModelRegistry`, and scoped to the providers the server is configured to use.
 
 #### Scenario: client requests the model list
 
@@ -19,13 +19,6 @@ The server SHALL respond to a `list_models` WebSocket message with the set of mo
 - **WHEN** a model's generated profile declares `reasoningEfforts: false`
 - **THEN** the `models` payload SHALL omit the `reasoningEfforts` field for that model
 - **AND** the UI SHALL NOT render a thinking-level control for it
-
-#### Scenario: LiteLLM models appear in selector when configured
-
-- **WHEN** the server starts with LiteLLM configured
-- **AND** a client sends `{ "type": "list_models" }`
-- **THEN** the server SHALL include LiteLLM-routed models in the `models` response
-- **AND** the model selector dropdown SHALL display LiteLLM models as selectable options
 
 ### Requirement: Server communicates the active model
 
@@ -88,27 +81,21 @@ The server SHALL reject a `set_model` request while the agent is mid-response, s
 - **AND** SHALL NOT switch the model
 
 ### Requirement: Server selects a default model at startup
-The server SHALL select a default model when creating the agent session by passing an explicit model to the SDK. If the `DEFAULT_MODEL` environment variable is set and matches an available model id, that model SHALL be used. Otherwise the first available model with configured auth SHALL be used. Because the LiteLLM extension registers its models under upstream provider names (e.g. `deepseek`, `volcengine`, `openrouter`) with the LiteLLM API key - rather than a single `litellm` provider - and shadows the Volces provider when enabled, the first model with configured auth is a LiteLLM-routed model when LiteLLM is configured, and a Volces model otherwise. The selected default model SHALL be communicated to clients as the active model on connect. The model selector SHALL list models with configured auth (deduplicated by id), so LiteLLM models are selectable.
-
-#### Scenario: default is a LiteLLM model when LiteLLM is configured
-- **WHEN** the server starts with LiteLLM configured and `DEFAULT_MODEL` unset
-- **THEN** the agent session SHALL start on a LiteLLM-routed model (a model whose auth is the LiteLLM API key)
-- **AND** the `current_model` sent on connect SHALL be that model's id
-- **AND** the model selector SHALL show that model as selected
+The server SHALL select a default model when creating the agent session by passing an explicit model to the runtime. If the `DEFAULT_MODEL` environment variable is set and matches an available model id, that model SHALL be used. Otherwise the first available model with configured auth SHALL be used. The selected default model SHALL be communicated to clients as the active model on connect. The model selector SHALL list models with configured auth, deduplicated by id.
 
 #### Scenario: DEFAULT_MODEL overrides the default
 - **WHEN** the server starts with `DEFAULT_MODEL` set to a valid available model id
 - **THEN** the agent session SHALL start on that model
 - **AND** the `current_model` sent on connect SHALL be that model's id
 
-#### Scenario: fallback to Volces when LiteLLM is not configured
-- **WHEN** the server starts without LiteLLM configured
-- **THEN** the agent session SHALL start on a Volces model
-- **AND** the `current_model` sent on connect SHALL be that Volces model's id
+#### Scenario: first available model is the default
+- **WHEN** the server starts with `DEFAULT_MODEL` unset
+- **THEN** the agent session SHALL start on the first available model with configured auth
+- **AND** the `current_model` sent on connect SHALL be that model's id
 
-#### Scenario: LiteLLM models are selectable
-- **WHEN** a client sends `{ "type": "list_models" }` and LiteLLM is configured
-- **THEN** the server SHALL include LiteLLM-routed models (those with configured auth) in the `models` response
+#### Scenario: available models are deduplicated
+- **WHEN** a client sends `{ "type": "list_models" }`
+- **THEN** the server SHALL include every model with configured auth in the `models` response
 - **AND** SHALL deduplicate them by id
 
 ### Requirement: Model selector is enabled as soon as models are known
@@ -141,21 +128,6 @@ Clicking on the model selector input SHALL open the dropdown and SHALL NOT throw
 - **THEN** the model selector SHALL display the current model id
 - **AND** the input SHALL not be empty
 
-### Requirement: Sidebar model indicator is read-only
-The sidebar's model display SHALL be a read-only chip showing the current default model id (sourced from the WS `current_model` event). Clicking the chip SHALL navigate the user to `/models` for the actual configuration. The legacy in-sidebar `<select>` for switching the model is replaced by the Set-as-default action on the Models page (see `llm-model-management`). The sidebar's Agent `<select>` is unchanged (it manages a different axis — `agent-local` vs `agent-remote`).
-
-#### Scenario: clicking model chip navigates
-- **WHEN** the user clicks the model chip in the sidebar
-- **THEN** the router SHALL navigate to `/models`
-- **AND** no model-switch WS message SHALL be sent
-
-#### Scenario: model chip reflects current default
-- **WHEN** the WS `current_model` event arrives
-- **THEN** the sidebar model chip SHALL display the new model id
-- **WHEN** the user changes the default on `/models`
-- **THEN** a `model_changed` event SHALL be broadcast
-- **AND** the chip SHALL update accordingly
-
 ### Requirement: Client can switch the thinking level
 The server SHALL accept a `set_effort` WebSocket message carrying a thinking level, validate it against the current model's declared `reasoningEfforts`, persist it host-side, write it into the dsh settings profile, and apply it by restarting the dsh runtime (which resumes the session from disk).
 
@@ -172,13 +144,19 @@ The server SHALL accept a `set_effort` WebSocket message carrying a thinking lev
 - **THEN** the server SHALL reject the switch with an error, matching the existing model-switch guard
 
 ### Requirement: Model and thinking level are selected together in the UI
-The models page SHALL present the thinking-level picker alongside (not separate from) the model selector for models that declare efforts, and the chat header chip SHALL display the active model and non-default effort together.
+The Settings Models section (`/settings/models`) SHALL present the thinking-level picker alongside (not separate from) the model selector for models that declare efforts, and the composer control strip SHALL display the active model and its non-default effort in adjacent controls so that the pair reads as one setting.
 
 #### Scenario: combined selector
-- **WHEN** the user opens the models page and selects a model with declared efforts
+- **WHEN** the user opens the Settings Models section and selects a model with declared efforts
 - **THEN** the effort picker SHALL be offered in the same selection flow, with "Default" preselected when no explicit effort is persisted
 
-#### Scenario: chip reflects effort
+#### Scenario: strip reflects effort
 - **WHEN** a non-default thinking level is active
-- **THEN** the Sidebar model chip SHALL display `Model · effort`
+- **THEN** the control strip's model control SHALL display the active model
+- **AND** the adjacent reasoning-effort control SHALL display the active effort
+
+#### Scenario: legacy models route resolves
+- **WHEN** the user navigates to `/models`
+- **THEN** the router SHALL redirect to `/settings/models`
+- **AND** the Settings surface SHALL open on the Models section
 

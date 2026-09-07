@@ -1,8 +1,5 @@
-# system-status-dashboard Specification
+## ADDED Requirements
 
-## Purpose
-TBD - created by archiving change ui-nav-restructure. Update Purpose after archive.
-## Requirements
 ### Requirement: System Status is a Settings section
 
 The System Status surface SHALL be the Settings modal's `status` section at `/settings/status`, titled "System Status" (i18n key `systemStatus.title`). It SHALL be reachable by opening the Settings modal (sidebar gear or `Cmd/Ctrl + ,`) and selecting the System Status section, or by navigating directly to `/settings/status`. It SHALL NOT be a sidebar navigation tab.
@@ -53,32 +50,28 @@ Each section's "Manage" link SHALL target the surface that owns the setting it s
 - **THEN** the Settings modal SHALL close
 - **AND** the application SHALL navigate to the Agents work surface at `/agents`
 
-### Requirement: Health section lists supervised services
-The Health section SHALL list every supervised process with a state indicator (healthy / disabled / unhealthy / starting) sourced from `GET /api/supervisor/status`. The state indicator SHALL be color-coded (green / grey / red / amber) consistent with the existing dashboard. Each row SHALL show service name and (when applicable) port. No actions SHALL be available — this is a read-only health summary.
-
-#### Scenario: healthy services shown
-- **WHEN** all supervised processes are healthy
-- **THEN** the Health section SHALL list each service with a green dot and the localized "healthy" label
+## MODIFIED Requirements
 
 ### Requirement: Active Configuration section shows current provider, model, and agent
+
 The Active Configuration section SHALL display: current LLM provider name, current model id, and current agent id (local/remote). Each item SHALL have a "Manage" link to the surface that controls it — the provider and model rows link to the Settings modal's Models section at `/settings/models`, and the agent row links to the Agents work surface at `/agents`.
 
 #### Scenario: shows active configuration
+
 - **WHEN** the pane renders
 - **THEN** the Active Configuration section SHALL show the current model id, provider name, and agent id from the live state
 - **AND** each row SHALL have a clickable link to the surface that controls it
 
 #### Scenario: provider and model links stay within Settings
+
 - **WHEN** the user clicks the "Manage" link on the provider row or the model row
 - **THEN** the URL SHALL become `/settings/models`
 - **AND** the Settings modal SHALL remain open with the Models pane active
 
-### Requirement: Resources section shows counts
-The Resources section SHALL display: total document count, per-status document counts, collection count, and MCP tool count. Counts SHALL be sourced from `GET /api/supervisor/status` (non-secret fields only, same as today). A "Refresh" button SHALL re-fetch the status.
+## REMOVED Requirements
 
-#### Scenario: refresh reloads status
-- **WHEN** the user clicks the Refresh button
-- **THEN** the page SHALL re-fetch `/api/supervisor/status`
-- **AND** update all sections with the new values
-- **AND** the button SHALL be disabled while the request is in flight
+### Requirement: System Status page is reachable from the Settings menu
 
+**Reason**: The sidebar Settings popover menu that this requirement referred to is deleted by this change and replaced by the routed Settings modal. The surface is no longer a standalone page at `/dashboard` reached from a menu — it is a section of the modal itself. The requirement's scenario also described three sections, which had drifted from the four the page actually renders (Health, Active Configuration, Resources, MCP).
+
+**Migration**: Use `/settings/status`, reachable by opening the Settings modal from the sidebar gear or `Cmd/Ctrl + ,` and selecting System Status. The legacy `/dashboard` path redirects there. The page content, its sections, and its read-only nature are unchanged. See the new requirement "System Status is a Settings section".

@@ -1,58 +1,40 @@
 # desktop-supervisor Specification
 
 ## Purpose
-TBD - the desktop-supervisor capability governs the Electron main process that supervises bundled child processes (server.js, OpenConnector, LiteLLM, Postgres). The shared, Electron-agnostic `supervisor/` package owns the orchestration: descriptor registry, ordered startup with dependency readiness, health checking, automatic restart, ordered shutdown, status inspection, log capture, graceful degradation of optional servers, and port management. The manifest-gated descriptor resolution is covered under this spec; additional requirements are tracked under separate capabilities (e.g. local-services-launcher).
+Governs the Electron main process, which runs no application logic and instead supervises the backend as a child process. The shared, Electron-agnostic `supervisor/` package owns the orchestration: descriptor registry, startup with health readiness, health checking, automatic restart, ordered shutdown, status inspection, log capture, and port management.
 
 ## Requirements
 
-### Requirement: Manifest-gated bundled service descriptors
-The supervisor SHALL generate a bundled-spawn descriptor for LiteLLM, OpenConnector, or Postgres only when the component is both selected in the resolved bundle manifest AND its bundled resources are present on disk AND no external URL (`*_BASE_URL` / `DATABASE_URL`) overrides it. A component excluded from the manifest SHALL be treated exactly as if its bundled resources were absent, falling through to the external-URL descriptor path (enabled only when an external URL is configured). External-URL operation SHALL remain available regardless of manifest selection.
-
-#### Scenario: deselected component does not spawn
-- **WHEN** the bundle manifest excludes OpenConnector and bundled OpenConnector resources exist on disk
-- **THEN** the supervisor SHALL NOT spawn OpenConnector
-- **AND** the OpenConnector descriptor resolves to disabled unless `OPENCONNECTOR_BASE_URL` is an external URL
-
-#### Scenario: external URL still works for a deselected component
-- **WHEN** the bundle manifest excludes LiteLLM and `LITELLM_BASE_URL=https://litellm.example.com` is set
-- **THEN** the supervisor SHALL health-check the external LiteLLM URL without spawning any local process
-
-#### Scenario: selected component with resources spawns as before
-- **WHEN** the bundle manifest selects LiteLLM, bundled resources are present, and no external URL is set
-- **THEN** the supervisor spawns the bundled LiteLLM exactly as it does today
-
 ### Requirement: Server descriptor registry
-The supervisor SHALL manage a registry of server descriptors. Each descriptor SHALL declare the server's id, runtime kind (`node` / `python` / `http-external`), start command, working directory, environment, transport (`http-port` or `stdio-rpc`), health-check probe, dependency list, and whether the server is optional.
+The supervisor SHALL manage a registry of server descriptors. Each descriptor SHALL declare the server's id, runtime kind (`node` / `http-external`), start command, working directory, environment, transport (`http-port` or `stdio-rpc`), health-check probe, dependency list, and whether the server is optional.
 
 #### Scenario: App launches with the default servers
 - **WHEN** the Electron app starts
-- **THEN** the supervisor loads descriptors for `server.js`, `pi-agent`, `postgres`, `litellm`, and `openconnector`
-- **AND** begins orchestrating them according to their declared dependencies
+- **THEN** the supervisor loads the `server-js` descriptor
+- **AND** begins orchestrating it according to its declared dependencies
 
-### Requirement: Ordered startup with dependency readiness
-The supervisor SHALL start servers in dependency order and SHALL wait for each server's health check to pass before starting servers that depend on it.
+### Requirement: Startup waits for health readiness
+The supervisor SHALL start servers in dependency order and SHALL wait for each server's health check to pass before starting servers that depend on it. The app window SHALL open only after the backend reports healthy.
 
-#### Scenario: bundled sidecars warm up before server.js
-- **WHEN** the app starts with bundled OpenConnector and LiteLLM resources
-- **THEN** the supervisor starts `postgres`/`litellm`/`openconnector` first and waits for each dependent server's health check to pass
-- **BEFORE** `server.js` finishes startup against the spawned sidecar URLs
+#### Scenario: window opens only after the backend is healthy
+- **WHEN** the app starts
+- **THEN** the supervisor starts `server-js` and polls its health endpoint
+- **AND** the `BrowserWindow` is created only once that health check passes
 
-#### Scenario: external servers are health-checked, not spawned
-- **WHEN** `litellm` and `openconnector` are configured as `http-external` (URLs only)
-- **THEN** the supervisor polls their health endpoints
-- **AND** does NOT spawn a process for them
-- **AND** marks them green or red without blocking app launch when they are optional
+#### Scenario: dependents wait for their dependency
+- **WHEN** a descriptor declares a dependency on another server
+- **THEN** the supervisor SHALL NOT start it until the dependency's health check passes
 
 ### Requirement: Health checking per transport
-The supervisor SHALL health-check each running server on an interval using a transport-appropriate probe: an HTTP `GET` for `http-port` / `http-external` servers, and a TCP connection for descriptors that declare a `tcp` health kind (e.g. bundled Postgres).
+The supervisor SHALL health-check each running server on an interval using a transport-appropriate probe: an HTTP `GET` for `http-port` / `http-external` servers, and a TCP connection for descriptors that declare a `tcp` health kind.
 
 #### Scenario: HTTP server health
 - **WHEN** `server.js` is running on its assigned port
 - **THEN** the supervisor periodically issues an HTTP health request and marks it healthy on a 2xx response
 
 #### Scenario: TCP server health
-- **WHEN** bundled Postgres is running on its assigned port
-- **THEN** the supervisor marks it healthy when a TCP connection to the port succeeds
+- **WHEN** a descriptor declares a `tcp` health kind
+- **THEN** the supervisor marks it healthy when a TCP connection to its port succeeds
 
 ### Requirement: Automatic restart on unexpected failure
 The supervisor SHALL restart a server process if it exits unexpectedly, subject to a backoff policy, and SHALL NOT restart a server that exited because the app is shutting down.
@@ -60,7 +42,7 @@ The supervisor SHALL restart a server process if it exits unexpectedly, subject 
 #### Scenario: crashed server self-heals
 - **WHEN** a spawned server process exits unexpectedly
 - **THEN** the supervisor restarts it after a backoff delay
-- **AND** the window and other servers remain unaffected
+- **AND** the window remains unaffected
 
 #### Scenario: no restart during shutdown
 - **WHEN** the user quits the app
@@ -88,18 +70,10 @@ The supervisor SHALL capture each child process's stdout and stderr into a per-s
 - **THEN** the supervisor appends it to that server's log ring buffer
 - **AND** it is retrievable via status inspection
 
-### Requirement: Graceful degradation of optional servers
-The supervisor SHALL allow the app to launch and `server.js` to start even when optional servers (`litellm`, `openconnector`) are unreachable or unconfigured, preserving the existing graceful-degradation contract.
-
-#### Scenario: OpenConnector unreachable
-- **WHEN** `openconnector` is enabled in settings but its health check fails
-- **THEN** the supervisor marks it red
-- **AND** `server.js` starts and hides the OpenConnector panel, as it does today
-
 ### Requirement: Port management for spawned servers
 The supervisor SHALL assign a free localhost port to each spawned port-speaking server at launch and SHALL pass the resolved URLs of sibling servers into each child's environment.
 
-#### Scenario: server.js receives sibling URLs
+#### Scenario: server.js receives a dynamic free port
 - **WHEN** the supervisor starts `server.js`
-- **THEN** it passes the resolved `LITELLM_BASE_URL` and `OPENCONNECTOR_BASE_URL` into `server.js`'s environment when those sidecars are bundled
-- **AND** `server.js` discovers the spawned sidecars via those URLs
+- **THEN** it selects a free localhost port and passes it into the child's environment
+- **AND** the Electron window loads `http://localhost:<port>` once the health check passes

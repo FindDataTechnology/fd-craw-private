@@ -8,7 +8,7 @@ Defines the frontend shell that hosts the chat surface: what technology stack it
 
 The chat surface (sidebar, message log, composer) SHALL be implemented as a React + TypeScript single-page application located under `web/` at the repository root. Its build output SHALL be produced by Vite and written to `web/dist/`. Views other than the chat surface MAY remain on the legacy vanilla `public/` frontend until they are ported by follow-up changes.
 
-The React sidebar SHALL link each non-chat navigation item to the legacy view's own path (`/documents`, `/openconnector`, `/dashboard`, and — when `litellmEnabled` — `/litellm`). It SHALL NOT link non-chat items to `/`, because `/` redirects to `/chat/` and would trap the user in the chat view.
+The React sidebar SHALL link each non-chat navigation item to the legacy view's own path (`/documents`, `/dashboard`). It SHALL NOT link non-chat items to `/`, because `/` redirects to `/chat/` and would trap the user in the chat view.
 
 #### Scenario: React chat app serves `/chat`
 - **WHEN** a browser requests `/chat` or any subpath `/chat/*`
@@ -16,7 +16,7 @@ The React sidebar SHALL link each non-chat navigation item to the legacy view's 
 - **AND** the referenced assets SHALL be served from `web/dist/`
 
 #### Scenario: Legacy views remain reachable
-- **WHEN** a browser requests `/documents`, `/openconnector`, `/dashboard`, or `/litellm`
+- **WHEN** a browser requests `/documents` or `/dashboard`
 - **THEN** the server SHALL respond with the legacy `public/index.html`
 - **AND** the corresponding view SHALL open (via the legacy client-side hash/tab logic) until its own migration change ports it
 
@@ -27,9 +27,7 @@ The React sidebar SHALL link each non-chat navigation item to the legacy view's 
 #### Scenario: Sidebar links point at each view's own path
 - **WHEN** the React sidebar renders
 - **THEN** the Documents link SHALL target `/documents`
-- **AND** the OpenConnector link SHALL target `/openconnector`
 - **AND** the Dashboard link SHALL target `/dashboard`
-- **AND** the LiteLLM link SHALL be present with target `/litellm` only when `/api/config` reports `litellmEnabled: true`
 - **AND** no non-chat sidebar link SHALL target `/`
 
 ### Requirement: The WebSocket and REST contracts do not change
@@ -42,7 +40,7 @@ The migration SHALL preserve every server WebSocket event and REST endpoint docu
 - **AND** the server SHALL NOT introduce a new WebSocket route for the React app
 
 #### Scenario: REST endpoints are called unchanged
-- **WHEN** the React chat app requests chat history, documents, or OpenConnector data
+- **WHEN** the React chat app requests chat history or documents data
 - **THEN** it SHALL call the existing `/api/*` endpoints with unchanged request and response shapes
 
 ### Requirement: A single build step produces the frontend
@@ -64,7 +62,7 @@ The migration SHALL preserve every server WebSocket event and REST endpoint docu
 
 ### Requirement: Backend code remains buildless
 
-The Node backend (`server.js`, `mcp-bridge.js`, `documents.js`, `chat-history.js`, `collections.js`, `open-connector.js`, `db.js`, and `electron/**`) SHALL remain plain ES modules with no transpilation step. The introduction of a bundler SHALL be scoped to `web/`.
+The Node backend (`server.js`, `mcp-bridge.js`, `documents.js`, `chat-history.js`, `collections.js`, `db.js`, and `electron/**`) SHALL remain plain ES modules with no transpilation step. The introduction of a bundler SHALL be scoped to `web/`.
 
 #### Scenario: Backend has no transpilation
 - **WHEN** a maintainer edits a backend module
@@ -111,12 +109,30 @@ The empty-state placeholder (shown when there are no turns) SHALL be laid out in
 - **THEN** the chat surface fills exactly the new viewport height and the composer remains visible without a page-level scrollbar
 
 ### Requirement: Chat page has a header when turns exist
-When the chat page has at least one turn (a session is loaded or in progress), the page SHALL render a **session header** above the message log. The header SHALL contain: an editable title (click-to-edit text input that commits on Enter, cancels on Escape, debounced 300ms), the current model name, the current agent name, and a connection-status dot. The header SHALL be sticky to the top of the chat area and SHALL NOT obscure the message log on scroll.
+When the chat page has at least one turn (a session is loaded or in progress), the page SHALL render a **session header** above the message log. The header SHALL contain exactly two elements: an editable title (click-to-edit text input that commits on Enter, cancels on Escape, debounced 300ms) and an overflow (`⋯`) trigger.
 
-#### Scenario: header shows current state
+Activating the overflow trigger SHALL open the session context menu for the **active** session — the same menu component that opens on right-click of a session row in the sidebar (see `session-list-management`), so there is one menu with two triggers rather than two parallel menus.
+
+The header SHALL NOT display the current model name, the current agent name, or a connection-status dot. That state is reported once elsewhere in the shell: model and agent by the composer control strip (see `chat-composer-controls`), which is on screen whenever a turn can be sent and is also where those values are *changed*; connection status by the sidebar footer row (see `app-navigation`). Repeating them in the header gave the user three places to read the same value and no place to act on it.
+
+The header SHALL be sticky to the top of the chat area and SHALL NOT obscure the message log on scroll.
+
+#### Scenario: header shows the title and the overflow trigger
 - **WHEN** the chat page has turns
-- **THEN** the session header SHALL display the session title, current model id, current agent id, and the WS connection status dot
+- **THEN** the session header SHALL display the session title and an overflow (`⋯`) trigger
 - **AND** the header SHALL be visible above the message log
+
+#### Scenario: header does not duplicate runtime state
+- **WHEN** the session header renders
+- **THEN** it SHALL NOT render the current model name, the current agent name, or a connection-status dot
+- **AND** the current model and agent SHALL be readable from the composer control strip
+- **AND** the connection status SHALL be readable from the sidebar footer row
+
+#### Scenario: overflow trigger opens the session menu
+- **WHEN** the user activates the overflow (`⋯`) trigger in the header
+- **THEN** the session context menu SHALL open for the currently active session
+- **AND** the menu SHALL be the same component and offer the same actions as the menu opened by right-clicking that session's row in the sidebar
+- **AND** the menu SHALL be dismissable by clicking outside, pressing Escape, or selecting an item
 
 #### Scenario: rename session
 - **WHEN** the user clicks the title in the header

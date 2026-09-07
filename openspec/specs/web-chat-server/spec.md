@@ -4,7 +4,7 @@
 TBD - created by archiving change build-pi-web-chat. Update Purpose after archive.
 ## Requirements
 ### Requirement: Server creates and manages a dsh agent session
-The server SHALL create a single agent session on startup by spawning the dsh runtime as a subprocess and establishing a JSON-RPC session over stdio (see `dsh-runtime-bridge`). The session SHALL be in-memory and equipped with the dsh-profile tools (`dsh-tool-bash`, `dsh-tool-fs`, `dsh-mcp-client`). When no chat provider (Volces or LiteLLM) is configured, the server SHALL still spawn the runtime and start successfully (chat non-functional, logged) rather than exiting — see "Server degrades gracefully when no chat provider is configured".
+The server SHALL create a single agent session on startup by spawning the dsh runtime as a subprocess and establishing a JSON-RPC session over stdio (see `dsh-runtime-bridge`). The session SHALL be in-memory and equipped with the dsh-profile tools (`dsh-tool-bash`, `dsh-tool-fs`, `dsh-mcp-client`). When no chat provider is configured, the server SHALL still spawn the runtime and start successfully (chat non-functional, logged) rather than exiting — see "Server degrades gracefully when no chat provider is configured".
 
 #### Scenario: Server starts successfully
 - **WHEN** the server starts with a valid API key configured and the dsh binary discoverable
@@ -60,10 +60,10 @@ The server SHALL serve the `web/dist/` directory (SPA, built by Vite) as static 
 - **THEN** the server SHALL return the asset content-compressed rather than uncompressed
 
 ### Requirement: Server degrades gracefully when no chat provider is configured
-The server SHALL start successfully when no chat provider (Volces or LiteLLM) is configured. When `VOLCES_API_KEY` is unset, the Volces llm adapter SHALL NOT be loaded into the dsh profile. When neither Volces nor LiteLLM is configured, the dsh profile SHALL load no llm adapters, the runtime SHALL still be spawned, and the server SHALL log a warning that chat is non-functional. The documents RAG SHALL log a warning when it initializes without a Volces key.
+The server SHALL start successfully when no chat provider is configured. When `VOLCES_API_KEY` is unset, the Volces llm adapter SHALL NOT be loaded into the dsh profile, the dsh profile SHALL load no llm adapters, the runtime SHALL still be spawned, and the server SHALL log a warning that chat is non-functional. The documents RAG SHALL log a warning when it initializes without a Volces key.
 
 #### Scenario: server starts with no chat provider
-- **WHEN** the server starts with `VOLCES_API_KEY` unset and LiteLLM not configured
+- **WHEN** the server starts with `VOLCES_API_KEY` unset
 - **THEN** the server SHALL NOT exit
 - **AND** SHALL log a warning that no chat provider is configured
 - **AND** the dsh runtime SHALL be spawned with no llm adapter in the profile
@@ -82,7 +82,7 @@ The server SHALL NOT ship a functional API key as a fallback default in source. 
 - **AND** the Volces provider SHALL NOT be registered
 
 ### Requirement: Asynchronous errors are surfaced, not leaked as unhandled rejections
-Every asynchronous WebSocket message handler SHALL catch its own promise rejections and emit an `{ type: "error", message }` message to the originating client rather than leaking an unhandled promise rejection. The cron mutation handlers (`cron_remove`, `cron_pause`, `cron_resume`, `cron_run`) SHALL each wrap their async work in `try/catch`, mirroring `cron_add`. The connect-time `workdirStore.getWorkdir()` promise SHALL have a rejection handler that logs. The `shutdown()` path SHALL wrap the `closeMcpClients` await in `try/catch` so a rejection does not prevent `process.exit(0)`. The reverse-proxy response reads in `createWebProxy` and `proxyLitellmUi` SHALL wrap `await upstreamRes.arrayBuffer()` in `try/catch` and return HTTP 502 on failure.
+Every asynchronous WebSocket message handler SHALL catch its own promise rejections and emit an `{ type: "error", message }` message to the originating client rather than leaking an unhandled promise rejection. The cron mutation handlers (`cron_remove`, `cron_pause`, `cron_resume`, `cron_run`) SHALL each wrap their async work in `try/catch`, mirroring `cron_add`. The connect-time `workdirStore.getWorkdir()` promise SHALL have a rejection handler that logs. The `shutdown()` path SHALL wrap the `closeMcpClients` await in `try/catch` so a rejection does not prevent `process.exit(0)`. The reverse-proxy response reads in `createWebProxy` SHALL wrap `await upstreamRes.arrayBuffer()` in `try/catch` and return HTTP 502 on failure.
 
 #### Scenario: a cron handler error is surfaced to the client
 - **WHEN** a `cron_remove`, `cron_pause`, `cron_resume`, or `cron_run` handler throws
@@ -94,7 +94,7 @@ Every asynchronous WebSocket message handler SHALL catch its own promise rejecti
 - **THEN** the server SHALL log the error and SHALL still exit
 
 #### Scenario: proxy response-read failure returns 502
-- **WHEN** `await upstreamRes.arrayBuffer()` rejects in `createWebProxy` or `proxyLitellmUi`
+- **WHEN** `await upstreamRes.arrayBuffer()` rejects in `createWebProxy`
 - **THEN** the server SHALL respond with HTTP 502 and a message describing the read failure
 
 ### Requirement: Server decomposition preserves the external contract

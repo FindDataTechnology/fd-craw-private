@@ -4,20 +4,25 @@
 TBD - synced from change left-nav-docs-history. Update Purpose after archive.
 ## Requirements
 ### Requirement: Left sidebar navigation shell with a canonical tab set
-The web UI SHALL provide a persistent left sidebar navigation containing, in order, the view tabs: **Chat, Knowledge, Agents, MCP Servers, Skills, Models**. The Models tab SHALL be present in v1 as a placeholder route (filled in by the `dsh-llm-models-page` change). The legacy "Dashboard", "Documents", "Extensions", and "OpenConnector" top-level entries SHALL be removed; their content moves to dedicated pages (`/dashboard` is renamed to `/dashboard` "System Status" surfaced under Settings; `/openconnector` is surfaced under Settings). The legacy `/extensions` parent route SHALL NOT be registered — MCP and Skills are direct top-level routes. Each view tab SHALL correspond to exactly one main-content panel. On initial load the UI SHALL activate the Chat tab. The sidebar session-list region SHALL remain visible regardless of which view tab is active. The displayed label of each view tab SHALL be resolved from the internationalization (`i18n`) resource bundle, keyed by a stable identifier, so that the label follows the active locale while the tab's identity, ordering, and icon remain stable.
+The web UI SHALL provide a persistent left sidebar navigation containing, in order, the view tabs: **Chat, Knowledge, Agents, Bots, Trace**. These five tabs are the application's *work surfaces* — views the user visits to read or produce content. Configuration surfaces SHALL NOT appear as view tabs: **MCP Servers**, **Skills**, and **Models** are sections of the Settings modal (see `settings-surface`), reached at `/settings/mcp`, `/settings/skills`, and `/settings/models` respectively. The legacy "Dashboard", "Documents", and "Extensions" top-level entries SHALL remain absent; System Status is likewise a Settings section at `/settings/status`. The legacy `/extensions` parent route SHALL NOT be registered. Each view tab SHALL correspond to exactly one main-content panel. On initial load the UI SHALL activate the Chat tab. The sidebar session-list region SHALL remain visible regardless of which view tab is active. The displayed label of each view tab SHALL be resolved from the internationalization (`i18n`) resource bundle, keyed by a stable identifier, so that the label follows the active locale while the tab's identity, ordering, and icon remain stable.
 
 #### Scenario: initial load shows the Chat tab
 - **WHEN** the page loads
-- **THEN** the sidebar SHALL render the view tabs Chat, Knowledge, Agents, MCP Servers, Skills, and Models
+- **THEN** the sidebar SHALL render the view tabs Chat, Knowledge, Agents, Bots, and Trace
 - **AND** the Chat tab SHALL be the active tab
 - **AND** the Chat panel SHALL be visible and all other panels SHALL be hidden
-- **AND** no Extensions, Dashboard, Documents, or OpenConnector top-level entry SHALL be present
+- **AND** no Extensions, Dashboard, or Documents top-level entry SHALL be present
 
 #### Scenario: canonical tab ordering and labels
 - **WHEN** the sidebar renders
-- **THEN** the view tabs SHALL appear in the order Chat, Knowledge, Agents, MCP Servers, Skills, Models
+- **THEN** the view tabs SHALL appear in the order Chat, Knowledge, Agents, Bots, Trace
 - **AND** each tab SHALL display a label resolved from the `common` i18n bundle under a stable key, alongside a stable icon
 - **AND** the tab's stable identifier and ordering SHALL NOT change when the active locale changes
+
+#### Scenario: configuration surfaces are absent from the nav
+- **WHEN** the sidebar renders
+- **THEN** no nav tab SHALL be present for MCP Servers, Skills, Models, or System Status
+- **AND** those surfaces SHALL be reachable only as Settings sections (per `settings-surface`)
 
 #### Scenario: Documents tab renamed to Knowledge
 - **WHEN** the user views the sidebar in any locale
@@ -27,7 +32,7 @@ The web UI SHALL provide a persistent left sidebar navigation containing, in ord
 
 #### Scenario: Extensions parent is absent
 - **WHEN** the user navigates to `/extensions`
-- **THEN** the router SHALL redirect to `/mcp` (the previously nested "MCP Servers" tab)
+- **THEN** the router SHALL redirect to `/settings/mcp` (the MCP Servers Settings section)
 - **AND** no Extensions parent page SHALL be rendered
 
 ### Requirement: Selecting a tab shows its panel and hides the others
@@ -59,7 +64,7 @@ The sidebar SHALL render a chat-session list region containing a "+ New chat" ac
 - **AND** the main content area SHALL remain on the chat view
 
 #### Scenario: new chat from a non-chat page
-- **WHEN** the user clicks "+ New chat" while a non-chat view (e.g. Documents, Dashboard, History, OpenConnector, LiteLLM) is active
+- **WHEN** the user clicks "+ New chat" while a non-chat view (e.g. Documents, Dashboard, History) is active
 - **THEN** a new chat session SHALL be created and become the active session
 - **AND** the main content area SHALL navigate to the chat view
 - **AND** the session list SHALL refresh with the new session highlighted
@@ -69,22 +74,6 @@ The sidebar SHALL render a chat-session list region containing a "+ New chat" ac
 - **THEN** that session SHALL become the active chat
 - **AND** its messages SHALL be rendered in the chat view
 
-### Requirement: LiteLLM management entry in the sidebar
-The sidebar SHALL render a LiteLLM nav entry that, when activated, switches the main content area to an in-app LiteLLM view embedding the proxy's management UI through the server's `/litellm-web` reverse proxy (governed by the `litellm-web` capability), mirroring how OpenConnector embeds its runtime UI. The entry SHALL be shown only when LiteLLM is configured; when LiteLLM is not configured the entry SHALL be absent. The entry SHALL NOT open the management UI in a new browser tab as its primary action.
-
-#### Scenario: entry shown when LiteLLM is configured
-- **WHEN** the page loads and LiteLLM is configured
-- **THEN** the sidebar SHALL render a LiteLLM nav entry
-
-#### Scenario: entry hidden when LiteLLM is not configured
-- **WHEN** the page loads and LiteLLM is not configured
-- **THEN** the sidebar SHALL NOT render a LiteLLM nav entry
-
-#### Scenario: activating the entry opens the in-app view
-- **WHEN** the user clicks the LiteLLM nav entry
-- **THEN** the main content area SHALL switch to the LiteLLM view
-- **AND** the view SHALL embed the management UI via the `/litellm-web` proxy
-
 ### Requirement: Drag-drop overlay is subtle and label-free
 The drag-drop overlay SHALL NOT display a prominent text label such as "Drop files to add to documents". Drop feedback SHALL be conveyed by a transient toast and the chat-view document banner; the overlay, if shown during a drag, SHALL be a subtle visual affordance without prominent text.
 
@@ -93,34 +82,22 @@ The drag-drop overlay SHALL NOT display a prominent text label such as "Drop fil
 - **THEN** the overlay SHALL NOT display a prominent text label
 - **AND** drop feedback SHALL be conveyed by the toast and/or the chat-view document banner
 
-### Requirement: Settings menu in sidebar footer
-The web UI SHALL provide a Settings entry in the sidebar footer, presented as a button with a gear icon. Clicking the entry SHALL open a menu with the items: **System Status**, **LLM Models**, **OpenConnector**. Selecting an item SHALL navigate to the corresponding route. The menu SHALL be dismissable by clicking outside, pressing Escape, or selecting an item. The Settings entry SHALL be visible on every page (it is part of the persistent sidebar shell), independent of the active view tab.
+### Requirement: Sidebar footer is a single status-and-settings row
+The sidebar footer SHALL contain exactly one row holding two elements: a connection-status indicator (a coloured dot plus a label reflecting the `connecting` / `connected` / `disconnected` states) and a settings button bearing a gear icon. Activating the settings button SHALL open the Settings modal (see `settings-surface`). The footer SHALL NOT contain an agent selector, a model chip, a "Clear chat" button, or a locale selector. The footer SHALL be present on every page, independent of the active view tab, because it is part of the persistent sidebar shell.
 
-#### Scenario: Settings menu opens and navigates
-- **WHEN** the user clicks the Settings gear icon
-- **THEN** a dropdown menu SHALL appear with the three items
-- **WHEN** the user clicks "OpenConnector"
-- **THEN** the router SHALL navigate to `/openconnector`
-- **AND** the menu SHALL close
+#### Scenario: footer renders only the status indicator and the gear
+- **WHEN** the sidebar renders on any route
+- **THEN** the footer SHALL display a connection-status indicator and a settings gear button
+- **AND** the footer SHALL NOT render an agent selector, a model chip, a "Clear chat" button, or a locale selector
 
-#### Scenario: Settings menu dismissable
-- **WHEN** the Settings menu is open and the user presses Escape
-- **THEN** the menu SHALL close without navigating
-- **WHEN** the user clicks outside the menu
-- **THEN** the menu SHALL close without navigating
+#### Scenario: gear opens the Settings modal
+- **WHEN** the user activates the settings gear button in the footer
+- **THEN** the Settings modal SHALL open (per `settings-surface`)
+- **AND** the view the user was on SHALL remain rendered beneath the modal
 
-### Requirement: Models tab content is now backed by the Models page
-The Models tab (`/models`) introduced by `ui-nav-restructure` is now backed by the first-class Models page (see `llm-model-management`). The placeholder route from `ui-nav-restructure` is replaced by the new page. The tab MUST continue to be present in the canonical tab set (Chat, Knowledge, Agents, MCP Servers, Skills, Models). The Models page is the canonical place to add/edit/remove LLM providers and to set the default model; the sidebar's model chip is read-only and navigates here when clicked (see `model-selection`).
-
-#### Scenario: clicking Models tab shows the Models page
-- **WHEN** the user clicks the Models sidebar tab
-- **THEN** the URL SHALL be `/models`
-- **AND** the page SHALL render the provider cards, Add provider button, and default-model affordance (per `llm-model-management`)
-
-#### Scenario: Models tab is not a placeholder
-- **WHEN** the page renders
-- **THEN** no "coming soon" placeholder SHALL be shown
-- **AND** at least one provider SHALL be visible (the configured default)
+#### Scenario: status indicator tracks the connection
+- **WHEN** the WebSocket connection state changes between `connecting`, `connected`, and `disconnected`
+- **THEN** the footer status indicator SHALL update its dot colour and its localized label to match the new state
 
 ### Requirement: Sidebar navigation includes a Bots entry
 The sidebar SHALL include a "Bots" navigation entry linking to the `/bots` route, localized in all supported languages.

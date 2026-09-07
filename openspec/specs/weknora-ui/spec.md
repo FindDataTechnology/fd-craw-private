@@ -6,7 +6,7 @@ TBD - created by archiving change bundle-weknora-knowledge. Update Purpose after
 ## Requirements
 
 ### Requirement: WeKnora UI is accessible via the React SPA's sidebar navigation
-The React SPA SHALL expose a "WeKnora" entry in the sidebar (using `<NavLink>` like the existing Chat, Documents, OpenConnector, LiteLLM entries) that navigates to the `/weknora` route. The route SHALL render an iframe wrapper component that loads WeKnora's native web UI via the same-origin `/weknora-web` reverse proxy.
+The React SPA SHALL expose a "WeKnora" entry in the sidebar (using `<NavLink>` like the existing Chat and Dashboard entries) that navigates to the `/weknora` route. The route SHALL render an iframe wrapper component that loads WeKnora's native web UI via the same-origin `/weknora-web` reverse proxy.
 
 #### Scenario: user navigates to WeKnora via sidebar
 - **WHEN** the user clicks the "WeKnora" sidebar entry
@@ -16,7 +16,7 @@ The React SPA SHALL expose a "WeKnora" entry in the sidebar (using `<NavLink>` l
 
 #### Scenario: WeKnora is not configured
 - **WHEN** the user navigates to `/weknora` and `WEKNORA_BASE_URL` is not configured
-- **THEN** the page SHALL display a "WeKnora is not configured" placeholder (like the OpenConnector and LiteLLM pages when their URLs are unset)
+- **THEN** the page SHALL display a "WeKnora is not configured" placeholder
 - **AND** SHALL NOT render an iframe
 
 ### Requirement: WeKnora UI replaces the first-party Documents page
@@ -33,7 +33,7 @@ The old first-party React Documents page (upload forms, document list, indexing 
 - **AND** SHALL navigate to `/weknora` (not `/documents`)
 
 ### Requirement: WeKnora UI is embedded via same-origin iframe proxy
-The WeKnora UI SHALL be embedded via the `/weknora-web` same-origin reverse proxy (like `/oc-web` for OpenConnector and `/litellm-web` for LiteLLM). The proxy SHALL inject the WeKnora API token into requests so the browser never sees credentials. The iframe SHALL load the full WeKnora web UI (knowledge bases, document management, chat, Wiki mode, settings).
+The WeKnora UI SHALL be embedded via the `/weknora-web` same-origin reverse proxy. The proxy SHALL inject the WeKnora API token into requests so the browser never sees credentials. The iframe SHALL load the full WeKnora web UI (knowledge bases, document management, chat, Wiki mode, settings).
 
 #### Scenario: iframe loads WeKnora UI
 - **WHEN** the user navigates to `/weknora`
