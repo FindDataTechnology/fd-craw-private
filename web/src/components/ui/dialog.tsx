@@ -10,6 +10,14 @@ interface DialogProps {
 function Dialog({ open, onOpenChange, children }: DialogProps) {
   const rootRef = React.useRef<HTMLDivElement>(null)
   const restoreRef = React.useRef<HTMLElement | null>(null)
+  // Callers pass `onOpenChange` as an inline arrow, so it is a new function on
+  // every parent render — and a form's parent re-renders on every keystroke.
+  // Depending on it directly ran the effect below per character: the cleanup
+  // restored focus to the opener and the re-run stole it to the FIRST field, so
+  // typing in any dialog input jumped the caret out of that input. Hold it in a
+  // ref so the effect can depend on `open` alone and mount exactly once.
+  const onOpenChangeRef = React.useRef(onOpenChange)
+  onOpenChangeRef.current = onOpenChange
   // Stable identity: the focus-trap effect below depends on this, and it only
   // ever reads rootRef (a ref), so it never goes stale.
   const focusables = React.useCallback(
@@ -36,7 +44,7 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onOpenChange?.(false)
+        onOpenChangeRef.current?.(false)
         return
       }
       if (e.key !== "Tab") return
@@ -57,7 +65,7 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
       document.removeEventListener("keydown", onKey)
       restoreRef.current?.focus?.()
     }
-  }, [open, onOpenChange, focusables])
+  }, [open, focusables])
 
   if (!open) return null
 
