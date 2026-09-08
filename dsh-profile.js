@@ -142,9 +142,19 @@ export async function buildLlmProfile({
 
   // Project the persisted thinking level onto each route (dsh reads effort
   // per-provider, not per-model — design D1).
+  //
+  // `compat` states what pi-ai cannot infer: it reads wire compatibility from
+  // the provider id and baseURL, and a private gateway's URL tells it nothing,
+  // so it falls back to assuming real OpenAI. Every route here IS a private
+  // OpenAI-compatible gateway. Route-level switches skip models whose protocol
+  // does not take them (model-level ones would fail resolution), so this is
+  // safe to apply to every route regardless of `api`.
   for (const [id, p] of Object.entries(providers)) {
     const level = efforts ? efforts[id] : await persistedEffort(id);
     if (level) p.reasoning = level;
+    // pi-ai sends `role: "developer"` to reasoning models; gateways that
+    // predate it answer 400 "invalid value: `developer`". `false` keeps `system`.
+    p.compat = { supportsDeveloperRole: false, ...p.compat };
   }
 
   return { providers, models };
