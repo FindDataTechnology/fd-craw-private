@@ -5,6 +5,7 @@
 import path from "node:path";
 import { readJsonOr } from "./lib/persistence.js";
 import * as db from "./db.js";
+import { getMarketEntries } from "./registry-bridge.js";
 
 const MARKET_CATALOG_PATH = path.resolve("market-catalog.json");
 const MARKET_CATALOG_SKILLS_PATH = path.resolve("market-catalog-skills.json");
@@ -16,11 +17,23 @@ export function isPlaceholderArg(arg) {
   return /\/path\//.test(arg) || /^your_/.test(arg) || /^<.*>$/.test(arg);
 }
 
+// Header-value variant: substring match, since header values embed the
+// placeholder ("Bearer <your_token>") rather than being the bare placeholder.
+// The client setup form re-implements this rule (McpServerForm hasPlaceholder).
+function hasPlaceholder(value) {
+  return (
+    typeof value === "string" &&
+    (/\/path\//.test(value) || /your_/.test(value) || /<[^<>]+>/.test(value))
+  );
+}
+
 // Derive whether a catalog entry needs user-supplied config.
 function requiresConfig(template) {
   if (!template) return false;
   const env = template.env || {};
   if (Object.keys(env).length > 0) return true;
+  const headers = template.headers || {};
+  if (Object.values(headers).some(hasPlaceholder)) return true;
   const args = template.args || [];
   return args.some(isPlaceholderArg);
 }
@@ -115,12 +128,21 @@ export async function loadMarketCatalogSkills() {
   return marketCatalogSkillsCache;
 }
 
-export async function getMarketCatalog() {
+export async function getMarketCatalog(user = null) {
   const [mcpServers, skills] = await Promise.all([
     loadMarketCatalog(),
     loadMarketCatalogSkills(),
   ]);
-  const servers = (mcpServers.mcpServers || []).map((s) => ({
+  // Registry entries (last-good snapshot from registry-bridge) merge behind
+  // the bundled catalog: a bundled entry wins on name collision because it is
+  // curated for this deployment.
+  const registry = getMarketEntries();
+  const bundledMcpNames = new Set((mcpServers.mcpServers || []).map((s) => s.name));
+  const registryServers = registry.mcpServers.filter((s) => !bundledMcpNames.has(s.name));
+  const bundledSkillNames = new Set((skills.skills || []).map((s) => s.name));
+  const registrySkills = registry.skills.filter((s) => !bundledSkillNames.has(s.name));
+
+  const servers = [...(mcpServers.mcpServers || []), ...registryServers].map((s) => ({
     ...s,
     requiresConfig: requiresConfig(s.configTemplate),
   }));
@@ -129,7 +151,22 @@ export async function getMarketCatalog() {
     if (a.requiresConfig !== b.requiresConfig) return a.requiresConfig ? 1 : -1;
     return a.name.localeCompare(b.name);
   });
-  return { mcpServers: servers, skills: skills.skills || [] };
+
+  const allSkills = [...(skills.skills || []), ...registrySkills];
+  return {
+    mcpServers: servers.filter((s) => visibleToUser(s, user)),
+    skills: allSkills.filter((s) => visibleToUser(s, user)),
+  };
+}
+
+// Group visibility for registry-sourced entries: an entry with a non-empty
+// groups[] is served only when the user's groups intersect it. Bundled entries
+// carry no groups and stay visible to everyone. No user (auth off) ⇒ only
+// group-less entries are visible, matching agent-catalog role semantics.
+function visibleToUser(entry, user) {
+  if (!Array.isArray(entry.groups) || entry.groups.length === 0) return true;
+  if (!user) return false;
+  return (user.groups ?? []).some((g) => entry.groups.includes(g));
 }
 
 // Clear caches (for testing or when catalog files change)

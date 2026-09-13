@@ -73,19 +73,27 @@ async function boot() {
   if (!baseEnv.LLM_API_KEY) {
     defaultVolcesKey = { LLM_API_KEY: "sk-xxx-baked-fallback" };
   }
+  const desktopDefaults = app.isPackaged ? {
+    AUTH_MODE: "logto",
+    LOGTO_CLIENT_TYPE: "public",
+    SESSION_TTL_HRS: "720",
+    DESKTOP_SERVER_PORT: "47600",
+  } : {};
   const boostedSettings = runFirstRun({
     userDataDir: dataDir,
     resourcesDir,
-    defaultSettings: { ...defaultVolcesKey },
+    defaultSettings: { ...defaultVolcesKey, ...desktopDefaults },
   });
   // Merge boosted settings into the resolved env
   const agentEnv = { ...baseEnv, ...boostedSettings };
+  const serverPort = agentEnv.DESKTOP_SERVER_PORT ? Number(agentEnv.DESKTOP_SERVER_PORT) : null;
 
   supervisor = new Supervisor({
     nodeBin,
     projectRoot: PROJECT_ROOT,
     dataDir,
     agentEnv,
+    serverPort,
   });
   setSupervisor(supervisor);
   registerStatusIpc(supervisor);

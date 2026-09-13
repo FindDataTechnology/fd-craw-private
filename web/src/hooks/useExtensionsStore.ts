@@ -30,6 +30,7 @@ interface ExtensionsState {
   updateCustomSkill: (name: string, description?: string, content?: string, enabled?: boolean) => Promise<void>;
   removeCustomSkill: (name: string) => Promise<void>;
   toggleCustomSkill: (name: string, enabled: boolean) => Promise<void>;
+  installRegistrySkill: (name: string) => Promise<void>;
 
   applyEvent: (msg: ServerMessage) => void;
 }
@@ -121,7 +122,16 @@ export const useExtensionsStore = create<ExtensionsState>((set, get) => ({
     await get().refreshSkills();
   },
 
+  installRegistrySkill: async (name) => {
+    await api.installRegistrySkill(name);
+    await Promise.all([get().refreshSkills(), get().refreshMarketCatalog()]);
+  },
+
   applyEvent: (msg) => {
+    if (msg.type === "market_changed") {
+      get().refreshMarketCatalog();
+      return;
+    }
     if (msg.type !== "extensions_changed") return;
     // Refresh the relevant resource on any change event.
     const { resource } = msg as { resource: string };

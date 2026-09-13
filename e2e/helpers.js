@@ -6,18 +6,23 @@
 // os.tmpdir() so the suite never touches the user's real sessions-store/ or
 // documents-store/.
 
-import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { expect } from "@playwright/test";
 
 export const E2E_PORT = Number(process.env.E2E_PORT) || 3100;
 export const baseURL = `http://127.0.0.1:${E2E_PORT}`;
 
 // Deterministic per-port root so both config load and global teardown can find
-// it without passing state between processes.
+// it without passing state between processes. Repo-local on purpose: os.tmpdir()
+// is NOT guaranteed to resolve to the same view across the playwright main
+// process, workers, and spawned children in every environment — a repo-relative
+// path is (cwd is inherited), which matters for specs that open the same
+// SQLite file the webServer writes (library MCP child).
 function tempStoreRoot() {
-  return path.join(os.tmpdir(), `paas-e2e-${E2E_PORT}`);
+  const helperDir = path.dirname(fileURLToPath(import.meta.url));
+  return path.resolve(helperDir, "..", `.e2e-store-${E2E_PORT}`);
 }
 
 // Create fresh, isolated store directories for a run. Removes any stale
@@ -42,6 +47,13 @@ export function prepareTempStoreDirs() {
 
 export function cleanupTempStoreDirs() {
   fs.rmSync(tempStoreRoot(), { recursive: true, force: true });
+}
+
+// The temp SQLite file path — shared by the webServer env (playwright.config)
+// and specs that open the same file (library MCP child, expansion checks).
+// Always derive from tempStoreRoot(); never recompute with os.tmpdir().
+export function tempDbPath() {
+  return path.join(tempStoreRoot(), "app.db");
 }
 
 // ── Chat-page helpers (React app under /chat/) ────────────────────────────────
@@ -82,6 +94,10 @@ export async function gotoChat(page) {
   await pinLocaleEn(page);
   await page.goto("/chat/");
   await expect(page.getByTestId("status-text")).toHaveText("Connected", { timeout: 15000 });
+  // The status is set on socket open; wait for the server's session sync too.
+  // On narrow viewports the desktop rail is intentionally CSS-hidden until the
+  // drawer opens, so assert that the row exists rather than that it is visible.
+  await expect(page.locator('[data-testid="session-row"]').first()).toHaveCount(1, { timeout: 15000 });
 }
 
 // Navigate to the React Documents page and wait for it to render.

@@ -35,6 +35,14 @@ export function McpMarketCard({ server, onInstall }: McpMarketCardProps) {
                 ? t("extensions.market.needsConfig")
                 : t("extensions.market.readyToUse")}
             </span>
+            {server.origin === "registry" && (
+              <span
+                data-testid="mcp-registry-badge"
+                className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary"
+              >
+                Registry
+              </span>
+            )}
           </div>
           <p className="text-sm text-muted-foreground line-clamp-2 mb-2">{server.description}</p>
           <p className="text-xs text-muted-foreground italic">{server.installInstructions}</p>

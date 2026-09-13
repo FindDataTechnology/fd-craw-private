@@ -52,7 +52,7 @@ test.describe("Extensions Page - UI Rendering", () => {
   test("startup-sourced MCP servers show auto badge and hide delete button", async ({ page }) => {
     await gotoExtensions(page);
 
-    // memory is seeded from mcp.json with source=startup
+    // memory is seeded from the isolated MCP config with source=startup
     const memoryCard = page.getByTestId("mcp-card").filter({ has: page.getByText(/^memory$/i) });
     await expect(memoryCard).toBeVisible();
 
@@ -363,11 +363,10 @@ test.describe("Extensions Page - API Endpoints", () => {
     const response = await request.get(`${baseURL}/api/extensions/mcp`);
     const data = await response.json();
 
-    // memory is seeded from mcp.json with source=startup
+    // memory is seeded from the isolated MCP config with source=startup
     const memory = data.servers.find((s) => s.name === "memory");
-    if (memory) {
-      expect(memory.source).toBe("startup");
-    }
+    expect(memory).toBeTruthy();
+    expect(memory.source).toBe("startup");
   });
 
   test("can add and remove MCP server via API", async ({ request }) => {

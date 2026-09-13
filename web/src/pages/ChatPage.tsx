@@ -44,6 +44,19 @@ export function ChatPage({ send, onToggleNav }: Props) {
     setFocusTick((n) => n + 1);
   };
 
+  // Cross-page handoff in: a page that parked a draft (library "Start
+  // conversation") navigates here with the WS store carrying it. Consume
+  // exactly once — mount-time read + clear — so a stale draft can never leak
+  // into a later visit.
+  useEffect(() => {
+    const parked = useChatStore.getState().composerDraft;
+    if (parked) {
+      useChatStore.getState().setComposerDraft(null);
+      setDraft(parked);
+      setFocusTick((n) => n + 1);
+    }
+  }, []);
+
   // Deep link in: a session id in the URL that isn't current loads it. The URL
   // changes ONLY through user navigation (sidebar rows / new chat navigate
   // explicitly; refresh keeps its place) — a reactive URL-follows-session

@@ -41,7 +41,11 @@ export class Supervisor {
   }
 
   async start() {
+    if (this.serverPort) throw new Error("Supervisor has already been started");
     this.serverPort = this.fixedServerPort || (await findFreePort("127.0.0.1"));
+    if (this.fixedServerPort && !(await this._portIsFree(this.serverPort))) {
+      throw new Error(`fixed server port ${this.serverPort} is already in use`);
+    }
     const descriptors = getDescriptors({
       serverPort: this.serverPort,
       projectRoot: this.projectRoot,
@@ -103,6 +107,17 @@ export class Supervisor {
     };
     for (const id of this.servers.keys()) visit(id);
     return order;
+  }
+
+  async _portIsFree(port) {
+    const net = await import("node:net");
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      server.unref();
+      server.once("error", () => resolve(false));
+      server.once("listening", () => server.close(() => resolve(true)));
+      server.listen(port, "127.0.0.1");
+    });
   }
 
   async _startServer(id) {
@@ -206,6 +221,7 @@ export class Supervisor {
   async stop() {
     this.shuttingDown = true;
     if (this.healthTimer) { clearInterval(this.healthTimer); this.healthTimer = null; }
+    this.serverPort = null;
     // Stop spawned servers in reverse startup order (spec: ordered shutdown).
     for (const id of [...this._startupOrder()].reverse()) {
       const s = this.servers.get(id);

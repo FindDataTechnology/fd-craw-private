@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - synced from change sqlite-pageindex-storage. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: The project database is initialized at startup with schema migrations
 The server SHALL initialize a single SQLite project database at startup (default `data/app.db`, overridable via `DB_PATH`), opened with write-ahead logging (`PRAGMA journal_mode=WAL`) and foreign keys enabled (`PRAGMA foreign_keys=ON`). The server SHALL track applied schema migrations in a `schema_migrations` table and SHALL apply any pending migrations transactionally before accepting writes. The database SHALL be the single persistence layer for chat messages, document records and source text, the document index, and user preferences.
 
@@ -31,7 +33,8 @@ When the project database cannot be opened or migrated (missing directory, insuf
 - **AND** chat persistence, document ingestion/query, and preferences SHALL be enabled
 
 ### Requirement: Chat messages, documents, the document index, and user preferences are persisted in the project database
-The project database SHALL define tables for: `chat_sessions` (id, title, created_at, updated_at), `chat_messages` (id, session_id, role, content, seq, created_at), `documents` (id, name, type, status, added_at, error, source_text), `doc_index` (doc_id, index_data, index_version, updated_at), and `user_preferences` (key, value, updated_at). The `documents`, `chat-history`, and document-index modules SHALL persist through these tables and SHALL NOT maintain separate ad-hoc file stores as the source of record. All writes SHALL be transactional.
+
+The project database SHALL define tables for: `chat_sessions` (id, title, created_at, updated_at), `chat_messages` (id, session_id, role, content, seq, created_at), `documents` (id, name, type, status, added_at, error, source_text), `doc_index` (doc_id, index_data, index_version, updated_at), and `user_preferences` (key, value, updated_at). The `documents`, `chat-history`, and document-index modules SHALL persist through these tables and SHALL NOT maintain separate ad-hoc file stores as the source of record. All writes SHALL be transactional. The existing `user_preferences` table SHALL remain the global, single-user preference store. Identity-scoped model and MCP bindings SHALL use separate email-keyed tables and SHALL NOT be stored as global preference keys.
 
 #### Scenario: chat message is stored
 - **WHEN** a chat message is persisted
@@ -41,6 +44,15 @@ The project database SHALL define tables for: `chat_sessions` (id, title, create
 - **WHEN** a document is indexed
 - **THEN** its record and source text SHALL be written to `documents` and its index to `doc_index`
 - **AND** the writes SHALL occur within a single transaction
+
+#### Scenario: global preference remains global
+- **WHEN** a global preference is written
+- **THEN** it SHALL be stored in `user_preferences` and SHALL NOT be scoped to an SSO email
+
+#### Scenario: personal bindings use separate rows
+- **WHEN** two authenticated users save different model or MCP bindings
+- **THEN** each user's rows are stored under their normalized email
+- **AND** the global `user_preferences` rows remain unchanged
 
 ### Requirement: User preferences are stored and retrieved as single-user key/value entries
 The server SHALL store a single user's preferences and profile (e.g. display name, settings) in the `user_preferences` table as key/value entries. There SHALL be no authentication and no multi-user isolation. The server SHALL expose a way to read and write preference entries; writes SHALL be idempotent on key.
@@ -70,3 +82,20 @@ On startup against a fresh (empty) database, if legacy file-based stores exist (
 #### Scenario: migration is not re-run
 - **WHEN** the server starts against a database that already contains migrated data
 - **THEN** the server SHALL NOT re-import from legacy stores
+
+### Requirement: Schema migration adds email-keyed runtime binding tables
+
+A new schema migration SHALL create `user_model_bindings` with a primary key of normalized email and columns for provider id, model id, and update time, and `user_mcp_bindings` with a composite primary key of normalized email and MCP name plus an enabled flag and update time. The migration SHALL add an index on the MCP binding email. Existing databases SHALL migrate transactionally and SHALL retain all existing preferences, chat, document, and MCP configuration rows. The migration SHALL be idempotent and recorded in `schema_migrations`.
+
+#### Scenario: fresh database receives binding tables
+- **WHEN** the server starts with a fresh database
+- **THEN** the migration creates both email-keyed binding tables and records the migration
+
+#### Scenario: existing database migrates forward
+- **WHEN** the server starts with a database created before the binding tables existed
+- **THEN** only the pending migration runs
+- **AND** existing data remains readable and unchanged
+
+#### Scenario: binding writes are transactional
+- **WHEN** a model or MCP binding is saved
+- **THEN** the corresponding row is upserted atomically with its update timestamp

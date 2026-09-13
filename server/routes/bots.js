@@ -12,7 +12,8 @@
 import express from "express";
 import crypto from "node:crypto";
 import * as bots from "../bots.js";
-import { BOT_TYPES, credentialFieldsFor } from "../bots/adapter.js";
+import { BOT_TYPES, credentialFieldsFor, qrCapabilityFor, getAdapter } from "../bots/adapter.js";
+import { qrSvg } from "../bots/qr.js";
 
 // The webhook path prefix, shared with the forward-auth exemption in auth.js.
 export const WEBHOOK_PREFIX = "/api/bots/webhook/";
@@ -87,7 +88,11 @@ export function registerBotRoutes(ctx) {
     if (!requireDb(res)) return;
     res.json({
       bots: db.listBots().map(bots.maskBot),
-      types: BOT_TYPES.map((type) => ({ type, credentialFields: credentialFieldsFor(type) })),
+      types: BOT_TYPES.map((type) => ({
+        type,
+        credentialFields: credentialFieldsFor(type),
+        qr: qrCapabilityFor(type),
+      })),
     });
   });
 
@@ -136,6 +141,49 @@ export function registerBotRoutes(ctx) {
     bots.stop(req.params.id);
     db.deleteBot(req.params.id);
     res.json({ ok: true });
+  });
+
+  // ── Onboarding QR (user entry) ─────────────────────────────────────────────
+  // Same posture as the read side of config management: behind the proxy /
+  // forward-auth gate like every non-webhook route here, credentials stay
+  // server-side, nothing about the request is logged. A disabled bot still
+  // resolves — the QR advertises an entry the operator may be preparing.
+  //
+  // Failure isolation: every failure path answers 200 with
+  // `{ strategy: "manual", url: null, qr: null, error? }` so the panel shows
+  // the reason plus the manual-link fallback — a bad token, an unsupported
+  // account type, or an upstream outage never 500s bot management.
+  app.get("/api/bots/:id/qr", async (req, res) => {
+    if (!requireDb(res)) return;
+    const bot = db.getBot(req.params.id);
+    if (!bot || !getAdapter(bot.type)?.qr) return res.status(404).json({ error: "Bot not found" });
+
+    const { strategy, hintKey } = getAdapter(bot.type).qr;
+    const hint = hintKey ?? "botsPage.qr.hint.manual";
+    const manual = (error) => res.json({ strategy: "manual", url: null, qr: null, hint, ...(error && { error }) });
+
+    // A stored entry link wins on every platform: it is the manual fallback's
+    // save target, so an override must survive later panel opens.
+    const manualUrl = String(bot.credentials?.qrUrl ?? "").trim();
+    if (manualUrl) {
+      try {
+        return res.json({ strategy: "manual", url: manualUrl, qr: await qrSvg(manualUrl), hint });
+      } catch (err) {
+        return manual(err.message);
+      }
+    }
+
+    if (strategy === "manual") {
+      // No link yet: the panel prompts for it instead of failing.
+      return manual();
+    }
+
+    try {
+      const { url } = await getAdapter(bot.type).qr.resolve(bot.credentials);
+      res.json({ strategy, url, qr: await qrSvg(url), hint });
+    } catch (err) {
+      manual(err.message);
+    }
   });
 
   // ── Proactive outbound send ────────────────────────────────────────────────

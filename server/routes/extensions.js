@@ -1,10 +1,16 @@
 // Extensions management API (MCP servers + custom skills).
 
 import { getFileSkills } from "../skills.js";
+import { getMarketEntries, getSkillContent } from "../../registry-bridge.js";
 
 export function registerExtensionRoutes(ctx) {
   const { app, db, extensionStore, skillMaterialize, broadcast } = ctx;
   const bundle = ctx.bundle;
+
+  const requireAdmin = (req, res) => {
+    if (!ctx.requireAdmin(req, res)) return false;
+    return true;
+  };
 
   // List all MCP server configurations (from database).
   app.get("/api/extensions/mcp", (_req, res) => {
@@ -20,6 +26,7 @@ export function registerExtensionRoutes(ctx) {
     if (!db.isDbReady()) {
       return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
     }
+    if (!requireAdmin(req, res)) return;
     const { name, config, enabled } = req.body || {};
     if (!name || !config) {
       return res.status(400).json({ error: "Missing name or config" });
@@ -32,7 +39,7 @@ export function registerExtensionRoutes(ctx) {
       // saved; the connection is best-effort.
       broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
       res.json(server);
-      ctx.dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+      ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
     } catch (err) {
       if (err.message?.includes("UNIQUE constraint")) {
         return res.status(409).json({ error: `MCP server "${name}" already exists` });
@@ -46,6 +53,7 @@ export function registerExtensionRoutes(ctx) {
     if (!db.isDbReady()) {
       return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
     }
+    if (!requireAdmin(req, res)) return;
     const { name } = req.params;
     const { config, enabled } = req.body || {};
     try {
@@ -63,7 +71,7 @@ export function registerExtensionRoutes(ctx) {
       if (configChanged || enabledChanged) {
         // dsh owns MCP connections via the profile; rewrite the watched patch so
         // cordis HMR hot-swaps dsh-mcp-client (no restart on the primary path).
-        ctx.dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+        ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
         broadcast({ type: "extensions_changed", resource: "mcp", action: "updated", name });
       }
       res.json(server);
@@ -77,6 +85,7 @@ export function registerExtensionRoutes(ctx) {
     if (!db.isDbReady()) {
       return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
     }
+    if (!requireAdmin(req, res)) return;
     const { name } = req.params;
     const server = extensionStore.getMcpServer(name);
     if (!server) {
@@ -88,7 +97,7 @@ export function registerExtensionRoutes(ctx) {
     extensionStore.removeMcpServer(name);
     broadcast({ type: "extensions_changed", resource: "mcp", action: "removed", name });
     res.json({ ok: true });
-    ctx.dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+    ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
   });
 
   // Enable or disable an MCP server.
@@ -96,6 +105,7 @@ export function registerExtensionRoutes(ctx) {
     if (!db.isDbReady()) {
       return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
     }
+    if (!requireAdmin(req, res)) return;
     const { name } = req.params;
     const { enabled } = req.body || {};
     if (typeof enabled !== "boolean") {
@@ -112,7 +122,7 @@ export function registerExtensionRoutes(ctx) {
     // broadcast + respond immediately; update (dsh hot-swap) in background.
     broadcast({ type: "extensions_changed", resource: "mcp", action: "toggled", name, enabled });
     res.json(updated);
-    ctx.dshUpdateMcp?.().catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+    ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
   });
 
   // List all skills (file-based + custom from database).
@@ -252,12 +262,52 @@ export function registerExtensionRoutes(ctx) {
     res.json(updated);
   });
 
-  // Get the market catalog (MCP servers + skills).
-  app.get("/api/extensions/market", async (_req, res) => {
+  // Get the market catalog (MCP servers + skills), filtered per user: bundled
+  // entries are always visible; registry entries carrying groups require a
+  // user-group intersection (extension-marketplace spec). req.user is null
+  // when auth is off, which hides all group-gated registry entries.
+  app.get("/api/extensions/market", async (req, res) => {
     try {
-      const catalog = await extensionStore.getMarketCatalog();
+      const catalog = await extensionStore.getMarketCatalog(req.user ?? null);
       res.json(catalog);
     } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Install a registry-sourced skill: fetch its SKILL.md server-side with the
+  // service token (never sent to the browser), then create it through the
+  // normal custom-skill path (DB row + materialized SKILL.md hot-load).
+  app.post("/api/extensions/market/skills/:name/install", async (req, res) => {
+    if (!db.isDbReady()) {
+      return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
+    }
+    const { name } = req.params;
+    const entry = getMarketEntries().skills.find((s) => s.name === name);
+    if (!entry) {
+      return res.status(404).json({ error: `Registry skill "${name}" not found` });
+    }
+    let raw;
+    try {
+      raw = await getSkillContent(entry.contentPath);
+    } catch (err) {
+      return res.status(502).json({ error: `Failed to fetch content for "${name}": ${err.message}` });
+    }
+    // The fetched SKILL.md carries its own frontmatter; the materializer
+    // re-adds frontmatter from the DB row, so keep only the body.
+    const content = raw.replace(/^---[\s\S]*?---\s*/, "").trim();
+    if (!content) {
+      return res.status(502).json({ error: `Registry skill "${name}" has empty content` });
+    }
+    try {
+      const skill = extensionStore.addCustomSkill({ name, description: entry.description, content, enabled: true });
+      try { skillMaterialize.writeSkill(skill); } catch (e) { console.warn(`[skills] materialize write failed for "${name}": ${e.message}`); }
+      broadcast({ type: "extensions_changed", resource: "skill", action: "added", name });
+      res.json(skill);
+    } catch (err) {
+      if (err.message?.includes("UNIQUE constraint")) {
+        return res.status(409).json({ error: `Skill "${name}" already exists` });
+      }
       res.status(500).json({ error: err.message });
     }
   });

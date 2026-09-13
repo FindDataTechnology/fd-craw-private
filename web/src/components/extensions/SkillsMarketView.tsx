@@ -50,7 +50,7 @@ export function SkillsMarketView({ onInstalled }: SkillsMarketViewProps = {}) {
       <SkillForm
         open={skillFormOpen}
         onOpenChange={setSkillFormOpen}
-        initialSkill={selectedSkill ? {
+        initialSkill={selectedSkill?.skillTemplate ? {
           name: selectedSkill.name,
           description: selectedSkill.description,
           content: selectedSkill.skillTemplate.content,

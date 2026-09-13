@@ -52,7 +52,16 @@
     "new": "+ 新規",
     "noChats": "チャットはまだありません。「+ 新規」をクリックしてください。",
     "untitled": "無題",
-    "language": "言語"
+    "language": "言語",
+    "collapse": "サイドバーを折りたたむ",
+    "expand": "サイドバーを展開",
+    "workspaces": "ワークスペース",
+    "searchChats": "チャットを検索…",
+    "ungrouped": "未分類",
+    "showMore": "さらに {{count}} 件表示",
+    "showLess": "折りたたむ",
+    "newWorkspace": "新しいワークスペース",
+    "closeSearch": "検索を閉じる"
   },
   "modelsPage": {
     "title": "モデル",
@@ -126,6 +135,7 @@
       "workspaceUnset": "未選択",
       "workspaceRecents": "最近使ったフォルダ",
       "workspacePlaceholder": "フォルダの絶対パスを入力…",
+      "workspaceBrowse": "フォルダを選択…",
       "workspaceAbsolute": "絶対パスを入力してください。",
       "workspaceConfirm": "作業フォルダを {{path}} に切り替えますか？\n\nエージェントが再起動します。このチャットの以前のメッセージが参照するファイルが解決できなくなる場合があります。",
       "commands": "コマンド",
@@ -134,7 +144,22 @@
       "effort": "思考の深さ",
       "effortDefault": "デフォルト",
       "agent": "エージェント",
-      "agentUnset": "デフォルト"
+      "agentUnset": "デフォルト",
+      "permission": "権限",
+      "permissionUnset": "デフォルト",
+      "permissionCustom": "カスタム",
+      "permissionReadonly": {
+        "label": "読み取り専用",
+        "desc": "エージェントはワークスペースの閲覧のみ行えます。"
+      },
+      "permissionWrite": {
+        "label": "ワークスペース書き込み",
+        "desc": "エージェントはワークスペース内で変更を行えます。"
+      },
+      "permissionFull": {
+        "label": "フルアクセス",
+        "desc": "承認なしにあらゆる変更が可能になります。"
+      }
     }
   },
   "chat": {
@@ -165,6 +190,24 @@
         }
       },
       "viewLess": "折りたたむ"
+    },
+    "preset": {
+      "label": "エージェントモード",
+      "unset": "モードを選択",
+      "userBadge": "カスタム",
+      "brokenBadge": "利用不可",
+      "names": {
+        "standard": "標準モード",
+        "code": "PTC モード",
+        "minimal": "最小モード",
+        "cordis": "創造モード"
+      },
+      "descriptions": {
+        "standard": "フル機能のコーディングエージェント。ファイル編集、シェル、ファイル・ウェブ検索、スキル、プラン、ゴール、サブエージェント、ワークフローに対応。",
+        "code": "標準モードの全能力に加え、Code Mode SDK 経由でツールを公開し、モデルが 1 つの TypeScript プログラムで複数ステップの操作を組み合わせられる。",
+        "minimal": "永続 bash と str_replace_editor の 2 つのツールだけを持つコーディングエージェント。",
+        "cordis": "カスタムエージェントプリセット作成用。標準モードの全能力に加え、ランタイムチェック、プラグイン実験、プリセット作成ガイダンスを提供。"
+      }
     },
     "header": {
       "editTitle": "セッション名を変更",
@@ -283,12 +326,6 @@
       "addNote": "メモを追加",
       "addUrl": "URL を追加"
     },
-    "query": {
-      "title": "ドキュメントに質問",
-      "placeholder": "ドキュメントについて質問してください…",
-      "ask": "質問",
-      "sources": "出典: {{names}}"
-    },
     "collection": {
       "title": "コレクション",
       "namePlaceholder": "コレクション名…",
@@ -299,9 +336,10 @@
       "noDocuments": "ドキュメントはありません。",
       "addDocPlaceholder": "ドキュメントを追加…",
       "add": "追加",
-      "queryPlaceholder": "このコレクションについて質問…",
       "confirmDelete": "このコレクションを削除しますか？"
-    }
+    },
+    "startConversation": "会話を開始…",
+    "stuckWarning": "処理に時間がかかっています — 中断した可能性"
   },
   "embedded": {
     "iframeTitle": "埋め込みサービス",
@@ -419,6 +457,25 @@
     "delete": "削除",
     "confirmDeleteTitle": "ボットを削除しますか？",
     "confirmDelete": "「{{name}}」とその認証情報を完全に削除します。",
+    "gridHint": "プラットフォームをクリックすると、その種類のボットを追加できます。",
+    "configuredTitle": "設定済みのボット",
+    "saved": "保存しました",
+    "qr": {
+      "title": "ユーザー入口（QR）",
+      "resolving": "解決中…",
+      "copyLink": "リンクをコピー",
+      "linkCopied": "リンクをコピーしました",
+      "manualPrompt": "入口リンクが未設定です。ユーザーに開いてほしいURLを貼り付けて保存してください。",
+      "manualPlaceholder": "https://…",
+      "saveLink": "リンクを保存",
+      "resolveFailed": "QRを解決できませんでした：",
+      "disabledNote": "ボットは無効です。QRは入口のプレビューとして表示されます。",
+      "hint": {
+        "telegram": "Telegramでこのリンクを開き、Startを押してください。",
+        "wechatOa": "WeChatでスキャンして公式アカウントをフォローしてください。",
+        "manual": "コードをスキャンしてボットの入口を開いてください。"
+      }
+    },
     "types": {
       "telegram": "Telegram",
       "feishu": "Feishu / Lark",
@@ -426,10 +483,20 @@
       "wechat-oa": "WeChat 公式アカウント"
     }
   },
+  "login": {
+    "title": "ログイン",
+    "description": "このデプロイでは組織のシングルサインオンを使用します。Platform を利用するにはログインしてください。",
+    "action": "SSO でログイン",
+    "logout": "ログアウト",
+    "loadFailed": "認証状態を読み込めません: {{error}}",
+    "stateError": "ログインセッションが期限切れか一致しません。もう一度ログインしてください。",
+    "callbackError": "ログインに失敗しました。もう一度お試しください。"
+  },
   "settings": {
     "title": "設定",
     "sections": {
       "general": "一般",
+      "account": "アカウント",
       "models": "モデル",
       "mcp": "MCP サーバー",
       "skills": "スキル",
@@ -443,6 +510,26 @@
         "dark": "ダーク",
         "system": "システム"
       }
+    },
+    "account": {
+      "title": "アカウント",
+      "email": "ログイン中のメール",
+      "openHint": "このインスタンスは公開されており、アカウントは不要です。",
+      "signedOutHint": "このインスタンスを利用するには組織の SSO でログインしてください。",
+      "optionalSsoHint": "組織の SSO でサインインすると、この共有ランタイムで自分のモデルと MCP の設定を保持できます。"
     }
+  },
+  "bindings": {
+    "myModel": "自分のモデル",
+    "saveAsMyModel": "自分のモデルとして保存",
+    "saved": "あなたのモデルとして保存しました",
+    "pending": "保存済み — アシスタントがアイドルになると適用されます",
+    "globalSource": "グローバル既定を使用中",
+    "personalMcp": "自分のみ",
+    "apply": "今すぐ適用",
+    "applyFailed": "プロファイルを適用できませんでした: {{error}}",
+    "signIn": "サインインすると、自分のモデルと MCP の設定を保持できます。",
+    "lockedMcp": "管理者によりロックされています",
+    "continueAnonymous": "サインインせずに続ける"
   }
 }

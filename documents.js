@@ -1,25 +1,23 @@
-// ── Document management module (LlamaIndex framework + PageIndex, SQLite) ────
+// ── Document library module (local extraction + SQLite) ──────────────────────
 //
-// Ingests documents (PDF, Markdown, plain text, web page/URL). LlamaIndex.TS
-// remains the data-management framework (its Settings/Document model is
-// configured here); the `pageindex` library is the indexing layer, integrated
-// through `pageindex-bridge.js`, which LlamaIndex "saves document data into".
-// Document records, extracted source text, and the PageIndex index tree are
-// persisted to the SQLite project database (`db.js`), not to per-doc folders.
+// Ingests documents (PDF, Markdown, plain text, URL, office formats) by
+// extracting text LOCALLY — no LLM calls, no indexing pipeline, no provider
+// configuration. Extraction happens inside the add request: the response
+// carries the terminal status (`ready` or `error`), so the UI can never
+// observe a stuck "indexing" state. Document records and extracted source
+// text persist to the SQLite project database (`db.js`); search infrastructure
+// over the library lives in `documents-search.js` (FTS5 chunks) and the agent
+// retrieves through the library MCP tools.
 //
-// Indexing runs in a serialized queue with per-document failure isolation;
-// status transitions are broadcast over WebSocket via an injected `broadcast`
-// callback as `documents_status` events. Query (reasoning-based retrieval over
-// the PageIndex trees) is delegated to the bridge.
+// Status transitions are broadcast over WebSocket via an injected `broadcast`
+// callback as `documents_status` events (a consistency mechanism — with
+// synchronous ingest the HTTP response already carries the terminal status).
 
 import { randomUUID } from "node:crypto";
 import * as db from "./db.js";
-import * as bridge from "./pageindex-bridge.js";
-
-// Reasoning model used for both indexing and retrieval. Override with the
-// DOCUMENTS_MODEL env var; must be a model id registered on the configured
-// provider in server.js.
-export const DOCUMENTS_MODEL = process.env.DOCUMENTS_MODEL || "deepseek-v4-pro";
+import * as readers from "./readers.js";
+import * as search from "./documents-search.js";
+import { PDFParse } from "pdf-parse";
 
 // Supported file extensions -> document type. The single source of truth for
 // what the upload route accepts; the client file-picker `accept` and drag/paste
@@ -52,72 +50,64 @@ export function typeForFilename(filename) {
 const MAX_FETCH_BYTES = 2_000_000;
 const FETCH_TIMEOUT_MS = 15_000;
 
-let provider = null; // { baseUrl, apiKey, model }
 let broadcast = () => {}; // injected WS broadcast (no-op until initStore)
-let queue = Promise.resolve(); // serialized indexing chain
 
 // ── Store init ────────────────────────────────────────────────────────────────
 
-export async function initStore({ baseUrl, apiKey, model, broadcast: broadcastFn }) {
-  provider = { baseUrl, apiKey, model: model || DOCUMENTS_MODEL };
+export async function initStore({ broadcast: broadcastFn }) {
   if (broadcastFn) broadcast = broadcastFn;
 
-  // LlamaIndex remains the data-management framework: configure its LLM so the
-  // framework is live, and route its OpenAI client to the configured provider.
-  process.env.OPENAI_BASE_URL = baseUrl;
-  process.env.OPENAI_API_KEY = apiKey;
-  // LlamaIndex + its OpenAI client load at first use (they parse megabytes of
-  // framework JS — keeping them off the boot path cut cold start notably).
-  const [{ Settings }, { OpenAI }] = await Promise.all([
-    import("llamaindex"),
-    import("@llamaindex/openai"),
-  ]);
-  Settings.llm = new OpenAI({
-    model: provider.model,
-    apiKey,
-    baseURL: baseUrl,
-    temperature: 0.2,
-  });
-
-  // Initialize the PageIndex bridge (PageIndex indexing + SQLite persistence +
-  // reasoning retrieval) with the same provider. LlamaIndex "accesses pageindex"
-  // and "reads from sqlite" through this bridge.
-  bridge.initBridge({ baseUrl, apiKey, model: provider.model });
-
-  // Reconcile jobs that were queued/indexing when the previous process exited.
-  // Those WITH persisted source_text can be re-indexed through PageIndex (e.g.
-  // migrated docs); those without (interrupted new ingestions) cannot resume.
+  // Reconcile rows left non-terminal by a previous process. Synchronous ingest
+  // makes these rare (a crash mid-request); WITH source_text the extraction is
+  // already the deliverable → ready; without it the ingest cannot resume.
   if (db.isDbReady()) {
     for (const d of db.listDocuments()) {
       if (d.status !== "queued" && d.status !== "indexing") continue;
       const full = db.getDocument(d.id);
-      if (full?.source_text) {
-        enqueueIndex(d, { content: full.source_text });
+      if (full?.source_text?.trim()) {
+        db.updateDocumentStatus(d.id, "ready");
+        emitStatus(d, "ready");
       } else {
-        const msg = "Indexing interrupted by server restart; please re-add the document.";
+        const msg = "Ingest interrupted by server restart; please re-add the document.";
         db.updateDocumentStatus(d.id, "error", msg);
         emitStatus(d, "error", msg);
       }
     }
+    // Idempotent chunk backfill for pre-upgrade rows (local CPU, no LLM).
+    search.backfillChunks();
   }
 }
 
-// ── Public API ───────────────────────────────────────────────────────────────
+// ── Public API ────────────────────────────────────────────────────────────────
 
-// Add a document and auto-index it. Returns { id, status: "queued" }.
-// `payload` carries the in-memory ingestion input (not persisted separately):
+// Add a document: extract text locally, persist it, return the TERMINAL status.
+// The row is inserted as `queued` first so a mid-extraction crash leaves
+// something for startup reconciliation; callers only see `ready`/`error`.
+// `payload` carries the ingestion input:
 //   - pdf: { buffer }
-//   - markdown: { content } or { buffer }
-//   - text: { content }
+//   - markdown/text: { content } or { buffer }
 //   - url: { url }
+//   - reader types (docx/csv/html/json/xlsx/pptx): { buffer }
 export async function addDocument({ type, name, buffer, content, url }) {
   const id = randomUUID();
   const docName = name || defaultName(type, url, content);
   const now = new Date().toISOString();
   db.upsertDocument({ id, name: docName, type, status: "queued", added_at: now });
-  emitStatus({ id, name: docName }, "queued");
-  enqueueIndex({ id, name: docName, type }, { buffer, content, url });
-  return { id, status: "queued" };
+  try {
+    const sourceText = await extractSourceText({ type, name: docName, buffer, content, url });
+    if (!sourceText.trim()) throw new Error("Extraction produced empty text");
+    db.setDocumentSource(id, sourceText);
+    search.indexDocumentChunks(id, docName, sourceText);
+    db.updateDocumentStatus(id, "ready");
+    emitStatus({ id, name: docName }, "ready");
+    return { id, name: docName, status: "ready" };
+  } catch (err) {
+    const msg = err.message || "Ingest failed";
+    db.updateDocumentStatus(id, "error", msg);
+    emitStatus({ id, name: docName }, "error", msg);
+    console.error(`[documents] ingest failed for "${docName}":`, msg);
+    return { id, name: docName, status: "error", error: msg };
+  }
 }
 
 export function listDocuments() {
@@ -130,66 +120,50 @@ export async function getDocumentContent(id) {
   return doc?.source_text ?? null;
 }
 
-// Delete a document (record + source text + index row, via ON DELETE CASCADE).
+// Delete a document (record + source text + index rows, via ON DELETE CASCADE).
 // Idempotent: a missing id succeeds.
 export async function removeDocument(id) {
   db.deleteDocument(id);
   return true;
 }
 
-// Reasoning-based retrieval over the persisted PageIndex trees.
-export async function queryCollection(query) {
-  return bridge.queryCollection(query);
-}
+// ── Local extraction ─────────────────────────────────────────────────────────
 
-// Retrieve over only the ready documents in a collection (see collections.js).
-export async function queryCollectionDocuments(query, collectionId) {
-  const docs = db.listReadyDocumentsInCollection(collectionId);
-  return bridge.queryCollection(query, docs);
-}
-
-// ── Serialized indexing queue ────────────────────────────────────────────────
-
-function enqueueIndex(doc, payload) {
-  // Chain jobs so only one document indexes at a time (bounds LLM load, makes
-  // failures cleanly attributable). A rejection in one job cannot break the chain.
-  queue = queue.then(() => runIndex(doc, payload)).catch((err) => {
-    console.error("[documents] indexing chain error:", err.message);
-  });
-}
-
-async function runIndex(doc, payload) {
-  db.updateDocumentStatus(doc.id, "indexing");
-  emitStatus(doc, "indexing");
-
-  try {
-    // Resolve the input for the bridge. URL is fetched here (SSRF-protected);
-    // markdown/text use content (a buffer is decoded as utf8 by the bridge);
-    // pdf uses the raw buffer (PageIndex.fromPdf does its own page-aware parse).
-    let content = payload.content;
-    let buffer = payload.buffer;
-    if (payload.url) {
-      content = await fetchUrlAsText(payload.url);
-    }
-
-    const { sourceText, result } = await bridge.buildIndex({
-      type: doc.type,
-      name: doc.name,
-      content,
-      buffer,
-    });
-
-    // Persist source text (view content + re-index fallback) and the PageIndex
-    // tree to SQLite, then mark ready.
-    db.setDocumentSource(doc.id, sourceText);
-    bridge.persistIndex(doc.id, result);
-    db.updateDocumentStatus(doc.id, "ready");
-    emitStatus(doc, "ready");
-  } catch (err) {
-    db.updateDocumentStatus(doc.id, "error", err.message);
-    emitStatus(doc, "error", err.message);
-    console.error(`[documents] indexing failed for "${doc.name}":`, err.message);
+// Extract plain text for any supported document type. Pure-local: file buffers
+// are parsed in-process, URLs are fetched (SSRF-protected). Throws with a
+// specific message on failure; addDocument turns that into an `error` row.
+async function extractSourceText({ type, buffer, content, url }) {
+  if (url || type === "url") {
+    return fetchUrlAsText(url);
   }
+  if (type === "markdown" || type === "text") {
+    const text = content ?? (buffer ? buffer.toString("utf8") : "");
+    if (!text.trim()) throw new Error(`Missing ${type} content`);
+    return text;
+  }
+  if (type === "pdf") {
+    if (!buffer) throw new Error("Missing PDF buffer");
+    // pdf-parse v2: one parser instance per document; destroy releases the
+    // worker it spins up, so the finally matters as much as the await.
+    const parser = new PDFParse({ data: new Uint8Array(buffer) });
+    try {
+      const result = await parser.getText();
+      const text = (result?.text || "").trim();
+      if (!text) throw new Error("PDF extraction produced empty text (scanned/image PDF?)");
+      return text;
+    } finally {
+      parser.destroy();
+    }
+  }
+  if (readers.hasReader(type)) {
+    // Reader-backed types extract from the buffer; a content-only payload means
+    // a restart re-ingest of already-extracted text — pass it through.
+    if (buffer) return readers.extractText(type, buffer);
+    const text = content || "";
+    if (!text.trim()) throw new Error(`Missing ${type} content`);
+    return text;
+  }
+  throw new Error(`Unsupported document type: ${type}`);
 }
 
 // ── URL ingestion: fetch + HTML-to-text ──────────────────────────────────────

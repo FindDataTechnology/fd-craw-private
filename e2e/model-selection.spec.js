@@ -21,7 +21,13 @@ async function restoreModel(page, modelId) {
   await page.goto("/chat/");
   await page.getByTestId("composer-input").fill(`/model ${modelId}`);
   await page.getByTestId("composer-send").click();
-  await expect(page.getByTestId("strip-model")).toContainText(/.+/, { timeout: 20000 });
+  await expect
+    .poll(async () => {
+      const response = await page.request.get("/api/llm/default");
+      return response.ok() ? (await response.json()).activeModelId : null;
+    }, { timeout: 20000 })
+    .toBe(modelId);
+  await expect(page.getByTestId("strip-model")).toContainText(modelId, { timeout: 5000 });
 }
 
 async function ensureModelsLoaded(page) {
@@ -104,9 +110,17 @@ test.describe("model selection", () => {
       });
     });
 
-    const other = models.find((m) => m.id && m.id !== originalModel);
+    // Exclude the ACTIVE model, not just the persisted pointer: the row of
+    // whichever model is live renders a disabled "Default" button (ModelList
+    // keys on `currentModel`), and the two can diverge because set-default
+    // persists without restarting. Mirrors the /model command test below.
+    const activeId = await page.request
+      .get("/api/llm/default")
+      .then((r) => r.json())
+      .then((b) => b.activeModelId);
+    const other = models.find((m) => m.id && m.id !== originalModel && m.id !== activeId);
     if (!other) {
-      test.skip(true, "Only one model available, cannot test switching");
+      test.skip(true, "No non-current model available, cannot test switching");
       return;
     }
 

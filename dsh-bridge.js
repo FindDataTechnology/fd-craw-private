@@ -50,19 +50,30 @@ export class DshBridge {
   #cwd;
   #mcpPatchPath;
   #skillsPatchPath;
+  #presetsPatchPath;
+  #permissionsPatchPath;
+  #agentPreset;
   #env;
+  // Preset roster cache, per child generation: null until the first successful
+  // `presets/list` of the current child, cleared on every (re)spawn so a
+  // restart (which may carry a different profile composition) re-reads it.
+  #presetCache = null;
   // True while a restart() is in flight (shutdown → spawn → initialize). A
   // second restart (e.g. a set_model WS call arriving mid-restart) is rejected
   // with a restart-in-progress error rather than racing the spawn ladder.
   #restarting = false;
+  #generation = 0;
 
-  constructor({ onEvent, provider, model, cwd, mcpPatchPath, skillsPatchPath, env } = {}) {
+  constructor({ onEvent, provider, model, cwd, mcpPatchPath, skillsPatchPath, presetsPatchPath, permissionsPatchPath, agentPreset, env } = {}) {
     if (onEvent) this.#onEvent = onEvent;
     this.#provider = provider || "deepseek-official";
     this.#model = model || "deepseek-v4-flash";
     this.#cwd = cwd || process.cwd();
     this.#mcpPatchPath = mcpPatchPath || null;
     this.#skillsPatchPath = skillsPatchPath || null;
+    this.#presetsPatchPath = presetsPatchPath || null;
+    this.#permissionsPatchPath = permissionsPatchPath || null;
+    this.#agentPreset = agentPreset || null;
     // When provided, the dsh child is spawned with this env instead of the
     // inherited process env — used to scrub upstream API keys (LLM_API_KEY /
     // LITELLM_API_KEY) so dsh-credentials-local's .credentials.yaml is the
@@ -82,11 +93,16 @@ export class DshBridge {
   async #spawn() {
     // Build CLI args: profile + optional patch overlays (dsh-profile generators).
     // --patch is repeatable and applied after the profile layer; an absent patch
-    // path (no MCP servers / no skills dir) just omits the flag. The skills patch
-    // is static (set at construction); the mcp patch can be swapped on restart.
+    // path (no MCP servers / no skills dir / unresolvable preset root) just
+    // omits the flag. The skills + presets + permissions patches are static
+    // (set at construction); the mcp patch can be swapped on restart. The
+    // permission overlay MUST come after the preset overlay — it swaps the
+    // preset bridge's loader row.
     const args = ["--profile", PROFILE];
     if (this.#mcpPatchPath) args.push("--patch", this.#mcpPatchPath);
     if (this.#skillsPatchPath) args.push("--patch", this.#skillsPatchPath);
+    if (this.#presetsPatchPath) args.push("--patch", this.#presetsPatchPath);
+    if (this.#permissionsPatchPath) args.push("--patch", this.#permissionsPatchPath);
     const client = new HarnessClient({
       command: COMMAND,
       args,
@@ -107,6 +123,7 @@ export class DshBridge {
           cwd: this.#cwd,
           provider: this.#provider,
           model: this.#model,
+          ...(this.#agentPreset ? { agentPreset: this.#agentPreset } : {}),
         });
         break;
       } catch (e) {
@@ -118,28 +135,65 @@ export class DshBridge {
     }
     this.#client = client;
     this.#ready = true;
+    // Fresh child = fresh roster: the preset cache is per generation.
+    this.#presetCache = null;
     this.#subscription = client.subscribe();
-    this.#pump();
+    const generation = ++this.#generation;
+    this.#pump(generation);
+    try { this.#onEvent({ method: "bridge.ready", params: {} }); } catch { /* host callback best-effort */ }
     return res;
+  }
+
+  // The agent-preset roster the running child composes (`presets/list` on the
+  // preset bridge). Cached per child generation — the roster only changes when
+  // the child (or a preset file on disk) does, and a restart clears it. An
+  // empty array also covers a deployment that composes no roster: the bridge
+  // answers `[]` and callers render no picker.
+  async listPresets() {
+    this.#requireReady();
+    if (!this.#presetCache) {
+      this.#presetCache = await this.#client.request("presets/list", {});
+    }
+    return this.#presetCache;
+  }
+
+  // The permission preset roster + the session's effective preset
+  // (`permissions/list` on the permission bridge). Deliberately NOT cached:
+  // unlike the static preset roster, the payload carries the live `current`,
+  // and every call is a rare, user-triggered refresh. After a restart the
+  // fresh child answers with the deployment default — the honest post-restart
+  // value the strip should show.
+  async listPermissionPresets(sessionId) {
+    this.#requireReady();
+    return this.#client.request("permissions/list", sessionId ? { sessionId } : {});
+  }
+
+  // Switch the live session's permission preset (`permissions/set`). No child
+  // restart — the runtime appends the durable `permission/preset` session
+  // event and writes the sandbox/approval knobs; the event flows back through
+  // the pump so every client corrects its view.
+  async setPermissionPreset(sessionId, name) {
+    this.#requireReady();
+    return this.#client.request("permissions/set", { sessionId, name });
   }
 
   // Drain notifications until the runtime dies; a rejection (TransportClosed)
   // from subscription.next() is the exit signal — HarnessClient fails all
   // subscriptions when the child exits.
-  async #pump() {
-    while (this.#client && this.#ready) {
+  async #pump(generation) {
+    while (generation === this.#generation && this.#client && this.#ready) {
       let notif;
       try {
         notif = await this.#subscription.next();
       } catch {
+        if (generation !== this.#generation || this.#shuttingDown) return;
         // Child died mid-pump. Signal the host so a turn in flight is aborted
         // (error + done) rather than wedging on isStreaming=true; then restart.
-        if (!this.#shuttingDown) {
-          try { this.#onEvent({ method: "_bridge_crash", params: {} }); } catch {}
-        }
+        try { this.#onEvent({ method: "_bridge_crash", params: {} }); } catch {}
         await this.#onExit();
         return;
       }
+      if (generation !== this.#generation) return;
       try {
         this.#onEvent(notif);
       } catch (e) {
@@ -153,27 +207,35 @@ export class DshBridge {
   async #onExit() {
     this.#ready = false;
     this.#client = null;
-    if (this.#shuttingDown) return;
-    // Signal the host so an in-flight turn (isStreaming wedged true) gets
-    // error+done and the UI unwedges; the runtime is gone and won't emit
-    // session.status idle itself. (Task 2.4 child-crash-mid-turn)
-    try { this.#onEvent({ method: "bridge.exit" }); } catch { /* host callback best-effort */ }
-    while (this.#restarts < MAX_RESTARTS) {
-      const delay = Math.min(1000 * 2 ** this.#restarts, 30_000);
-      this.#restarts += 1;
-      console.warn(
-        `[dsh-bridge] runtime exited; restarting in ${delay}ms (attempt ${this.#restarts}/${MAX_RESTARTS})`,
-      );
-      await sleep(delay);
-      try {
-        await this.#spawn();
-        this.#restarts = 0;
-        return;
-      } catch (e) {
-        console.error("[dsh-bridge] restart failed:", e?.message || e);
+    if (this.#shuttingDown || this.#restarting) return;
+    // Own unexpected-exit recovery so an explicit restart cannot race the
+    // backoff ladder (or two pump exits cannot start two ladders).
+    this.#restarting = true;
+    try {
+      // Signal the host so an in-flight turn (isStreaming wedged true) gets
+      // error+done and the UI unwedges; the runtime is gone and won't emit
+      // session.status idle itself. (Task 2.4 child-crash-mid-turn)
+      try { this.#onEvent({ method: "bridge.exit" }); } catch { /* host callback best-effort */ }
+      while (this.#restarts < MAX_RESTARTS) {
+        const delay = Math.min(1000 * 2 ** this.#restarts, 30_000);
+        this.#restarts += 1;
+        console.warn(
+          `[dsh-bridge] runtime exited; restarting in ${delay}ms (attempt ${this.#restarts}/${MAX_RESTARTS})`,
+        );
+        await sleep(delay);
+        if (this.#shuttingDown) return;
+        try {
+          await this.#spawn();
+          this.#restarts = 0;
+          return;
+        } catch (e) {
+          console.error("[dsh-bridge] restart failed:", e?.message || e);
+        }
       }
+      console.error(`[dsh-bridge] gave up after ${MAX_RESTARTS} restarts`);
+    } finally {
+      this.#restarting = false;
     }
-    console.error(`[dsh-bridge] gave up after ${MAX_RESTARTS} restarts`);
   }
 
   // Queue one prompt; returns the durable message id (fast — the turn plays
@@ -199,18 +261,21 @@ export class DshBridge {
     }
   }
 
-  // Re-initialize the child with a new provider/model/cwd/patch. dsh bakes all
-  // of these into the `initialize` handshake and exposes no stock
-  // `setModel`/`setCwd`/reload RPC, so a live model switch, a workspace switch,
-  // OR an MCP add/remove (Task 4.5) means a fresh child.
+  // Re-initialize the child with a new provider/model/cwd/preset/patch. dsh
+  // bakes all of these into the `initialize` handshake and exposes no stock
+  // `setModel`/`setCwd`/reload RPC, so a live model switch, a workspace
+  // switch, an agent-preset switch (blank sessions only — a session with
+  // turns cannot recompose), OR an MCP add/remove (Task 4.5) means a fresh
+  // child.
   // ponytail: this drops the child's in-memory session state (v1 ceiling); a
   // non-disruptive switch needs a custom dsh RPC.
-  async restart({ provider, model, cwd, mcpPatchPath } = {}) {
+  async restart({ provider, model, cwd, mcpPatchPath, agentPreset } = {}) {
     if (this.#restarting) {
       throw new Error("dsh restart already in progress");
     }
     this.#restarting = true;
     try {
+      try { this.#onEvent({ method: "bridge.exit", params: { reason: "restart" } }); } catch { /* host callback best-effort */ }
       await this.shutdown();
       this.#shuttingDown = false;
       this.#restarts = 0;
@@ -220,6 +285,7 @@ export class DshBridge {
       // in the switched directory rather than reverting to the startup one.
       if (cwd) this.#cwd = cwd;
       if (mcpPatchPath !== undefined) this.#mcpPatchPath = mcpPatchPath;
+      if (agentPreset) this.#agentPreset = agentPreset;
       return await this.#spawn();
     } finally {
       this.#restarting = false;
@@ -244,6 +310,7 @@ export class DshBridge {
   async shutdown() {
     this.#shuttingDown = true;
     this.#ready = false;
+    this.#generation += 1;
     try { this.#subscription?.close(); } catch { /* closing a dead sub is fine */ }
     const client = this.#client;
     this.#client = null;

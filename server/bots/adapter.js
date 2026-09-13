@@ -12,6 +12,13 @@
 //        null = ignore (edits, reactions, our own echoes, non-text messages).
 //   sendText(cred, chatKey, text) -> Promise<void>
 //   start?(bot, deliver) / stop?()   // optional polling loop (telegram)
+//   qr: { strategy, hintKey, field?, resolve?(cred) }
+//        User-entry QR capability (redesign-bots-surface). strategy is
+//        "telegram-me" | "wechat-qrcode" | "manual"; hintKey is the i18n key
+//        for the per-platform setup steps; manual platforms name their
+//        operator-provided link `field`. resolve() runs server-side and
+//        returns { url } or throws — the route maps a throw to the manual
+//        fallback state, so a broken upstream never breaks bot management.
 //
 // Adapters are stateless modules; per-bot mutable state (access-token cache,
 // poll loop) lives in a closure created by `create(bot)` when the adapter
@@ -40,6 +47,12 @@ export function getAdapter(type) {
 // Adapter-declared credential fields, for the config form and save validation.
 export function credentialFieldsFor(type) {
   return getAdapter(type)?.credentialFields ?? [];
+}
+
+// Browser-safe QR capability descriptor (no resolve function crosses over).
+export function qrCapabilityFor(type) {
+  const { strategy, hintKey, field } = getAdapter(type)?.qr ?? {};
+  return strategy ? { strategy, hintKey, field } : null;
 }
 
 // Reject a save whose credentials miss a required field. Returns an error

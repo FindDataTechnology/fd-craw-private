@@ -65,7 +65,14 @@ export const registry = {
     { key: "appSecret", label: "App Secret", secret: true },
     { key: "encryptKey", label: "Encrypt Key", required: false, secret: true },
     { key: "verificationToken", label: "Verification Token", required: false, secret: true },
+    // Non-secret: the user-entry URL from the admin console, rendered as the
+    // onboarding QR (self-built apps have no API-mintable follow QR).
+    { key: "qrUrl", label: "User entry URL (QR)", required: false },
   ],
+
+  // User-entry QR: manual link only — no platform API mints a follow QR for a
+  // self-built app. The route renders the stored qrUrl as the code.
+  qr: { strategy: "manual", field: "qrUrl", hintKey: "botsPage.qr.hint.manual" },
 
   async verifyWebhook(req, cred) {
     if (cred.encryptKey) checkSignature(req.headers, req.raw, cred.encryptKey);

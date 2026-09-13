@@ -27,15 +27,40 @@ export function attachDshEvents(ctx) {
     if (!ctx.isStreaming) return;
     ctx.isStreaming = false;
     ctx.broadcast({ type: "done" });
+    const version = ctx.sessionVersion;
     chatHistory
       .listSessions()
-      .then((sessions) =>
-        ctx.broadcast({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
-      )
+      .then((sessions) => {
+        if (version !== ctx.sessionVersion) return;
+        ctx.broadcast({ type: "sessions", sessions, current: chatHistory.currentSessionId() });
+      })
       .catch((e) => console.error("[chat-history] list after done failed:", e.message));
   };
 
   ctx.handleDshEvent = (notif) => {
+    const { method } = notif || {};
+    // Trace tap first: record everything (raw), before the WS translation
+    // switch drops unknown event types. Failure-isolated inside record().
+    trace.record(notif, { sessionId: ctx.dshSessionId, turnId: ctx.dshCurrentTurnId });
+
+    if (method === "bridge.ready") {
+      ctx.ready.dsh = true;
+      // During initial boot the session shim is attached after the bridge starts;
+      // the composition root performs the ready sync once that state exists.
+      if (ctx.session) ctx.onDshReady?.();
+      return;
+    }
+    // Bridge lifecycle notifications have no session id and must abort a live
+    // web turn when the child exits before it can emit session.status idle.
+    if (method === "bridge.exit" || method === "_bridge_crash") {
+      ctx.ready.dsh = false;
+      if (ctx.isStreaming) {
+        ctx.broadcast({ type: "error", message: "Agent runtime exited unexpectedly" });
+        ctx.finishTurn();
+      }
+      return;
+    }
+
     // Session routing (design D2). One dsh runtime multiplexes the web chat and
     // every bot chat, so the pump can no longer assume THE session. A
     // notification for a non-web session goes to that session's registered
@@ -53,10 +78,7 @@ export function attachDshEvents(ctx) {
       }
       return;
     }
-    // Trace tap first: record everything (raw), before the WS translation
-    // switch drops unknown event types. Failure-isolated inside record().
-    trace.record(notif, { sessionId: ctx.dshSessionId, turnId: ctx.dshCurrentTurnId });
-    const { method, params } = notif || {};
+    const { params } = notif || {};
     if (method === "session.status") {
       if (params?.status === "idle") ctx.finishTurn();
       return;
@@ -165,6 +187,19 @@ export function attachDshEvents(ctx) {
         }
         ctx.dshTurnError = null;
         break;
+      case "permission/preset": {
+        // The session's permission preset changed (a live switch via the
+        // strip, or the initial pin when a fresh session publishes). Keying on
+        // the preset event — not the sandbox/approval knob events — because
+        // the preset name is the user-facing truth; unmatched knob
+        // combinations surface as `custom` on the roster read path instead.
+        const preset = ev.data?.preset || null;
+        if (preset && preset !== ctx.currentPermission) {
+          ctx.currentPermission = preset;
+          ctx.broadcast({ type: "current_permission", name: preset });
+        }
+        break;
+      }
       default:
         if (process.env.DSH_DEBUG) console.debug("[dsh] unmapped event:", ev.type);
         break;

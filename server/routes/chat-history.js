@@ -44,12 +44,15 @@ export function registerChatHistoryRoutes(ctx) {
     const { id } = req.params;
     try {
       await chatHistory.deleteSession(id);
+      ctx.sessionVersion = (ctx.sessionVersion || 0) + 1;
       res.json({ ok: true });
+      const version = ctx.sessionVersion;
       chatHistory
         .listSessions()
-        .then((sessions) =>
-          broadcast({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
-        )
+        .then((sessions) => {
+          if (version !== ctx.sessionVersion) return;
+          broadcast({ type: "sessions", sessions, current: chatHistory.currentSessionId() });
+        })
         .catch((e) => console.error("[chat-history] list after delete failed:", e.message));
     } catch (err) {
       if (err?.code === "active") return res.status(409).json({ error: err.message });
@@ -66,6 +69,7 @@ export function registerChatHistoryRoutes(ctx) {
     const { id } = req.params;
     try {
       const title = chatHistory.setTitle(id, req.body?.title);
+      ctx.sessionVersion = (ctx.sessionVersion || 0) + 1;
       res.json({ id, title });
       broadcast({ type: "session_renamed", id, title });
     } catch (err) {

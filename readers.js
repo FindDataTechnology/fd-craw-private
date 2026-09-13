@@ -1,12 +1,11 @@
-// ── LlamaIndex document readers (text extraction) ────────────────────────────
+// ── Document readers (local text extraction) ─────────────────────────────────
 //
 // Extracts plain text from uploaded file buffers for document types beyond
 // PDF/Markdown/text/URL. Each type is parsed by the matching @llamaindex/readers
 // reader (DocxReader, CSVReader, HTMLReader, JSONReader) or officeparser
 // (XLSX, PPTX), which exposes loadDataAsContent(Uint8Array): Promise<Document[]>.
-// The extracted text feeds into the PageIndex bridge (simpleTree) and the SQLite
-// store, reusing the existing indexing pipeline (serialized queue, per-document
-// failure isolation).
+// The extracted text becomes the document's persisted source_text in the
+// library store — pure local parsing, no LLM involvement.
 //
 // All readers work with no extra npm dependencies today: mammoth (docx),
 // csv-parse (csv), @discoveryjs/json-ext (json), and htmlparser2 (html) are
@@ -29,7 +28,7 @@ const SILENT_LOGGER = {
 };
 
 // document type -> () => reader instance. Types not listed here (pdf/markdown/
-// text/url) are handled directly by pageindex-bridge and never reach here.
+// text/url) are handled directly by documents.js and never reach here.
 function readerFor(type) {
   switch (type) {
     case "docx":
@@ -49,16 +48,16 @@ function readerFor(type) {
   }
 }
 
-// Whether a document type is backed by a LlamaIndex reader (used by the bridge
-// to dispatch extraction).
+// Whether a document type is backed by a reader (used by documents.js to
+// dispatch extraction).
 export function hasReader(type) {
   return readerFor(type) !== null;
 }
 
-// Extract plain text from an in-memory buffer for a LlamaIndex-reader-backed
-// document type. Returns the concatenated text of all extracted Documents.
-// Throws on extraction failure; the caller (documents.js runIndex) marks the
-// document `error` in isolation, so one bad file never blocks the queue.
+// Extract plain text from an in-memory buffer for a reader-backed document
+// type. Returns the concatenated text of all extracted Documents. Throws on
+// extraction failure; the caller (documents.js addDocument) turns that into an
+// `error` row in isolation, so one bad file never affects another.
 export async function extractText(type, buffer) {
   const reader = readerFor(type);
   if (!reader) throw new Error(`No reader for document type: ${type}`);

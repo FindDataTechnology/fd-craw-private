@@ -11,9 +11,19 @@ export interface BotCredentialField {
   secret?: boolean;
 }
 
+// Browser-safe QR capability the server advertises per type: how the bot's
+// user entry resolves and which i18n key carries the per-platform steps.
+// strategy: "telegram-me" | "wechat-qrcode" | "manual".
+export interface BotQrCapability {
+  strategy: string;
+  hintKey: string;
+  field?: string;
+}
+
 export interface BotType {
   type: string;
   credentialFields: BotCredentialField[];
+  qr: BotQrCapability | null;
 }
 
 export interface Bot {
@@ -24,6 +34,18 @@ export interface Bot {
   createdAt: string;
   configuredCredentials: string[];
   webhookUrl: string;
+}
+
+// GET /api/bots/:id/qr — exactly one of the panel states, derived in the UI:
+//   resolved — url + qr (server-generated SVG) both present
+//   prompt   — strategy "manual", url/qr null, no error: ask for the link
+//   fallback — url/qr null with an error: show the reason + the link input
+export interface BotQr {
+  strategy: string;
+  url: string | null;
+  qr: string | null;
+  hint: string;
+  error?: string;
 }
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
@@ -63,4 +85,11 @@ export async function updateBot(
 
 export async function deleteBot(id: string): Promise<void> {
   await jsonOrThrow(await send(`/api/bots/${encodeURIComponent(id)}`, "DELETE"));
+}
+
+// Resolve a saved bot's onboarding QR. Server-side only: credentials never
+// cross, the response carries the resolved URL + the rendered SVG. Upstream
+// failures arrive as a 200 fallback state (see BotQr), not an HTTP error.
+export async function getBotQr(id: string): Promise<BotQr> {
+  return jsonOrThrow(await fetch(`/api/bots/${encodeURIComponent(id)}/qr`));
 }

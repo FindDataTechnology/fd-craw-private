@@ -9,9 +9,10 @@ import { Download } from "lucide-react";
 interface SkillMarketCardProps {
   skill: MarketSkill;
   onInstall: (skill: MarketSkill) => void;
+  installing?: boolean;
 }
 
-export function SkillMarketCard({ skill, onInstall }: SkillMarketCardProps) {
+export function SkillMarketCard({ skill, onInstall, installing }: SkillMarketCardProps) {
   const { t } = useTranslation();
 
   return (
@@ -23,12 +24,20 @@ export function SkillMarketCard({ skill, onInstall }: SkillMarketCardProps) {
             <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
               {skill.category}
             </span>
+            {skill.origin === "registry" && (
+              <span
+                data-testid="skill-registry-badge"
+                className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary"
+              >
+                Registry
+              </span>
+            )}
           </div>
           <p className="text-sm text-muted-foreground line-clamp-2">{skill.description}</p>
         </div>
-        <Button size="sm" onClick={() => onInstall(skill)}>
+        <Button size="sm" onClick={() => onInstall(skill)} disabled={installing}>
           <Download className="h-4 w-4 mr-1" />
-          {t("extensions.market.install")}
+          {installing ? t("common.saving") : t("extensions.market.install")}
         </Button>
       </div>
     </div>

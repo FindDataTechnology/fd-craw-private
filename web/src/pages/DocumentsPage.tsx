@@ -1,17 +1,27 @@
-// Documents view: ingestion (file/text/URL), document list with live status,
-// source-content viewer, per-doc + collection query, collection management.
+// Library view: ingestion (file/text/URL), document list with live status,
+// source-content viewer, collection management, and the "Start conversation"
+// handoff into the chat composer.
 //
-// UI shape: hero card with collection summary, then three cards (ingest, list,
-// query), then a card per collection. Each section is a Card primitive so the
-// page reads as a stack of distinct actions rather than a flat form.
+// There is deliberately NO query interface on this page — conversation is the
+// chat window's job. Files and collections hand off through a parked composer
+// draft (@doc:<id> / @collection:<id>) that ChatPage consumes on mount; the
+// server expands those tokens into light context + library tool pointers, so
+// the user lands in a chat that already knows which files are in play.
+//
+// UI shape: hero card with collection summary, then two cards (ingest, list),
+// then a card per collection. Each section is a Card primitive so the page
+// reads as a stack of distinct actions rather than a flat form.
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useDocumentsStore } from "@/hooks/useDocumentsStore";
+import { useChatStore } from "@/hooks/useChatStore";
 import * as api from "@/lib/documents-api";
 import type { DocMeta, CollectionMeta } from "@/lib/documents-api";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
+import type { ClientMessage } from "@/types/ws";
 
 const STATUS_COLORS: Record<string, string> = {
   ready: "bg-success/15 text-success",
@@ -20,8 +30,15 @@ const STATUS_COLORS: Record<string, string> = {
   error: "bg-destructive/15 text-destructive",
 };
 
-export function DocumentsPage() {
+// Belt-and-suspenders: with synchronous local ingest the server answers with
+// terminal status, so a row sitting non-terminal this long means something
+// died between insert and respond (crash, socket drop). Name it instead of
+// letting it spin forever like the old indexing pipeline did.
+const STUCK_AFTER_MS = 30_000;
+
+export function DocumentsPage({ send }: { send: (m: ClientMessage) => void }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { documents, loading, selectedDocId, selectedDocContent } = useDocumentsStore(
     useShallow((s) => ({
       documents: s.documents,
@@ -33,6 +50,7 @@ export function DocumentsPage() {
   const load = useDocumentsStore((s) => s.load);
   const refreshDocs = useDocumentsStore((s) => s.refreshDocs);
   const selectDoc = useDocumentsStore((s) => s.selectDoc);
+  const setComposerDraft = useChatStore((s) => s.setComposerDraft);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [configChecked, setConfigChecked] = useState(false);
 
@@ -64,6 +82,15 @@ export function DocumentsPage() {
       </main>
     );
   }
+
+  // Park the draft, open a fresh session, land in the chat. The draft is raw
+  // text (an @doc:/@collection: token) — the user appends their question and
+  // sends, staying in control of what actually goes to the agent.
+  const startConversation = (token: string) => {
+    setComposerDraft(`${token} `);
+    send({ type: "new_session" });
+    navigate("/chat");
+  };
 
   // Summary stats for the hero — counts per status drive the badges.
   const stats = {
@@ -105,14 +132,12 @@ export function DocumentsPage() {
         </div>
       </header>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+      <div className="mt-6">
         <IngestSection onAdded={() => refreshDocs()} />
-
-        <QuerySection />
       </div>
 
-      {/* Document list — search + status filter, separate card so the list
-          stays scannable even with 50+ docs. */}
+      {/* Document list — status badges + per-row actions, separate card so the
+          list stays scannable even with 50+ docs. */}
       <section className="mt-6">
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center justify-between gap-2">
@@ -140,6 +165,7 @@ export function DocumentsPage() {
                   selected={selectedDocId === d.id}
                   onSelect={() => selectDoc(d.id)}
                   onDelete={async () => { await api.deleteDocument(d.id); await refreshDocs(); }}
+                  onConverse={() => startConversation(`@doc:${d.id}`)}
                 />
               ))}
             </ul>
@@ -161,7 +187,7 @@ export function DocumentsPage() {
         </section>
       )}
 
-      <CollectionsSection />
+      <CollectionsSection onConverse={startConversation} />
     </main>
   );
 }
@@ -262,22 +288,34 @@ function IngestSection({ onAdded }: { onAdded: () => void }) {
   );
 }
 
-function DocRow({ doc, selected, onSelect, onDelete }: {
-  doc: DocMeta; selected: boolean; onSelect: () => void; onDelete: () => void;
+function DocRow({ doc, selected, onSelect, onDelete, onConverse }: {
+  doc: DocMeta; selected: boolean; onSelect: () => void; onDelete: () => void; onConverse: () => void;
 }) {
   const { t } = useTranslation();
+  const stuck =
+    (doc.status === "queued" || doc.status === "indexing") &&
+    Date.now() - new Date(doc.addedAt ?? Date.now()).getTime() > STUCK_AFTER_MS;
   return (
     <li className={cn(
       "flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
       selected ? "border-primary bg-primary/5" : "border-border",
     )} data-testid="doc-row" data-doc-id={doc.id}>
-      <button onClick={onSelect} className="flex flex-1 items-center gap-2 text-left">
+      <button onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-left">
         <Icon name="file-text" size={14} className="shrink-0 text-muted-foreground" />
-        <span className="font-medium">{doc.name}</span>
-        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", STATUS_COLORS[doc.status] ?? "bg-muted text-muted-foreground")} data-testid="doc-status">
+        <span className="truncate font-medium">{doc.name}</span>
+        <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", STATUS_COLORS[doc.status] ?? "bg-muted text-muted-foreground")} data-testid="doc-status">
           {t(`documents.status.${doc.status}`, { defaultValue: doc.status })}
         </span>
+        {stuck && (
+          <span className="shrink-0 truncate text-xs text-warning" title={t("documents.stuckWarning")} data-testid="doc-stuck">
+            {t("documents.stuckWarning")}
+          </span>
+        )}
         {doc.error && <span className="truncate text-xs text-destructive" title={doc.error}>{doc.error}</span>}
+      </button>
+      <button onClick={onConverse} disabled={doc.status !== "ready"} title={t("documents.startConversation")}
+        className="shrink-0 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40" data-testid="doc-converse">
+        {t("documents.startConversation")}
       </button>
       <button onClick={onDelete} className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" data-testid="doc-delete" title={t("documents.remove")}>
         <Icon name="trash-2" size={14} />
@@ -286,55 +324,7 @@ function DocRow({ doc, selected, onSelect, onDelete }: {
   );
 }
 
-function QuerySection() {
-  const { t } = useTranslation();
-  const { docQuery, docAnswer, docQueryLoading } = useDocumentsStore(
-    useShallow((s) => ({ docQuery: s.docQuery, docAnswer: s.docAnswer, docQueryLoading: s.docQueryLoading })),
-  );
-  const setDocQuery = useDocumentsStore((s) => s.setDocQuery);
-  const runDocQuery = useDocumentsStore((s) => s.runDocQuery);
-  return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-        <Icon name="message-square" size={16} />
-        {t("documents.query.title")}
-      </h2>
-      <div className="mt-3 flex gap-2">
-        <input value={docQuery} onChange={(e) => setDocQuery(e.target.value)}
-          placeholder={t("documents.query.placeholder")}
-          className="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs"
-          onKeyDown={(e) => { if (e.key === "Enter" && !docQueryLoading) runDocQuery(); }}
-          data-testid="doc-query-input" />
-        <button onClick={runDocQuery} disabled={docQueryLoading}
-          className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50" data-testid="doc-query-btn">
-          {docQueryLoading ? t("documents.ingest.working") : t("documents.query.ask")}
-        </button>
-      </div>
-      {docAnswer && (
-        <div className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-xs" data-testid="doc-answer">
-          {docAnswer.error ? (
-            <div className="flex items-start gap-2 text-destructive">
-              <Icon name="alert-circle" size={14} className="mt-0.5 shrink-0" />
-              <span>{docAnswer.error}</span>
-            </div>
-          ) : (
-            <>
-              <p className="whitespace-pre-wrap">{docAnswer.answer}</p>
-              {docAnswer.sources && docAnswer.sources.length > 0 && (
-                <p className="mt-2 flex items-start gap-1 text-muted-foreground">
-                  <Icon name="book-open" size={12} className="mt-0.5 shrink-0" />
-                  <span>{t("documents.query.sources", { names: docAnswer.sources.map((s) => s.name).join(", ") })}</span>
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function CollectionsSection() {
+function CollectionsSection({ onConverse }: { onConverse: (token: string) => void }) {
   const { t } = useTranslation();
   const { collections, documents } = useDocumentsStore(
     useShallow((s) => ({ collections: s.collections, documents: s.documents })),
@@ -345,8 +335,6 @@ function CollectionsSection() {
   const [members, setMembers] = useState<DocMeta[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [addDocId, setAddDocId] = useState("");
-  const [colQuery, setColQuery] = useState("");
-  const [colAnswer, setColAnswer] = useState<{ answer?: string; sources?: { name: string }[]; error?: string } | null>(null);
 
   const create = async () => {
     if (!name.trim()) return;
@@ -361,7 +349,7 @@ function CollectionsSection() {
   };
   const open = async (c: CollectionMeta) => {
     if (openId === c.id) { setOpenId(null); return; }
-    setOpenId(c.id); setMembersLoading(true); setColAnswer(null); setColQuery("");
+    setOpenId(c.id); setMembersLoading(true);
     try { setMembers(await api.listCollectionMembers(c.id)); }
     catch (e) { alert((e as Error).message); }
     finally { setMembersLoading(false); }
@@ -370,12 +358,6 @@ function CollectionsSection() {
     if (!openId || !addDocId) return;
     try { await api.addDocumentToCollection(openId, addDocId); setMembers(await api.listCollectionMembers(openId)); setAddDocId(""); }
     catch (e) { alert((e as Error).message); }
-  };
-  const runQuery = async () => {
-    if (!openId || !colQuery.trim()) return;
-    setColAnswer(null);
-    try { setColAnswer(await api.queryCollection(openId, colQuery)); }
-    catch (e) { setColAnswer({ error: (e as Error).message }); }
   };
 
   return (
@@ -402,6 +384,10 @@ function CollectionsSection() {
                   <Icon name="folder" size={14} className="text-muted-foreground" />
                   <button onClick={() => open(c)} className="flex-1 text-left font-medium" data-testid="col-row">{c.name}</button>
                   <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">{t("documents.collection.docsCount", { count: c.documentCount ?? 0 })}</span>
+                  <button onClick={() => onConverse(`@collection:${c.id}`)} title={t("documents.startConversation")}
+                    className="shrink-0 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted" data-testid="col-converse">
+                    {t("documents.startConversation")}
+                  </button>
                   <button onClick={() => remove(c.id)} className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" data-testid="col-delete" title={t("documents.collection.delete")}>
                     <Icon name="trash-2" size={14} />
                   </button>
@@ -427,19 +413,6 @@ function CollectionsSection() {
                           </select>
                           <button onClick={addDoc} className="rounded-md border border-border px-2 py-1 text-xs hover:bg-muted" data-testid="col-add-btn">{t("documents.collection.add")}</button>
                         </div>
-                        <div className="mt-3 flex gap-2">
-                          <input value={colQuery} onChange={(e) => setColQuery(e.target.value)} placeholder={t("documents.collection.queryPlaceholder")}
-                            className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-xs" data-testid="col-query-input" />
-                          <button onClick={runQuery} className="rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90" data-testid="col-query-btn">{t("documents.query.ask")}</button>
-                        </div>
-                        {colAnswer && (
-                          <div className="mt-3 rounded-md border border-border bg-background p-2 text-xs" data-testid="col-answer">
-                            {colAnswer.error ? <span className="text-destructive">{colAnswer.error}</span> : <>
-                              <p className="whitespace-pre-wrap">{colAnswer.answer}</p>
-                              {colAnswer.sources && <p className="mt-1 text-muted-foreground">{t("documents.query.sources", { names: colAnswer.sources.map((s) => s.name).join(", ") })}</p>}
-                            </>}
-                          </div>
-                        )}
                       </>
                     )}
                   </div>

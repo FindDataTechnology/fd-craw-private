@@ -1,7 +1,9 @@
-// Documents + collections REST API (local PageIndex + LlamaIndex).
-// Ingests PDF, Markdown, text, URL, DOCX, XLSX, PPTX, CSV, HTML. Indexes
-// via PageIndex through LlamaIndex.TS framework with SQLite persistence.
-// Status transitions broadcast as documents_status WS events.
+// Documents + collections REST API (local-extraction library).
+// Ingests PDF, Markdown, text, URL, DOCX, XLSX, PPTX, CSV, HTML with local
+// text extraction and SQLite persistence — no LLM pipeline. The add route
+// responds with the TERMINAL status (ready, or 422 + message on extraction
+// failure). Status transitions still broadcast as documents_status WS events
+// as a consistency mechanism.
 
 export function registerDocumentRoutes(ctx) {
   const { app, db, documents, collections, upload } = ctx;
@@ -25,6 +27,11 @@ export function registerDocumentRoutes(ctx) {
         url: req.body.url,
       });
 
+      // Extraction failed: the row persists as `error` (visible in the list);
+      // 422 lets the client attachment chip show the failure.
+      if (result.status === "error") {
+        return res.status(422).json({ error: result.error, id: result.id, status: "error" });
+      }
       res.json(result);
     } catch (err) {
       res.status(err.status || 500).json({ error: err.message });
@@ -50,22 +57,9 @@ export function registerDocumentRoutes(ctx) {
     res.status(removed ? 200 : 404).json({ removed });
   });
 
-  app.post("/api/documents/query", async (req, res) => {
-    const query = (req.body?.query || "").trim();
-    if (!query) return res.status(400).json({ error: "Missing query" });
-    if (!db.isDbReady()) {
-      return res.status(503).json({ error: "Document collection is disabled (database unavailable)" });
-    }
-    try {
-      const result = await documents.queryCollection(query);
-      res.json(result);
-    } catch (err) {
-      res.status(err.status || 500).json({ error: err.message });
-    }
-  });
-
   // ── Collections REST API routes (named document groups) ───────────────────
-  // Collections allow organizing documents into named groups for scoped querying.
+  // Collections organize library documents into named groups: chat-starting
+  // selections and scoping filters for the agent's library tools.
 
   app.get("/api/collections", (_req, res) => {
     res.json({ collections: collections.listCollections() });
@@ -120,19 +114,5 @@ export function registerDocumentRoutes(ctx) {
   app.delete("/api/collections/:id/documents/:documentId", async (req, res) => {
     await collections.removeDocumentFromCollection(req.params.id, req.params.documentId);
     res.json({ ok: true });
-  });
-
-  app.post("/api/collections/:id/query", async (req, res) => {
-    const query = (req.body?.query || "").trim();
-    if (!query) return res.status(400).json({ error: "Missing query" });
-    if (!db.isDbReady()) {
-      return res.status(503).json({ error: "Document collection is disabled (database unavailable)" });
-    }
-    try {
-      const result = await collections.queryCollection(req.params.id, query);
-      res.json(result);
-    } catch (err) {
-      res.status(err.status || 500).json({ error: err.message });
-    }
   });
 }

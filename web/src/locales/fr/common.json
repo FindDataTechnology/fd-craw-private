@@ -52,7 +52,16 @@
     "new": "+ Nouveau",
     "noChats": "Aucune discussion. Cliquez sur « + Nouveau ».",
     "untitled": "Sans titre",
-    "language": "Langue"
+    "language": "Langue",
+    "collapse": "Replier la barre latérale",
+    "expand": "Déplier la barre latérale",
+    "workspaces": "Espaces de travail",
+    "searchChats": "Rechercher des conversations…",
+    "ungrouped": "Non groupées",
+    "showMore": "Afficher {{count}} de plus",
+    "showLess": "Afficher moins",
+    "newWorkspace": "Nouvel espace",
+    "closeSearch": "Fermer la recherche"
   },
   "modelsPage": {
     "title": "Modèles",
@@ -126,6 +135,7 @@
       "workspaceUnset": "Aucun dossier",
       "workspaceRecents": "Dossiers récents",
       "workspacePlaceholder": "Chemin absolu vers un dossier…",
+      "workspaceBrowse": "Parcourir les dossiers…",
       "workspaceAbsolute": "Saisissez un chemin absolu.",
       "workspaceConfirm": "Basculer le dossier de travail vers {{path}} ?\n\nCela redémarre l'agent. Les messages précédents de cette conversation peuvent référencer des fichiers introuvables.",
       "commands": "Commandes",
@@ -134,7 +144,22 @@
       "effort": "Réflexion",
       "effortDefault": "Par défaut",
       "agent": "Agent",
-      "agentUnset": "Par défaut"
+      "agentUnset": "Par défaut",
+      "permission": "Permissions",
+      "permissionUnset": "Par défaut",
+      "permissionCustom": "Personnalisé",
+      "permissionReadonly": {
+        "label": "Lecture seule",
+        "desc": "L'agent peut lire l'espace de travail sans le modifier."
+      },
+      "permissionWrite": {
+        "label": "Écriture espace de travail",
+        "desc": "L'agent peut modifier des fichiers dans l'espace de travail."
+      },
+      "permissionFull": {
+        "label": "Accès complet",
+        "desc": "L'agent peut tout modifier, sans validation."
+      }
     }
   },
   "chat": {
@@ -165,6 +190,24 @@
         }
       },
       "viewLess": "Réduire"
+    },
+    "preset": {
+      "label": "Mode de l'agent",
+      "unset": "Choisir un mode",
+      "userBadge": "Personnalisé",
+      "brokenBadge": "Indisponible",
+      "names": {
+        "standard": "Mode standard",
+        "code": "Mode PTC",
+        "minimal": "Mode minimal",
+        "cordis": "Mode créatif"
+      },
+      "descriptions": {
+        "standard": "L'agent de codage complet : édition de fichiers, shell, recherche de fichiers et web, skills, plans, objectifs, sous-agents et workflows.",
+        "code": "Tout le mode standard, avec les outils exposés via le SDK Code Mode afin que le modèle compose des opérations multi-étapes dans un seul programme TypeScript.",
+        "minimal": "Un agent de codage à deux outils : bash persistant et str_replace_editor.",
+        "cordis": "Pour créer des presets d'agent personnalisés : tout le mode standard, plus des contrôles à l'exécution, l'expérimentation de plugins et des conseils de création de presets."
+      }
     },
     "header": {
       "editTitle": "Renommer la session",
@@ -283,12 +326,6 @@
       "addNote": "Ajouter une note",
       "addUrl": "Ajouter une URL"
     },
-    "query": {
-      "title": "Interroger les documents",
-      "placeholder": "Posez une question sur vos documents…",
-      "ask": "Demander",
-      "sources": "Sources : {{names}}"
-    },
     "collection": {
       "title": "Collections",
       "namePlaceholder": "Nom de la collection…",
@@ -299,9 +336,10 @@
       "noDocuments": "Aucun document.",
       "addDocPlaceholder": "Ajouter un document…",
       "add": "Ajouter",
-      "queryPlaceholder": "Posez une question sur cette collection…",
       "confirmDelete": "Supprimer cette collection ?"
-    }
+    },
+    "startConversation": "Démarrer la conversation…",
+    "stuckWarning": "Trop longtemps — l’ingestion s’est peut-être bloquée"
   },
   "embedded": {
     "iframeTitle": "service intégré",
@@ -419,6 +457,25 @@
     "delete": "Supprimer",
     "confirmDeleteTitle": "Supprimer le bot ?",
     "confirmDelete": "Cela supprime définitivement « {{name}} » et ses identifiants.",
+    "gridHint": "Cliquez sur une plateforme pour ajouter un bot de ce type.",
+    "configuredTitle": "Bots configurés",
+    "saved": "Enregistré",
+    "qr": {
+      "title": "Accès utilisateur (QR)",
+      "resolving": "Résolution…",
+      "copyLink": "Copier le lien",
+      "linkCopied": "Lien copié",
+      "manualPrompt": "Pas encore de lien d'entrée — collez l'URL que les utilisateurs doivent ouvrir, puis enregistrez.",
+      "manualPlaceholder": "https://…",
+      "saveLink": "Enregistrer le lien",
+      "resolveFailed": "Impossible de générer le QR :",
+      "disabledNote": "Le bot est désactivé — le QR affiche encore son entrée.",
+      "hint": {
+        "telegram": "Ouvrez ce lien dans Telegram et appuyez sur Start.",
+        "wechatOa": "Scannez avec WeChat pour suivre et ouvrir le compte officiel.",
+        "manual": "Scannez le code pour ouvrir l'accès du bot."
+      }
+    },
     "types": {
       "telegram": "Telegram",
       "feishu": "Feishu / Lark",
@@ -426,10 +483,20 @@
       "wechat-oa": "Compte officiel WeChat"
     }
   },
+  "login": {
+    "title": "Connexion",
+    "description": "Ce déploiement utilise le connexion unique de votre organisation. Connectez-vous pour accéder à Platform.",
+    "action": "Se connecter avec le SSO",
+    "logout": "Déconnexion",
+    "loadFailed": "Impossible de charger l’état d’authentification : {{error}}",
+    "stateError": "La session de connexion a expiré ou ne correspond pas. Réessayez.",
+    "callbackError": "Échec de la connexion. Réessayez."
+  },
   "settings": {
     "title": "Paramètres",
     "sections": {
       "general": "Général",
+      "account": "Compte",
       "models": "Modèles",
       "mcp": "Serveurs MCP",
       "skills": "Compétences",
@@ -443,6 +510,26 @@
         "dark": "Sombre",
         "system": "Système"
       }
+    },
+    "account": {
+      "title": "Compte",
+      "email": "E-mail connecté",
+      "openHint": "Cette instance est ouverte et ne nécessite pas de compte.",
+      "signedOutHint": "Connectez-vous via le SSO de votre organisation pour utiliser cette instance.",
+      "optionalSsoHint": "Connectez-vous avec le SSO de votre organisation pour conserver votre modèle et vos préférences MCP sur ce runtime partagé."
     }
+  },
+  "bindings": {
+    "myModel": "Mon modèle",
+    "saveAsMyModel": "Enregistrer comme mon modèle",
+    "saved": "Enregistré comme votre modèle",
+    "pending": "Enregistré — sera appliqué lorsque l’assistant sera inactif",
+    "globalSource": "Valeur globale utilisée",
+    "personalMcp": "Pour moi uniquement",
+    "apply": "Appliquer maintenant",
+    "applyFailed": "Impossible d’appliquer votre profil : {{error}}",
+    "signIn": "Connectez-vous pour conserver votre modèle et vos préférences MCP.",
+    "lockedMcp": "Verrouillé par votre administrateur",
+    "continueAnonymous": "Continuer sans se connecter"
   }
 }

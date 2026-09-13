@@ -20,7 +20,8 @@
 // Writes atomically (temp+rename) and returns the declared model list so server.js
 // can source its model selector without a dsh listModels RPC (dsh has none stock;
 // the generator's declared list IS the dsh list — dsh loads exactly this file).
-import { readFileSync, mkdirSync, chmodSync, existsSync } from "node:fs";
+import { readFileSync, mkdirSync, chmodSync, existsSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +31,7 @@ import { atomicWriteTextSync, normalizeBaseUrl } from "./lib/persistence.js";
 const DSH_HOME = process.env.DSH_HOME || join(homedir(), ".dsh");
 const SETTINGS_PATH = join(DSH_HOME, "settings.yaml");
 const CREDENTIALS_PATH = join(DSH_HOME, ".credentials.yaml");
+const MCP_CONFIG_PATH = resolve(process.env.MCP_CONFIG_PATH || "mcp.json");
 
 // token.finddatatech.cloud gateway model catalog (IDs verified against
 // GET /v1/models 2026-09-02; date-suffixed ids are the gateway's real ids).
@@ -297,7 +299,11 @@ function toMcpClientEntry(name, config) {
     entry.config.command = config.command;
     if (config.args) entry.config.args = config.args;
     if (config.env) entry.config.env = config.env;
-    if (config.cwd) entry.config.cwd = config.cwd;
+    // Relative command/args are authored against the repo root (where
+    // mcp.json lives). The dsh child's cwd is the WORKSPACE and moves on
+    // set_workspace, so pin the spawn cwd unless the config sets one — an
+    // unpinned relative path breaks the moment the user switches folders.
+    entry.config.cwd = config.cwd || process.cwd();
   } else if (config.url) {
     entry.config.transport = "streamable-http";
     entry.config.url = config.url;
@@ -316,12 +322,12 @@ function toMcpClientEntry(name, config) {
 // Sources (design D4 — host-side config sources unchanged):
 //   mcp.json            — operator config (base layer)
 //   SQLite MCP table    — user edits via REST; overrides on collision (Task 4.1)
-export async function writeMcpPatch() {
+export async function writeMcpPatch({ mcpOverlay } = {}) {
   // 1. mcp.json (operator config, base layer).
   let mcpJsonServers = {};
   try {
-    mcpJsonServers = JSON.parse(readFileSync("mcp.json", "utf8")).mcpServers || {};
-  } catch { /* no mcp.json or parse error — MCP disabled via file */ }
+    mcpJsonServers = JSON.parse(readFileSync(MCP_CONFIG_PATH, "utf8")).mcpServers || {};
+  } catch { /* no MCP config or parse error — MCP disabled via file */ }
 
   // Merge: mcp.json base → DB (enabled overrides, disabled drops).
   const servers = { ...mcpJsonServers };
@@ -336,6 +342,14 @@ export async function writeMcpPatch() {
     }
   } catch (e) {
     console.warn(`[dsh-profile] DB MCP read failed; mcp.json/OC only: ${e?.message || e}`);
+  }
+
+  // Apply the active identity's availability overlay after the global merge.
+  // This changes only the runtime patch; extension_configs remains untouched.
+  if (mcpOverlay && typeof mcpOverlay === "object") {
+    for (const [name, enabled] of Object.entries(mcpOverlay)) {
+      if (servers[name] && typeof enabled === "boolean" && !enabled) delete servers[name];
+    }
   }
 
   const entries = [];
@@ -390,6 +404,129 @@ export function writeSkillsPatch(skillsDirs = [resolve("skills")]) {
   return SKILLS_PATCH_PATH;
 }
 
+// ── Agent preset roster patch (dsh-agent-presets + preset bridge) ──────────────
+// The dsh runtime composes agent presets (agent modes) through the
+// @deepseek-ai/dsh-agent-presets roster service: it scans the SHIPPED preset
+// root (config/agent-presets in the installed @deepseek-ai/dsh package) plus
+// the user root (~/.dsh/.agent-presets, appended by the plugin's default
+// includeUserRoot) and mounts the selected composition on each new session.
+// The stock sdk-jsonrpc-server has zero preset awareness, so this generator
+// also ships a small bridge plugin (dsh-profile-template/
+// platform-preset-bridge.js, copied into the profile dir) that subclasses the
+// SDK server: initialize carries the selected preset, session creation mounts
+// it pre-publication, and a `presets/list` RPC serves the roster to the web
+// picker. Everything rides one --patch overlay (presets.patch.yml):
+//   - the stock `sdk-jsonrpc-server` row is disabled (a non-insert patch
+//     cannot change a row's plugin name, and re-inserting the same id fails
+//     the boot with "duplicate loader entry id" — so: disable + insert fresh);
+//   - the `agent-presets` roster row is inserted (default `standard`, shipped
+//     root at trust `system`);
+//   - the bridge is inserted under a fresh `platform-sdk-server` row.
+// Unresolvable shipped root → the whole overlay is skipped with a warning:
+// chat still works on the bare host composition and the picker stays empty
+// (graceful degradation, never a boot failure).
+const PRESETS_PATCH_PATH = join(DSH_HOME, "profiles", PROFILE_NAME, "presets.patch.yml");
+const BRIDGE_SOURCE = join(dirname(fileURLToPath(import.meta.url)), "dsh-profile-template", "platform-preset-bridge.js");
+const PRESET_BRIDGE_FILE = "platform-preset-bridge.js";
+const DEFAULT_AGENT_PRESET = "standard";
+
+// Locate the installed @deepseek-ai/dsh package and return its shipped preset
+// root (config/agent-presets), or null. The repo runtime cannot see the dsh
+// package directly (it is not a dependency), so two anchors are tried: a
+// repo-local install (createRequire from this module — the packaged-app
+// layout) and the flat module fallback the dsh boot maintains for every
+// profile ($DSH_HOME/profiles/node_modules/@deepseek-ai/dsh — the global
+// install layout).
+export function resolveShippedPresetRoot() {
+  const anchors = [];
+  try {
+    anchors.push(join(dirname(createRequire(import.meta.url).resolve("@deepseek-ai/dsh/package.json"))));
+  } catch { /* not repo-local — expected with a global dsh install */ }
+  anchors.push(join(DSH_HOME, "profiles", "node_modules", "@deepseek-ai", "dsh"));
+  for (const anchor of anchors) {
+    const root = join(anchor, "config", "agent-presets");
+    if (existsSync(root) && statSync(root).isDirectory()) return root;
+  }
+  return null;
+}
+
+// Write the bridge plugin file + presets.patch.yml into the profile dir.
+// Returns the patch path for the bridge's --patch args, or null when the
+// shipped preset root cannot be resolved (caller omits the flag).
+export async function writePresetsPatch() {
+  const presetRoot = resolveShippedPresetRoot();
+  if (!presetRoot) {
+    console.warn(
+      `[dsh-profile] @deepseek-ai/dsh config/agent-presets not resolvable; skipping the agent-preset roster (picker stays empty, chat unaffected)`,
+    );
+    return null;
+  }
+  mkdirSync(dirname(PRESETS_PATCH_PATH), { recursive: true });
+  // The bridge source is copied into the profile dir because the loader
+  // resolves a relative plugin name beside the profile's cordis.yml.
+  const bridgeTarget = join(dirname(PRESETS_PATCH_PATH), PRESET_BRIDGE_FILE);
+  atomicWriteTextSync(bridgeTarget, readFileSync(BRIDGE_SOURCE, "utf8"));
+  const patch = [
+    { id: "sdk-jsonrpc-server", disabled: true },
+    {
+      insert: [
+        {
+          id: "agent-presets",
+          name: "@deepseek-ai/dsh-agent-presets",
+          config: {
+            default: DEFAULT_AGENT_PRESET,
+            roots: [{ path: presetRoot, trust: "system" }],
+          },
+        },
+        { id: "platform-sdk-server", name: `./${PRESET_BRIDGE_FILE}` },
+      ],
+    },
+  ];
+  atomicWriteTextSync(PRESETS_PATCH_PATH, yaml.dump(patch));
+  console.log(
+    `[dsh-profile] wrote preset bridge + roster patch (default: ${DEFAULT_AGENT_PRESET}, shipped root: ${presetRoot}) → ${PRESETS_PATCH_PATH}`,
+  );
+  return PRESETS_PATCH_PATH;
+}
+
+// ── Permission preset bridge patch (add-permission-mode-selector) ─────────────
+// The permission-mode selector rides the preset bridge: the composed
+// dsh-permission-presets table (read-only / workspace-write / danger-full-access,
+// default from DSH_PERMISSION_MODE) is exposed through a subclassed server.
+// A cordis patch cannot rewrite an inserted row's plugin name (same constraint
+// that made presets.patch.yml disable+insert), so this overlay disables the
+// `platform-sdk-server` row and inserts `platform-permission-server` pointing
+// at ./platform-permission-bridge.js — a subclass that adds permissions/list
+// and permissions/set while inheriting the preset behavior. Ordering matters:
+// the host passes presets.patch.yml BEFORE this file in --patch args.
+const PERMISSIONS_PATCH_PATH = join(DSH_HOME, "profiles", PROFILE_NAME, "permissions.patch.yml");
+const PERMISSION_BRIDGE_SOURCE = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "dsh-profile-template",
+  "platform-permission-bridge.js",
+);
+const PERMISSION_BRIDGE_FILE = "platform-permission-bridge.js";
+
+// Write the permission bridge file + permissions.patch.yml into the profile
+// dir. Returns the patch path for the --patch args. The overlay is written
+// unconditionally (the permission-presets plugin composes from the dsh-base
+// bundle in every real deployment; an absent service degrades to an empty
+// roster inside the bridge — the picker stays hidden, chat unaffected).
+export async function writePermissionsPatch() {
+  mkdirSync(dirname(PERMISSIONS_PATCH_PATH), { recursive: true });
+  const bridgeTarget = join(dirname(PERMISSIONS_PATCH_PATH), PERMISSION_BRIDGE_FILE);
+  atomicWriteTextSync(bridgeTarget, readFileSync(PERMISSION_BRIDGE_SOURCE, "utf8"));
+  const patch = [
+    { id: "platform-sdk-server", disabled: true },
+    {
+      insert: [{ id: "platform-permission-server", name: `./${PERMISSION_BRIDGE_FILE}` }],
+    },
+  ];
+  atomicWriteTextSync(PERMISSIONS_PATCH_PATH, yaml.dump(patch));
+  console.log(`[dsh-profile] wrote permission bridge patch → ${PERMISSIONS_PATCH_PATH}`);
+  return PERMISSIONS_PATCH_PATH;
+}
+
 // Self-check: load .env, build the section, print it + the model list. No file
 // write (read-only) — proves the generator emits valid YAML + the expected ids.
 // Usage: node dsh-profile.js
@@ -426,4 +563,17 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const skillsPatch = writeSkillsPatch();
   console.log(`--- skills patch (${skillsPatch}) ---`);
   console.log(readFileSync(skillsPatch, "utf8"));
+  // Preset roster patch self-check: proves the shipped-root resolution + shows
+  // the generated overlay (null = unresolvable, warn-and-skip path).
+  const presetsPatch = await writePresetsPatch();
+  if (presetsPatch) {
+    console.log(`--- presets patch (${presetsPatch}) ---`);
+    console.log(readFileSync(presetsPatch, "utf8"));
+  } else {
+    console.log("presets patch skipped (shipped preset root unresolvable)");
+  }
+  // Permission bridge patch self-check.
+  const permissionsPatch = await writePermissionsPatch();
+  console.log(`--- permissions patch (${permissionsPatch}) ---`);
+  console.log(readFileSync(permissionsPatch, "utf8"));
 }

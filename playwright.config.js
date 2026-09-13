@@ -1,3 +1,4 @@
+import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 import { E2E_PORT, baseURL, prepareTempStoreDirs } from "./e2e/helpers.js";
 
@@ -97,6 +98,7 @@ export default defineConfig({
             DOCUMENTS_STORE_DIR: storeDirs.docs,
             SESSIONS_STORE_DIR: storeDirs.sessions,
             DB_PATH: storeDirs.db,
+            MCP_CONFIG_PATH: path.join(storeDirs.root, "mcp.json"),
             LLM_PROVIDERS_STORE: storeDirs.llmProviders,
             LLM_DEFAULT_STORE: storeDirs.llmDefault,
           },

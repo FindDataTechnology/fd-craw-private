@@ -65,6 +65,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   // A model/effort/workspace change restarts the dsh child; sending into a
   // restarting runtime would just error.
   const pendingConfig = useChatStore((s) => s.pendingConfig);
+  const hasPermissionRoster = useChatStore((s) => s.permissionOptions.length > 0);
 
   const [acIdx, setAcIdx] = useState(0);
   // Esc "dismisses" the picker without clearing the composer (a separate
@@ -118,6 +119,20 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   useEffect(() => {
     if (focusTick > 0) textareaRef.current?.focus();
   }, [focusTick]);
+
+  // After a restart-carrying switch completes (pendingConfig non-null → null),
+  // re-read the permission roster: the fresh child's session reverts to the
+  // deployment default, and only a fresh roster/current push shows that
+  // honestly instead of the stale pre-restart value.
+  const wasPending = useRef(false);
+  useEffect(() => {
+    if (pendingConfig) {
+      wasPending.current = true;
+    } else if (wasPending.current) {
+      wasPending.current = false;
+      if (hasPermissionRoster) send({ type: "list_permissions" });
+    }
+  }, [pendingConfig, hasPermissionRoster, send]);
 
   const submit = () => {
     if (!canSend) return;

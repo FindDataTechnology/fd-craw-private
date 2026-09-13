@@ -145,14 +145,23 @@ test.describe("Thinking level — composer strip", () => {
   const PLAIN = { id: "e2e-plain", provider: "e2e" };
 
   // Seed the store with a known model list so the assertions don't depend on
-  // whichever catalog this environment happens to serve.
-  const seed = (page, currentModel, currentEffort = null) =>
-    page.evaluate(
+  // whichever catalog this environment happens to serve. The socket only opens
+  // once the auth check resolves, so the server's own `models`/`current_model`
+  // reply can land after this page load — wait for it, or it clobbers the seed.
+  const seed = async (page, currentModel, currentEffort = null) => {
+    await expect
+      .poll(() => page.evaluate(() => {
+        const s = window.__chatStore.getState();
+        return s.models.length > 0 && s.currentModel !== null;
+      }))
+      .toBe(true);
+    await page.evaluate(
       ({ models, currentModel, currentEffort }) => {
         window.__chatStore.setState({ models, currentModel, currentEffort, pendingConfig: null });
       },
       { models: [REASONING, PLAIN], currentModel, currentEffort },
     );
+  };
 
   test.beforeEach(async ({ page }) => {
     await pinLocaleEn(page);

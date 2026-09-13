@@ -2,6 +2,7 @@ node_modules/
 .DS_Store
 mcp.json
 agents.json
+registry-groups.json
 knowledge-store/
 data/
 .env
@@ -64,3 +65,11 @@ connect-app/
 # Scratch temp files
 .tmp-*
 *.local.log
+.e2e-store-*/
+
+# Runtime-generated auth material. `resolveSessionSecret()` writes
+# ./auth/session-secret whenever PLATFORM_DATA_DIR is unset (dev runs), so this
+# dir appears in the working tree after any local `npm start`.
+auth/
+# Deployment scratch (image build contexts / live-pod patches)
+.platform-*.tar.gz

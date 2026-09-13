@@ -77,6 +77,7 @@ export function SettingsDialog({ backgroundPath }: { backgroundPath: string }) {
       if (nodes.length === 0) return;
       const first = nodes[0];
       const last = nodes[nodes.length - 1];
+      if (!first || !last) return;
       if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();
@@ -161,7 +162,7 @@ export function SettingsDialog({ backgroundPath }: { backgroundPath: string }) {
                   <div className="p-6 text-sm text-muted-foreground">{t("common.loading")}</div>
                 }
               >
-                <Section {...((active.props ?? {}) as never)} />
+                <Section {...(active.props ?? {})} />
               </Suspense>
             </div>
           </div>

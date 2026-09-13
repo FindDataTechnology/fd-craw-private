@@ -41,8 +41,11 @@ export function createAppContext(config) {
   const ctx = {
     // ── Config (parsed in server.js, the composition root) ──────────────────
     ...config,
-    // Derived: forward-auth gate enabled (see server/auth.js).
-    authEnabled: config.AUTH_MODE === "forward_auth",
+    // Derived: forward-auth gate enabled (see server/auth.js). Optional SSO is
+    // an identity overlay only and never enables the hard auth gate.
+    authMode: config.AUTH_MODE || "none",
+    authEnabled: config.AUTH_MODE === "forward_auth" || config.AUTH_MODE === "logto",
+    ssoEnabled: config.AUTH_MODE !== "forward_auth" && config.AUTH_MODE !== "logto" && config.SSO_ENABLED === true,
     // Bundle-manifest permissions splitter (extensions routes + MCP seeding).
     splitPolicy,
 
@@ -67,12 +70,23 @@ export function createAppContext(config) {
     // ── Agent session state (see agent-session.js / initDshAgent) ───────────
     session: null,
     isStreaming: false,
+    // Bumped after each session mutation so asynchronous session-list refreshes
+    // from an older turn cannot overwrite the current sidebar state.
+    sessionVersion: 0,
     // Active catalog agent: "local" = the local dsh session; any other id = a
     // catalog agent-remote (chat mode) entry that prompts are forked to.
     currentAgentId: "local",
     // The model the agent session starts on (set during async init; read by
-    // the /api/supervisor/status route).
+    // the /api/supervisor/status route). This is the global default pointer,
+    // not necessarily the model currently running for an optional SSO user.
     defaultModel: null,
+    // Effective shared-runtime state. It is global because Platform has one dsh
+    // child; personal ownership is intentionally not broadcast.
+    runtimeModel: null,
+    runtimeOwner: null,
+    runtimeMcpOverlay: {},
+    pendingBindings: new Map(),
+    runtimeMutationChain: Promise.resolve(),
     // Active thinking level (null = the provider's default). Persisted per
     // provider in the prefs table; projected into settings.yaml by
     // dsh-profile.writeLlmProfile.
@@ -80,6 +94,23 @@ export function createAppContext(config) {
     // dsh bridge + session id.
     dshBridge: null,
     dshSessionId: null,
+    // The selected dsh agent preset (agent mode). Persisted as the
+    // `agent.preset` preference (read once the DB is ready in initDshAgent);
+    // `standard` until then. Read by the WS preset handlers; applied to new
+    // sessions through the bridge restart path.
+    currentPreset: "standard",
+    // The preset roster cache (`presets/list` from the bridge). Null until the
+    // first successful fetch; the bridge itself caches per child generation,
+    // so this is the last-seen copy for connect-time syncs.
+    presetRoster: null,
+    // The permission preset roster (composer control strip) + the current
+    // session's effective preset, from the bridge's permissions/list
+    // (add-permission-mode-selector). Null roster = not yet fetched; null
+    // current = no session has pinned one yet (the bridge answers the
+    // deployment default). Live switches arrive via the permission/preset
+    // session-event translation in dsh-events.js.
+    permissionOptions: [],
+    currentPermission: null,
     // dsh MCP live-reload hook: REST routes mutate the DB, then call this to
     // rewrite the watched mcp.patch.yml so cordis HMR hot-swaps dsh-mcp-client
     // (no process restart). Assigned by initDshAgent.
@@ -120,6 +151,16 @@ export function createAppContext(config) {
       if (ws.readyState === ws.OPEN) {
         ws.send(msg);
       }
+    }
+  };
+
+  ctx.send = (ws, data) => {
+    if (ws?.readyState !== ws?.OPEN) return false;
+    try {
+      ws.send(JSON.stringify(data));
+      return true;
+    } catch {
+      return false;
     }
   };
 

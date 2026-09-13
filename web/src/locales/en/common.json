@@ -52,7 +52,16 @@
     "new": "+ New",
     "noChats": "No chats yet. Click \"+ New\".",
     "untitled": "Untitled",
-    "language": "Language"
+    "language": "Language",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar",
+    "workspaces": "Workspaces",
+    "searchChats": "Search chats…",
+    "ungrouped": "Ungrouped",
+    "showMore": "Show {{count}} more",
+    "showLess": "Show less",
+    "newWorkspace": "New workspace",
+    "closeSearch": "Close search"
   },
   "modelsPage": {
     "title": "Models",
@@ -126,6 +135,7 @@
       "workspaceUnset": "No folder",
       "workspaceRecents": "Recent folders",
       "workspacePlaceholder": "Absolute path to a folder…",
+      "workspaceBrowse": "Browse folders…",
       "workspaceAbsolute": "Enter an absolute path.",
       "workspaceConfirm": "Switch the workspace to {{path}}?\n\nThis restarts the agent. Earlier messages in this chat may refer to files that no longer resolve.",
       "commands": "Commands",
@@ -134,7 +144,22 @@
       "effort": "Thinking",
       "effortDefault": "Default",
       "agent": "Agent",
-      "agentUnset": "Default"
+      "agentUnset": "Default",
+      "permission": "Permissions",
+      "permissionUnset": "Default",
+      "permissionCustom": "Custom",
+      "permissionReadonly": {
+        "label": "Read only",
+        "desc": "The agent can read the workspace but not change it."
+      },
+      "permissionWrite": {
+        "label": "Workspace write",
+        "desc": "The agent can make changes inside the workspace."
+      },
+      "permissionFull": {
+        "label": "Full access",
+        "desc": "The agent can change anything, with no approval gates."
+      }
     }
   },
   "chat": {
@@ -165,6 +190,24 @@
         }
       },
       "viewLess": "Show less"
+    },
+    "preset": {
+      "label": "Agent mode",
+      "unset": "Select a mode",
+      "userBadge": "Custom",
+      "brokenBadge": "Unavailable",
+      "names": {
+        "standard": "Standard mode",
+        "code": "PTC mode",
+        "minimal": "Minimal mode",
+        "cordis": "Creative mode"
+      },
+      "descriptions": {
+        "standard": "The full coding agent: file editing, shell, file and web search, skills, plans, goals, subagents, and workflows.",
+        "code": "Everything in Standard, with tools exposed through the Code Mode SDK so the model composes multi-step operations in a single TypeScript program.",
+        "minimal": "A two-tool coding agent with just a persistent bash and a str_replace_editor.",
+        "cordis": "For authoring custom agent presets: everything in Standard plus runtime checks, plugin experimentation, and preset authoring guidance."
+      }
     },
     "header": {
       "editTitle": "Rename session",
@@ -283,12 +326,6 @@
       "addNote": "Add note",
       "addUrl": "Add URL"
     },
-    "query": {
-      "title": "Ask the documents",
-      "placeholder": "Ask a question about your documents…",
-      "ask": "Ask",
-      "sources": "Sources: {{names}}"
-    },
     "collection": {
       "title": "Collections",
       "namePlaceholder": "Collection name…",
@@ -299,9 +336,10 @@
       "noDocuments": "No documents.",
       "addDocPlaceholder": "Add document…",
       "add": "Add",
-      "queryPlaceholder": "Ask about this collection…",
       "confirmDelete": "Delete this collection?"
-    }
+    },
+    "startConversation": "Start conversation…",
+    "stuckWarning": "Taking too long — ingest may have stalled"
   },
   "embedded": {
     "iframeTitle": "embedded service",
@@ -419,6 +457,25 @@
     "delete": "Delete",
     "confirmDeleteTitle": "Delete bot?",
     "confirmDelete": "This permanently removes \"{{name}}\" and its credentials.",
+    "gridHint": "Click a platform to add a bot of that type.",
+    "configuredTitle": "Configured bots",
+    "saved": "Saved",
+    "qr": {
+      "title": "User entry (QR)",
+      "resolving": "Resolving…",
+      "copyLink": "Copy link",
+      "linkCopied": "Link copied",
+      "manualPrompt": "No entry link yet — paste the URL users should open, then save.",
+      "manualPlaceholder": "https://…",
+      "saveLink": "Save link",
+      "resolveFailed": "Could not resolve a QR:",
+      "disabledNote": "Bot is disabled — the QR still previews its entry.",
+      "hint": {
+        "telegram": "Open this link in Telegram and press Start.",
+        "wechatOa": "Scan with WeChat to follow and open the official account.",
+        "manual": "Scan the code to open the bot's user entry."
+      }
+    },
     "types": {
       "telegram": "Telegram",
       "feishu": "Feishu / Lark",
@@ -426,10 +483,33 @@
       "wechat-oa": "WeChat Official Account"
     }
   },
+  "login": {
+    "title": "Sign in",
+    "description": "This deployment uses your organization’s single sign-on. Sign in to continue to Platform.",
+    "action": "Sign in with SSO",
+    "logout": "Sign out",
+    "loadFailed": "Unable to load authentication state: {{error}}",
+    "stateError": "The sign-in session expired or did not match. Try signing in again.",
+    "callbackError": "Sign-in failed. Try again."
+  },
+  "bindings": {
+    "myModel": "My model",
+    "saveAsMyModel": "Save as my model",
+    "saved": "Saved as your model",
+    "pending": "Saved — it will apply when the assistant is idle",
+    "globalSource": "Using the global default",
+    "personalMcp": "Only for me",
+    "apply": "Apply now",
+    "applyFailed": "Could not apply your profile: {{error}}",
+    "signIn": "Sign in to keep your own model and MCP preferences.",
+    "lockedMcp": "Required by your administrator",
+    "continueAnonymous": "Continue without signing in"
+  },
   "settings": {
     "title": "Settings",
     "sections": {
       "general": "General",
+      "account": "Account",
       "models": "Models",
       "mcp": "MCP Servers",
       "skills": "Skills",
@@ -443,6 +523,13 @@
         "dark": "Dark",
         "system": "System"
       }
+    },
+    "account": {
+      "title": "Account",
+      "email": "Signed-in email",
+      "openHint": "This instance is open and does not require an account.",
+      "optionalSsoHint": "Sign in with your organization’s SSO to keep your own model and MCP preferences on this shared runtime.",
+      "signedOutHint": "Sign in through your organization’s SSO to use this instance."
     }
   }
 }

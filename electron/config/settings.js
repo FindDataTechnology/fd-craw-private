@@ -18,7 +18,12 @@ export const SETTING_KEYS = [
   "LLM_API_KEY",
   "LLM_BASE_URL",
   "DEFAULT_MODEL",
-  "DOCUMENTS_MODEL",
+  "AUTH_MODE",
+  "LOGTO_ENDPOINT",
+  "LOGTO_APP_ID",
+  "LOGTO_CLIENT_TYPE",
+  "SESSION_TTL_HRS",
+  "DESKTOP_SERVER_PORT",
 ];
 
 function settingsFile() {

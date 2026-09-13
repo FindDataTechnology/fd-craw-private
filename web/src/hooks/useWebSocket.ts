@@ -25,7 +25,7 @@ export function wsSend(msg: ClientMessage) {
   currentSend(msg);
 }
 
-export function useWebSocket() {
+export function useWebSocket(enabled: boolean, identityKey = "") {
   const wsRef = useRef<WebSocket | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
   const setStatus = useChatStore((s) => s.setStatus);
@@ -34,6 +34,12 @@ export function useWebSocket() {
 
   useEffect(() => {
     let cancelled = false;
+    if (!enabled) {
+      setStatus("disconnected");
+      return () => {
+        cancelled = true;
+      };
+    }
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
     const MAX_ATTEMPTS = 20;
@@ -42,7 +48,7 @@ export function useWebSocket() {
     // MAX_ATTEMPTS so a dead server isn't hammered forever; resets to 0 on a
     // successful open and on the `online` event (network restored).
     const scheduleReconnect = () => {
-      if (cancelled || attempt >= MAX_ATTEMPTS) return;
+      if (cancelled || !enabled || attempt >= MAX_ATTEMPTS) return;
       const base = Math.min(30000, 1000 * 2 ** attempt);
       const delay = base * (0.75 + Math.random() * 0.5);
       attempt++;
@@ -53,7 +59,7 @@ export function useWebSocket() {
     };
 
     const connect = () => {
-      if (cancelled) return;
+      if (cancelled || !enabled) return;
       setStatus("connecting");
       const ws = new WebSocket(wsUrl());
       wsRef.current = ws;
@@ -64,6 +70,8 @@ export function useWebSocket() {
         ws.send(JSON.stringify({ type: "list_models" } satisfies ClientMessage));
         ws.send(JSON.stringify({ type: "list_agents" } satisfies ClientMessage));
         ws.send(JSON.stringify({ type: "list_skills" } satisfies ClientMessage));
+        ws.send(JSON.stringify({ type: "list_presets" } satisfies ClientMessage));
+        ws.send(JSON.stringify({ type: "list_permissions" } satisfies ClientMessage));
         ws.send(JSON.stringify({ type: "list_sessions" } satisfies ClientMessage));
         ws.send(JSON.stringify({ type: "list_workspaces" } satisfies ClientMessage));
       };
@@ -99,7 +107,7 @@ export function useWebSocket() {
     // bypassing the backoff timer and resetting the retry budget. The same
     // path serves the banner's manual 重试 button.
     const reconnectNow = () => {
-      if (cancelled) return;
+      if (cancelled || !enabled) return;
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       attempt = 0;
       connect();
@@ -118,7 +126,7 @@ export function useWebSocket() {
       window.removeEventListener("platform:reconnect", onManualReconnect);
       wsRef.current?.close();
     };
-  }, [apply, applyExtensions, setStatus]);
+  }, [apply, applyExtensions, enabled, identityKey, setStatus]);
 
   return { send: (msg: ClientMessage) => sendRef.current(msg) };
 }

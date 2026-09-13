@@ -1,9 +1,12 @@
 // McpServerCard.tsx
 // Card component for displaying an installed MCP server.
 
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { McpServer } from "@/lib/extensions-api";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
+import { useChatStore } from "@/hooks/useChatStore";
+import { setPersonalMcp } from "@/lib/bindings-api";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Pencil, Trash2, Zap } from "lucide-react";
@@ -16,12 +19,27 @@ interface McpServerCardProps {
 export function McpServerCard({ server, onEdit }: McpServerCardProps) {
   const { t } = useTranslation();
   const { toggleMcpServer, removeMcpServer } = useExtensionsStore();
+  // Non-null only for a socket with an identity — anonymous viewers get no
+  // personal controls, so the global card is unchanged for them.
+  const mcpBindings = useChatStore((s) => s.userBindings?.mcp);
+  const [personalError, setPersonalError] = useState<string | null>(null);
+  const binding = mcpBindings?.find((b) => b.name === server.name);
 
   const handleToggle = async () => {
     try {
       await toggleMcpServer(server.name, !server.enabled);
     } catch (err) {
       console.error("Failed to toggle MCP server:", err);
+    }
+  };
+
+  const handlePersonalToggle = async () => {
+    if (!binding) return;
+    setPersonalError(null);
+    try {
+      await setPersonalMcp(server.name, binding.personalEnabled === false);
+    } catch (err) {
+      setPersonalError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -65,17 +83,46 @@ export function McpServerCard({ server, onEdit }: McpServerCardProps) {
               <code className="text-xs">{server.config.url}</code>
             )}
           </p>
+          {/* Personal overlay: only whether this globally-configured server is
+              available to me. Config, URL and credentials stay global. */}
+          {binding?.globalEnabled && (
+            <div className="mt-2 flex items-center gap-2">
+              <Switch
+                data-testid="mcp-personal-toggle"
+                checked={binding.personalEnabled !== false}
+                disabled={binding.locked}
+                onCheckedChange={handlePersonalToggle}
+              />
+              <span className="text-xs text-muted-foreground">{t("bindings.personalMcp")}</span>
+              {binding.locked && (
+                <span className="text-xs text-muted-foreground" data-testid="mcp-personal-locked">
+                  · {t("bindings.lockedMcp")}
+                </span>
+              )}
+            </div>
+          )}
+          {personalError && (
+            <p className="mt-1 text-xs text-destructive" data-testid="mcp-personal-error">
+              {personalError}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Switch data-testid="mcp-toggle" checked={server.enabled} onCheckedChange={handleToggle} />
           <Button data-testid="mcp-edit-btn" variant="ghost" size="icon" onClick={() => onEdit(server)}>
             <Pencil className="h-4 w-4" />
           </Button>
-          {!isAuto && (
-            <Button data-testid="mcp-delete-btn" variant="ghost" size="icon" onClick={handleDelete}>
-              <Trash2 className="h-4 w-4 text-destructive" />
-            </Button>
-          )}
+          {/* Always rendered so the toggle/edit/delete columns line up across
+              rows; auto-sourced servers only hide it visually. */}
+          <Button
+            data-testid="mcp-delete-btn"
+            variant="ghost"
+            size="icon"
+            className={isAuto ? "invisible" : undefined}
+            onClick={handleDelete}
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
         </div>
       </div>
     </div>

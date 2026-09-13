@@ -1,10 +1,12 @@
-// Agent & app catalog: dual-source (local agents.json + cloud
-// AGENTS_CONFIG_URL), merged by id with cloud winning, refreshed on an
-// interval; a content change broadcasts `catalog_changed` so clients refetch
-// GET /api/catalog. Mirrors extension-store.js conventions: module state +
-// accessors, no DB, absent sources degrade to just the built-in local agent.
+// Agent & app catalog: multi-source (local agents.json + cloud
+// AGENTS_CONFIG_URL + registry agents via registry-bridge), merged by id with
+// later sources winning, refreshed on an interval; a content change broadcasts
+// `catalog_changed` so clients refetch GET /api/catalog. Mirrors
+// extension-store.js conventions: module state + accessors, no DB, absent
+// sources degrade to just the built-in local agent.
 import path from "node:path";
 import { readJsonOr } from "./lib/persistence.js";
+import { getAgentEntries } from "./registry-bridge.js";
 
 const CATALOG_FILE = path.resolve("agents.json");
 const CLOUD_URL = process.env.AGENTS_CONFIG_URL?.trim() || null;
@@ -93,11 +95,23 @@ async function loadCloud() {
   }
 }
 
-// Merge by id: built-in → agents.json → cloud (later wins, so the cloud is the
-// live control plane even for ids first defined locally).
+// Merge by id: built-in → registry → agents.json → cloud (later wins, so the
+// cloud is the live control plane even for ids first defined elsewhere, and
+// local files override remote registry entries). Registry agents arrive
+// catalog-shaped from registry-bridge and pass the same validation as the
+// other sources.
 function merged() {
   const byId = new Map();
-  for (const doc of [{ agents: [BUILT_IN], apps: [] }, localEntries, cloudEntries]) {
+  const registryDoc = validateDoc(
+    { agents: getAgentEntries(), apps: [] },
+    "registry",
+  );
+  for (const doc of [
+    { agents: [BUILT_IN], apps: [] },
+    registryDoc,
+    localEntries,
+    cloudEntries,
+  ]) {
     if (!doc) continue;
     for (const e of [...doc.agents, ...doc.apps]) byId.set(e.id, e);
   }

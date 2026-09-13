@@ -1,5 +1,61 @@
 import { test, expect } from "@playwright/test";
-import { gotoChat, waitForIdle } from "./helpers.js";
+import WebSocket from "ws";
+import { E2E_PORT, gotoChat } from "./helpers.js";
+
+async function openSocket() {
+  const ws = new WebSocket(`ws://127.0.0.1:${E2E_PORT}/`);
+  const messages = [];
+  ws.on("message", (raw) => {
+    try {
+      messages.push(JSON.parse(raw.toString()));
+    } catch {}
+  });
+  await new Promise((resolve, reject) => {
+    ws.once("open", resolve);
+    ws.once("error", reject);
+  });
+  return { ws, messages };
+}
+
+async function waitForMessage(messages, predicate, timeout = 10000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const match = messages.find(predicate);
+    if (match) return match;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("Timed out waiting for WebSocket message");
+}
+
+async function createSession(request) {
+  const response = await request.post("/api/chat-history/sessions");
+  expect(response.ok()).toBeTruthy();
+  const body = await response.json();
+  expect(body.id).toBeTruthy();
+
+  await expect.poll(async () => {
+    const listResponse = await request.get("/api/chat-history/sessions");
+    if (!listResponse.ok()) return false;
+    const { sessions } = await listResponse.json();
+    return sessions.some((session) => session.id === body.id && session.messageCount === 0);
+  }).toBe(true);
+
+  return body.id;
+}
+
+async function switchSession(ws, messages, id) {
+  ws.send(JSON.stringify({ type: "switch_session", id }));
+  await waitForMessage(messages, (message) => message.type === "session_loaded" && message.id === id);
+  await waitForMessage(messages, (message) => message.type === "sessions" && message.current === id);
+}
+
+function sessionRow(page, id) {
+  return page.locator(`[data-testid="session-row"][data-session-id="${id}"]`);
+}
+
+function currentRow(page) {
+  return page.locator('[data-testid="session-row"][data-current="true"]').first();
+}
 
 // Session row right-click → ChatSessionMenu (Delete) → confirmation dialog →
 // DELETE /api/chat-history/sessions/:id. Covers:
@@ -7,82 +63,32 @@ import { gotoChat, waitForIdle } from "./helpers.js";
 //   - active session: Delete is disabled with a tooltip
 //   - API: 404 on missing id, 409 on current id (covered by the UI; the
 //     409 case is what disables the menu entry)
-//
-// The test first sends one message on the boot session: a session only gains
-// a persistent row on its first message (recordMessage upserts chat_sessions),
-// and listSessions merges ONLY the current in-memory session — a messageless
-// session vanishes from the sidebar once another becomes current, so without
-// that message "+ New" can never produce a second row in a fresh store.
-
 test.describe("session right-click delete", () => {
-  test("creates a new session then deletes a non-active one", async ({ page }) => {
+  test("deletes a non-active session", async ({ page, request }) => {
     await gotoChat(page);
-    const currentRow = () =>
-      page.locator('[data-testid="session-row"][data-current="true"]').first();
+    const firstId = await createSession(request);
+    const inactiveId = await createSession(request);
+    await expect(sessionRow(page, firstId)).toBeVisible({ timeout: 5000 });
+    await expect(sessionRow(page, inactiveId)).toBeVisible({ timeout: 5000 });
 
-    // Persist the boot session (see file comment). The turn errors offline —
-    // the fast project's LLM_BASE_URL is a dead port — but the user message
-    // is mirrored to SQLite before the prompt is issued.
-    await waitForIdle(page, 30000);
-    await page.getByTestId("composer-input").fill("session-delete persistence ping");
-    await page.getByTestId("composer-send").click();
-    // No idle wait here: offline the errored turn never emits agent_start, so
-    // client isStreaming stays false from the start and waitForIdle is a no-op,
-    // while the server (ctx.isStreaming set synchronously on send) would still
-    // reject new_session. The "+ New" block below retries instead.
+    const { ws, messages } = await openSocket();
+    try {
+      await switchSession(ws, messages, firstId);
+    } finally {
+      ws.close();
+    }
+    await expect(currentRow(page)).toHaveAttribute("data-session-id", firstId);
 
-    // "+ New" starts a fresh session — wait for the CURRENT id to change.
-    // "A current row is visible" also holds BEFORE the new_session broadcast
-    // lands, and right-clicking that stale row races the broadcast: isCurrent
-    // flips mid-render and Delete shows enabled instead of disabled (CI flake).
-    // Wrapped in toPass: if the server is still finishing the errored turn, it
-    // rejects new_session ("Cannot start a new chat while the agent is
-    // responding") and the click retries once the turn ends. Note the message
-    // above lands in whatever session is current — earlier specs (chat-polish)
-    // may have renamed it, so the row title is not a stable wait key.
-    await expect(currentRow()).toBeVisible({ timeout: 5000 });
-    const beforeId = await currentRow().getAttribute("data-session-id");
-    await expect(async () => {
-      await page.getByTestId("new-chat-btn").click();
-      await expect
-        .poll(async () => currentRow().getAttribute("data-session-id"), { timeout: 5000 })
-        .not.toBe(beforeId);
-    }).toPass({ timeout: 30000 });
-
-    // Right-click the current row — Delete should be DISABLED with a tooltip
-    // (cannot delete the active session).
-    await currentRow().click({ button: "right" });
-    const menu = page.getByTestId("session-menu");
-    await expect(menu).toBeVisible();
+    await currentRow(page).click({ button: "right" });
     await expect(page.getByTestId("session-menu-delete")).toBeDisabled();
-    // Dismiss.
     await page.keyboard.press("Escape");
-    await expect(menu).toBeHidden();
 
-    // Two rows now: the persisted (non-current) one + the fresh current one.
-    await expect
-      .poll(async () => page.locator('[data-testid="session-row"]').count(), { timeout: 5000 })
-      .toBeGreaterThanOrEqual(2);
-
-    // Find a non-current row, right-click, confirm.
-    const nonCurrent = page.locator('[data-testid="session-row"][data-current="false"]').first();
-    const nonCurrentId = await nonCurrent.getAttribute("data-session-id");
-    expect(nonCurrentId).toBeTruthy();
-
-    const beforeCount = await page.locator('[data-testid="session-row"]').count();
-    await nonCurrent.click({ button: "right" });
-    await expect(page.getByTestId("session-menu")).toBeVisible();
+    await sessionRow(page, inactiveId).click({ button: "right" });
     await expect(page.getByTestId("session-menu-delete")).toBeEnabled();
     await page.getByTestId("session-menu-delete").click();
-    // Confirmation dialog appears.
     await expect(page.getByTestId("session-delete-dialog")).toBeVisible();
     await page.getByTestId("session-delete-confirm").click();
-    // Row removed (broadcast refreshes the sidebar).
-    await expect
-      .poll(async () => page.locator(`[data-testid="session-row"][data-session-id="${nonCurrentId}"]`).count(),
-            { timeout: 5000 })
-      .toBe(0);
-    expect(await page.locator('[data-testid="session-row"]').count()).toBeLessThan(beforeCount);
+    await expect(sessionRow(page, inactiveId)).toHaveCount(0);
   });
 
   test("DELETE endpoint returns 404 for missing id", async ({ request }) => {
@@ -92,10 +98,7 @@ test.describe("session right-click delete", () => {
 
   test("DELETE endpoint returns 409 for the current session", async ({ page, request }) => {
     await gotoChat(page);
-    // Pick the current session id from the sidebar.
-    const currentId = await page
-      .locator('[data-testid="session-row"][data-current="true"]').first()
-      .getAttribute("data-session-id");
+    const currentId = await currentRow(page).getAttribute("data-session-id");
     expect(currentId).toBeTruthy();
     const r = await request.delete(`/api/chat-history/sessions/${currentId}`);
     expect(r.status()).toBe(409);
@@ -108,28 +111,31 @@ test.describe("session right-click delete", () => {
 // elsewhere. Without that guard, clearing an inactive row would silently wipe
 // the active conversation's view.
 test.describe("session menu — clear", () => {
-  test("enabled on the active session, disabled on any other", async ({ page }) => {
+  test("enabled on the active session, disabled on any other", async ({ page, request }) => {
     await gotoChat(page);
+    const firstId = await createSession(request);
+    const inactiveId = await createSession(request);
+    await expect(sessionRow(page, firstId)).toBeVisible({ timeout: 5000 });
+    await expect(sessionRow(page, inactiveId)).toBeVisible({ timeout: 5000 });
 
-    const rows = page.getByTestId("session-row");
-    await expect(rows.first()).toBeVisible({ timeout: 15000 });
+    const { ws, messages } = await openSocket();
+    try {
+      await switchSession(ws, messages, firstId);
+    } finally {
+      ws.close();
+    }
+    await expect(currentRow(page)).toHaveAttribute("data-session-id", firstId);
 
-    const active = page.locator('[data-testid="session-row"][data-current="true"]').first();
-    await active.click({ button: "right" });
+    await currentRow(page).click({ button: "right" });
     await expect(page.getByTestId("session-menu-clear")).toBeEnabled();
     await page.keyboard.press("Escape");
 
-    const inactive = page.locator('[data-testid="session-row"][data-current="false"]').first();
-    const hasInactive = (await inactive.count()) > 0;
-    test.skip(!hasInactive, "needs a second session");
-
-    await inactive.click({ button: "right" });
+    await sessionRow(page, inactiveId).click({ button: "right" });
     await expect(page.getByTestId("session-menu-clear")).toBeDisabled();
   });
 
   test("clearing the active session empties the log", async ({ page }) => {
     await gotoChat(page);
-    // Seed a turn through the e2e seam so this needs no LLM call.
     await page.evaluate(() => {
       window.__chatStore.setState({
         turns: [{ id: "t1", role: "user", text: "hello", blocks: [] }],
@@ -137,10 +143,9 @@ test.describe("session menu — clear", () => {
     });
     await expect
       .poll(() => page.evaluate(() => window.__chatStore.getState().turns.length))
-      .toBeGreaterThan(0);
+      .toBe(1);
 
-    const active = page.locator('[data-testid="session-row"][data-current="true"]').first();
-    await active.click({ button: "right" });
+    await currentRow(page).click({ button: "right" });
     await page.getByTestId("session-menu-clear").click();
 
     await expect

@@ -27,10 +27,12 @@ test.describe("project database (SQLite)", () => {
   });
 
   test("preferences round-trip through the API", async ({ request }) => {
-    // Start empty (fresh DB).
+    // The server is shared across the suite, and legitimate flows persist
+    // preferences (model effort, workspace recents, agent preset) — so, like
+    // the document list above, assert the round-trip rather than emptiness.
     const before = await request.get("/api/preferences");
     expect(before.ok()).toBeTruthy();
-    expect((await before.json()).preferences).toEqual({});
+    const original = (await before.json()).preferences;
 
     // Upsert two preferences.
     const put1 = await request.put("/api/preferences", {
@@ -54,5 +56,10 @@ test.describe("project database (SQLite)", () => {
     const final = (await (await request.get("/api/preferences")).json()).preferences;
     expect(final.theme).toBe("light");
     expect(final.displayName).toBe("E2E Tester");
+
+    // Restore whatever the earlier specs had stored, keys we touched aside.
+    for (const [key, value] of Object.entries(original)) {
+      await request.put("/api/preferences", { data: { key, value } });
+    }
   });
 });

@@ -195,6 +195,72 @@ const MIGRATIONS = [
       )`,
     ],
   },
+  {
+    version: 9,
+    // The dsh agent preset (agent mode) a session STARTED under, recorded at
+    // session-row creation so a resumed session's header label resolves to the
+    // composition it actually runs. Nullable: rows written before this
+    // migration (and blank deployments) read as "the deployment default".
+    apply: (db) => {
+      const cols = new Set(
+        db.prepare("PRAGMA table_info(chat_sessions)").all().map((c) => c.name)
+      );
+      if (!cols.has("agent_preset"))
+        db.exec(`ALTER TABLE chat_sessions ADD COLUMN agent_preset TEXT`);
+    },
+  },
+  {
+    version: 10,
+    // The runtime workspace a session ran in, recorded at session-row creation
+    // so the sidebar can group sessions by workspace. Nullable: rows written
+    // before this migration surface as the sidebar's "Ungrouped" group, and a
+    // mid-session workspace switch never re-stamps the row.
+    apply: (db) => {
+      const cols = new Set(
+        db.prepare("PRAGMA table_info(chat_sessions)").all().map((c) => c.name)
+      );
+      if (!cols.has("workspace"))
+        db.exec(`ALTER TABLE chat_sessions ADD COLUMN workspace TEXT`);
+    },
+  },
+  {
+    version: 11,
+    // Library search index: chunked document text under FTS5 (bm25 ranking).
+    // Written in the same logical step as source_text at ingest; rows are
+    // replaced wholesale per document (delete + insert in one transaction).
+    // A virtual table cannot carry FK cascades, so document deletion purges
+    // chunks explicitly in deleteDocument(). Existing rows are backfilled at
+    // startup by documents-search.js, not by this migration (keep DDL only).
+    statements: [
+      `CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks USING fts5(
+        text,
+        doc_id UNINDEXED,
+        name UNINDEXED,
+        loc UNINDEXED
+      )`,
+    ],
+  },
+  {
+    version: 12,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS user_model_bindings (
+        email TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (email)
+      )`,
+      `CREATE TABLE IF NOT EXISTS user_mcp_bindings (
+        email TEXT NOT NULL,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (email, name)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_user_mcp_bindings_email
+        ON user_mcp_bindings(email)`,
+    ],
+  },
 ];
 
 function nowIso() {
@@ -288,16 +354,18 @@ function stmt(sql) {
 
 // ── Chat sessions & messages ─────────────────────────────────────────────────
 
-export function upsertSession(id, title, createdAt, updatedAt, path = null) {
+export function upsertSession(id, title, createdAt, updatedAt, path = null, agentPreset = null, workspace = null) {
   if (!dbReady) return;
   stmt(
-    `INSERT INTO chat_sessions (id, title, created_at, updated_at, path)
-     VALUES (@id, @title, @created_at, @updated_at, @path)
+    `INSERT INTO chat_sessions (id, title, created_at, updated_at, path, agent_preset, workspace)
+     VALUES (@id, @title, @created_at, @updated_at, @path, @agent_preset, @workspace)
      ON CONFLICT(id) DO UPDATE SET
        title = excluded.title,
        updated_at = excluded.updated_at,
-       path = COALESCE(excluded.path, chat_sessions.path)`
-  ).run({ id, title: title || "New chat", created_at: createdAt, updated_at: updatedAt, path });
+       path = COALESCE(excluded.path, chat_sessions.path),
+       agent_preset = COALESCE(chat_sessions.agent_preset, excluded.agent_preset),
+       workspace = COALESCE(chat_sessions.workspace, excluded.workspace)`
+  ).run({ id, title: title || "New chat", created_at: createdAt, updated_at: updatedAt, path, agent_preset: agentPreset, workspace });
 }
 
 export function setSessionPath(id, path) {
@@ -338,7 +406,7 @@ export function listChatSessions() {
   if (!dbReady) return [];
   return db
     .prepare(
-      `SELECT s.id, s.title, s.created_at AS createdAt, s.updated_at AS updatedAt, s.path,
+      `SELECT s.id, s.title, s.created_at AS createdAt, s.updated_at AS updatedAt, s.path, s.agent_preset AS agentPreset, s.workspace,
               (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS messageCount
        FROM chat_sessions s
        ORDER BY s.updated_at DESC`
@@ -368,7 +436,7 @@ export function getSessionMeta(id) {
   if (!dbReady) return null;
   return db
     .prepare(
-      "SELECT id, title, created_at AS createdAt, updated_at AS updatedAt, path FROM chat_sessions WHERE id = ?"
+      "SELECT id, title, created_at AS createdAt, updated_at AS updatedAt, path, agent_preset AS agentPreset, workspace FROM chat_sessions WHERE id = ?"
     )
     .get(id);
 }
@@ -463,7 +531,9 @@ export function documentExists(id) {
 
 export function deleteDocument(id) {
   if (!dbReady) return;
-  // ON DELETE CASCADE removes the doc_index row.
+  // FTS chunks carry no FK cascade (virtual table) — purge explicitly, then
+  // the row delete cascades doc_index + collection memberships.
+  deleteDocumentChunks(id);
   stmt("DELETE FROM documents WHERE id = ?").run(id);
 }
 
@@ -478,6 +548,139 @@ export function listReadyDocuments() {
 export function countDocuments() {
   if (!dbReady) return 0;
   return stmt("SELECT COUNT(*) AS n FROM documents").get()?.n ?? 0;
+}
+
+// Light card for chat-side @doc: expansion: metadata plus a bounded summary
+// prefix — never loads the full source_text column (which can be megabytes).
+export function getDocumentCard(id) {
+  if (!dbReady) return null;
+  return (
+    db
+      .prepare(
+        `SELECT id, name, type, status, substr(source_text, 1, 220) AS summary
+         FROM documents WHERE id = ?`
+      )
+      .get(id) || null
+  );
+}
+
+// ── Library search chunks (FTS5) ─────────────────────────────────────────────
+
+// Replace a document's chunks wholesale: delete + insert in one transaction,
+// so a reader never sees a half-written chunk set. `name` is denormalized onto
+// each row so search results carry the document name without a join.
+export function replaceDocumentChunks(docId, name, chunks) {
+  if (!dbReady) return;
+  const run = db.transaction(() => {
+    db.prepare("DELETE FROM document_chunks WHERE doc_id = ?").run(docId);
+    const ins = db.prepare(
+      "INSERT INTO document_chunks (text, doc_id, name, loc) VALUES (?, ?, ?, ?)"
+    );
+    for (const c of chunks) ins.run(c.text, docId, name, c.loc);
+  });
+  run();
+}
+
+export function deleteDocumentChunks(docId) {
+  if (!dbReady) return;
+  stmt("DELETE FROM document_chunks WHERE doc_id = ?").run(docId);
+}
+
+export function hasDocumentChunks(docId) {
+  if (!dbReady) return false;
+  return !!stmt("SELECT 1 FROM document_chunks WHERE doc_id = ? LIMIT 1").get(docId);
+}
+
+// Ids of ready docs that have source text but no chunks yet — the backfill
+// source. Ids only: the backfill loads each doc separately so no read cursor
+// is open while it writes (better-sqlite3 iterators hold the connection busy).
+export function listDocIdsWithoutChunks() {
+  if (!dbReady) return [];
+  return db
+    .prepare(
+      `SELECT id FROM documents
+       WHERE status = 'ready' AND source_text IS NOT NULL AND source_text != ''
+         AND NOT EXISTS (SELECT 1 FROM document_chunks WHERE doc_id = documents.id)`
+    )
+    .all()
+    .map((r) => r.id);
+}
+
+// FTS5-ranked chunk search, scoped to ready documents. `matchExpr` is a
+// pre-built MATCH expression (caller quotes terms). Filters: a collection id
+// (membership subselect) and/or a document id. Emits loc for follow-up reads.
+export function searchDocumentChunks(matchExpr, { collectionId, docId, limit = 10 } = {}) {
+  if (!dbReady) return [];
+  const conds = [];
+  const params = [matchExpr];
+  if (collectionId) {
+    conds.push(
+      "c.doc_id IN (SELECT document_id FROM collection_documents WHERE collection_id = ?)"
+    );
+    params.push(collectionId);
+  }
+  if (docId) {
+    conds.push("c.doc_id = ?");
+    params.push(docId);
+  }
+  params.push(Math.max(1, Math.min(20, limit)));
+  const extra = conds.length ? ` AND ${conds.join(" AND ")}` : "";
+  // Unaliased FTS references: this SQLite build resolves auxiliary functions
+  // (snippet/bm25) and the MATCH qualifier by table NAME only, not by alias.
+  return db
+    .prepare(
+      `SELECT document_chunks.doc_id, document_chunks.name, document_chunks.loc,
+              snippet(document_chunks, 0, '«', '»', '…', 16) AS snippet,
+              bm25(document_chunks) AS rank
+       FROM document_chunks JOIN documents d ON d.id = document_chunks.doc_id
+       WHERE document_chunks MATCH ? AND d.status = 'ready'${extra}
+       ORDER BY rank
+       LIMIT ?`
+    )
+    .all(...params);
+}
+
+// LIKE-based fallback scan over chunks, for scripts (CJK etc.) the unicode61
+// tokenizer cannot MATCH. Unranked — row order is chunk insertion order.
+export function likeDocumentChunks(likeExpr, { collectionId, docId, limit = 10 } = {}) {
+  if (!dbReady) return [];
+  const conds = ["c.text LIKE ? ESCAPE '\\'", "d.status = 'ready'"];
+  const params = [likeExpr];
+  if (collectionId) {
+    conds.push(
+      "c.doc_id IN (SELECT document_id FROM collection_documents WHERE collection_id = ?)"
+    );
+    params.push(collectionId);
+  }
+  if (docId) {
+    conds.push("c.doc_id = ?");
+    params.push(docId);
+  }
+  params.push(Math.max(1, Math.min(20, limit)));
+  return db
+    .prepare(
+      `SELECT c.doc_id, c.name, c.loc, substr(c.text, 1, 200) AS snippet
+       FROM document_chunks c JOIN documents d ON d.id = c.doc_id
+       WHERE ${conds.join(" AND ")}
+       LIMIT ?`
+    )
+    .all(...params);
+}
+
+// One page of a document's source text, sliced SQL-side so a page read never
+// loads the full column. Offsets are SQLite character positions (1-based
+// substr); the total lets callers size follow-up pages.
+export function getDocumentPage(id, offset, len) {
+  if (!dbReady) return null;
+  return (
+    db
+      .prepare(
+        `SELECT name, status, length(source_text) AS total,
+                substr(source_text, ?, ?) AS text
+         FROM documents WHERE id = ?`
+      )
+      .get(offset + 1, len, id) || null
+  );
 }
 
 // ── Document index (PageIndex tree, JSON) ────────────────────────────────────
@@ -626,6 +829,71 @@ export function getAllPreferences() {
   if (!dbReady) return {};
   const rows = stmt("SELECT key, value FROM user_preferences").all();
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+}
+
+export function normalizeIdentityEmail(email) {
+  return typeof email === "string" ? email.trim().toLowerCase() : "";
+}
+
+export function getUserModelBinding(email) {
+  if (!dbReady) return null;
+  const key = normalizeIdentityEmail(email);
+  if (!key) return null;
+  // Aliased to the {id, provider} shape the runtime uses for a model everywhere
+  // else (ctx.defaultModel, ctx.dshModels), so callers compare like with like.
+  const row = stmt("SELECT model_id AS id, provider_id AS provider, updated_at AS updatedAt FROM user_model_bindings WHERE email = ?").get(key);
+  return row || null;
+}
+
+export function setUserModelBinding(email, providerId, modelId) {
+  if (!dbReady) return null;
+  const key = normalizeIdentityEmail(email);
+  if (!key || !providerId || !modelId) return null;
+  stmt(
+    `INSERT INTO user_model_bindings (email, provider_id, model_id, updated_at)
+     VALUES (@email, @providerId, @modelId, @updatedAt)
+     ON CONFLICT(email) DO UPDATE SET
+       provider_id = excluded.provider_id,
+       model_id = excluded.model_id,
+       updated_at = excluded.updated_at`
+  ).run({ email: key, providerId, modelId, updatedAt: nowIso() });
+  return getUserModelBinding(key);
+}
+
+export function clearUserModelBinding(email) {
+  if (!dbReady) return false;
+  return stmt("DELETE FROM user_model_bindings WHERE email = ?").run(normalizeIdentityEmail(email)).changes > 0;
+}
+
+export function getUserMcpBindings(email) {
+  if (!dbReady) return {};
+  const key = normalizeIdentityEmail(email);
+  if (!key) return {};
+  return Object.fromEntries(
+    stmt("SELECT name, enabled FROM user_mcp_bindings WHERE email = ?")
+      .all(key)
+      .map((row) => [row.name, !!row.enabled])
+  );
+}
+
+export function setUserMcpBinding(email, name, enabled) {
+  if (!dbReady) return null;
+  const key = normalizeIdentityEmail(email);
+  if (!key || !name || typeof enabled !== "boolean") return null;
+  stmt(
+    `INSERT INTO user_mcp_bindings (email, name, enabled, updated_at)
+     VALUES (@email, @name, @enabled, @updatedAt)
+     ON CONFLICT(email, name) DO UPDATE SET
+       enabled = excluded.enabled,
+       updated_at = excluded.updated_at`
+  ).run({ email: key, name, enabled: enabled ? 1 : 0, updatedAt: nowIso() });
+  return { name, enabled };
+}
+
+export function deleteUserMcpBinding(email, name) {
+  if (!dbReady) return false;
+  return stmt("DELETE FROM user_mcp_bindings WHERE email = ? AND name = ?")
+    .run(normalizeIdentityEmail(email), name).changes > 0;
 }
 
 // ── Extension configs (MCP servers) ──────────────────────────────────────────

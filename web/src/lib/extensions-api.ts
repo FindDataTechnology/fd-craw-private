@@ -46,6 +46,7 @@ export interface MarketMcpServer {
   configTemplate: McpServer["config"];
   installInstructions: string;
   requiresConfig?: boolean;
+  origin?: "bundled" | "registry";
 }
 
 export interface MarketSkill {
@@ -54,10 +55,13 @@ export interface MarketSkill {
   description: string;
   category: string;
   icon: string;
-  skillTemplate: {
+  // Bundled skills carry inline template content; registry skills have no
+  // content up front — installing one fetches it server-side.
+  skillTemplate?: {
     description: string;
     content: string;
   };
+  origin?: "bundled" | "registry";
 }
 
 export interface MarketCatalog {
@@ -205,4 +209,17 @@ export async function fetchMarketCatalog(): Promise<MarketCatalog> {
   const res = await fetch(`${BASE_URL}/market`);
   if (!res.ok) throw new Error(`Failed to fetch market catalog: ${res.statusText}`);
   return res.json();
+}
+
+// Registry-sourced skills install server-side: the backend fetches the
+// skill's SKILL.md with the service token and creates the custom skill.
+export async function installRegistrySkill(name: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/market/skills/${encodeURIComponent(name)}/install`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to install skill: ${res.statusText}`);
+  }
 }

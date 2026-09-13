@@ -14,11 +14,15 @@ import {
   Plug,
   TerminalSquare,
   Activity,
+  UserRound,
   type LucideIcon,
 } from "lucide-react";
 
 const GeneralSection = lazy(() =>
   import("@/components/settings/GeneralSection").then((m) => ({ default: m.GeneralSection })),
+);
+const AccountSection = lazy(() =>
+  import("@/components/settings/AccountSection").then((m) => ({ default: m.AccountSection })),
 );
 const ModelsPage = lazy(() => import("@/pages/ModelsPage").then((m) => ({ default: m.ModelsPage })));
 const ExtensionsPage = lazy(() =>
@@ -33,7 +37,7 @@ export interface SettingsSection {
   labelKey: string;
   testId: string;
   icon: LucideIcon;
-  Component: React.LazyExoticComponent<React.ComponentType<never>>;
+  Component: React.LazyExoticComponent<React.ComponentType<any>>;
   // Props the section's component needs. ExtensionsPage serves two sections
   // and distinguishes them by this prop.
   props?: Record<string, unknown>;
@@ -45,21 +49,28 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: "settings.sections.general",
     testId: "settings-section-general",
     icon: SlidersHorizontal,
-    Component: GeneralSection as never,
+    Component: GeneralSection as React.LazyExoticComponent<React.ComponentType<any>>,
+  },
+  {
+    slug: "account",
+    labelKey: "settings.sections.account",
+    testId: "settings-section-account",
+    icon: UserRound,
+    Component: AccountSection as React.LazyExoticComponent<React.ComponentType<any>>,
   },
   {
     slug: "models",
     labelKey: "settings.sections.models",
     testId: "settings-section-models",
     icon: Sparkles,
-    Component: ModelsPage as never,
+    Component: ModelsPage as React.LazyExoticComponent<React.ComponentType<any>>,
   },
   {
     slug: "mcp",
     labelKey: "settings.sections.mcp",
     testId: "settings-section-mcp",
     icon: Plug,
-    Component: ExtensionsPage as never,
+    Component: ExtensionsPage as React.LazyExoticComponent<React.ComponentType<any>>,
     props: { type: "mcp" },
   },
   {
@@ -67,7 +78,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: "settings.sections.skills",
     testId: "settings-section-skills",
     icon: TerminalSquare,
-    Component: ExtensionsPage as never,
+    Component: ExtensionsPage as React.LazyExoticComponent<React.ComponentType<any>>,
     props: { type: "skills" },
   },
   {
@@ -75,7 +86,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: "settings.sections.status",
     testId: "settings-section-status",
     icon: Activity,
-    Component: DashboardPage as never,
+    Component: DashboardPage as React.LazyExoticComponent<React.ComponentType<any>>,
   },
 ];
 

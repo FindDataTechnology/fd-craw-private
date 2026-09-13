@@ -44,6 +44,19 @@ export const registry = {
     { key: "secretToken", label: "Webhook secret token (optional)", required: false, secret: true },
   ],
 
+  // User-entry QR: the username comes from getMe, so the token never leaves
+  // the server. Throws on a rejected token — the route turns that into the
+  // panel's failure state, bot management keeps working.
+  qr: {
+    strategy: "telegram-me",
+    hintKey: "botsPage.qr.hint.telegram",
+    async resolve(cred) {
+      const me = await call(cred.token, "getMe", {});
+      if (!me?.username) throw new Error("telegram getMe returned no username");
+      return { url: `https://t.me/${me.username}` };
+    },
+  },
+
   async verifyWebhook(req, cred) {
     if (cred.secretToken && req.headers["x-telegram-bot-api-secret-token"] !== cred.secretToken) {
       throw new Error("secret token mismatch");

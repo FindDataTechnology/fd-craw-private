@@ -16,6 +16,7 @@ import { Pencil, X, Check, MoreHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import { ChatSessionMenu } from "@/components/ChatSessionMenu";
+import { presetDisplayName } from "@/components/AgentPresetPicker";
 
 interface Props {
   send: (m: { type: "rename_session"; id: string; title: string }) => void;
@@ -30,6 +31,8 @@ export function ChatHeader({ send }: Props) {
   const renameSession = useChatStore((s) => s.renameSession);
 
   const session = sessions.find((s) => s.id === currentSessionId);
+  const presets = useChatStore((s) => s.presets);
+  const currentPreset = useChatStore((s) => s.currentPreset);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const overflowRef = useRef<HTMLButtonElement>(null);
@@ -98,6 +101,17 @@ export function ChatHeader({ send }: Props) {
 
   if (!session) return null;
 
+  // This session's agent preset, as read-only chrome: the session started
+  // under a fixed composition (dsh refuses to recompose a session with turns),
+  // so the header NAMES the mode — it is never a live switch. Sessions created
+  // before presets (blank metadata) read as the deployment default; a preset
+  // no longer on the roster falls back to its raw id.
+  const sessionPresetId = session.agentPreset || currentPreset;
+  const rosterRow = presets.find((p) => p.id === sessionPresetId);
+  const presetLabel =
+    sessionPresetId &&
+    (rosterRow ? presetDisplayName(rosterRow, t) : sessionPresetId);
+
   return (
     <header
       data-testid="chat-header"
@@ -165,6 +179,15 @@ export function ChatHeader({ send }: Props) {
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        {presetLabel && (
+          <span
+            data-testid="agent-preset-label"
+            aria-label={t("chat.preset.label")}
+            className="max-w-[10rem] truncate rounded-md border border-border px-2 py-1 text-xs text-muted-foreground"
+          >
+            {presetLabel}
+          </span>
+        )}
         <button
           type="button"
           ref={overflowRef}

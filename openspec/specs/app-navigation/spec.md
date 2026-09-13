@@ -50,11 +50,23 @@ The UI SHALL switch the main content area to the selected tab's panel when the u
 - **AND** no two panels SHALL be visible simultaneously
 
 ### Requirement: Chat session list in the sidebar
-The sidebar SHALL render a chat-session list region containing a "+ New chat" action and the list of persisted chat sessions, each row showing its title and last-updated time. The currently active session SHALL be visually distinguished. Clicking a session row SHALL switch the active chat to that session (governed by the `chat-history` capability). The session list SHALL be refreshed when sessions are created, switched, or updated. The "+ New chat" action SHALL navigate the main content area to the chat view (the `/chat` route in the SPA) regardless of which view is currently active, so the user lands on the fresh chat immediately; creating a new chat from a non-chat view SHALL switch the user to the chat view rather than leaving them on the current view.
+The sidebar SHALL render a Workspaces session region containing a "+ New
+chat" action, a Workspaces header (per the `sidebar-workspaces` capability),
+and the persisted chat sessions grouped by their recorded workspace, each
+row showing its title and last-updated time. The currently active session
+SHALL be visually distinguished. Clicking a session row SHALL switch the
+active chat to that session (governed by the `chat-history` capability). The
+session list SHALL be refreshed when sessions are created, switched, or
+updated. The "+ New chat" action SHALL navigate the main content area to the
+chat view (the `/chat` route in the SPA) regardless of which view is
+currently active, so the user lands on the fresh chat immediately; creating a
+new chat from a non-chat view SHALL switch the user to the chat view rather
+than leaving them on the current view.
 
 #### Scenario: session list renders in the sidebar
 - **WHEN** the page loads with one or more persisted sessions
-- **THEN** the sidebar SHALL list each session's title and last-updated time
+- **THEN** the sidebar SHALL list each session's title and last-updated
+  time, grouped under its recorded workspace
 - **AND** the active session SHALL be highlighted
 
 #### Scenario: new chat from the sidebar while on the chat view
@@ -105,4 +117,36 @@ The sidebar SHALL include a "Bots" navigation entry linking to the `/bots` route
 #### Scenario: navigation to bots management
 - **WHEN** the user clicks the Bots entry in the sidebar
 - **THEN** the app SHALL navigate to `/bots` without a page reload, keeping the WebSocket connected
+
+### Requirement: The desktop navigation rail is collapsible
+On md+ viewports the sidebar rail SHALL be collapsible: a toggle in the
+sidebar header collapses the rail, a re-expand affordance SHALL remain
+reachable while collapsed (pinned at the top of the content area), and
+Ctrl/Cmd+B SHALL toggle the rail in both directions. The collapsed state
+SHALL persist across reloads per browser. Navigation content (tab set,
+session region, footer) is unchanged, and the below-md off-canvas drawer
+SHALL behave exactly as before.
+
+#### Scenario: collapse from the header toggle
+- **WHEN** the user clicks the collapse toggle on a desktop viewport
+- **THEN** the rail collapses and the content column takes the full width
+
+#### Scenario: restore while collapsed
+- **WHEN** the rail is collapsed and the user clicks the pinned re-expand
+  affordance
+- **THEN** the rail is restored with the same nav content
+
+#### Scenario: keyboard toggle
+- **WHEN** the user presses Ctrl/Cmd+B on a desktop viewport
+- **THEN** the rail toggles between collapsed and expanded
+
+#### Scenario: collapse persists across reloads
+- **WHEN** the user collapses the rail and reloads the page on the same
+  browser
+- **THEN** the rail loads collapsed
+
+#### Scenario: narrow viewport keeps the drawer
+- **WHEN** the viewport is below md
+- **THEN** the collapse toggle is not shown and the off-canvas drawer works
+  as before
 

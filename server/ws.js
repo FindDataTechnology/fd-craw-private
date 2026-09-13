@@ -8,11 +8,27 @@ import * as catalog from "../catalog.js";
 import * as skills from "./skills.js";
 import { userFromHeaders } from "./auth.js";
 
+export function authorizeUpgrade(ctx, req) {
+  return ctx.authMode === "forward_auth"
+    ? Boolean(userFromHeaders(req.headers))
+    : ctx.authMode === "logto"
+      ? Boolean(ctx.logtoAuth?.userFromCookie(req.headers.cookie))
+      : true;
+}
+
+export function userForConnection(ctx, req) {
+  return ctx.authMode === "forward_auth"
+    ? userFromHeaders(req.headers)
+    : ctx.authMode === "logto"
+      ? ctx.logtoAuth?.userFromCookie(req.headers.cookie)
+      : null;
+}
+
 export function attachWebSocket(ctx) {
   // noServer + manual handleUpgrade so WS upgrades pass the same forward-auth
   // gate as HTTP requests (missing identity ⇒ handshake rejected with 401).
   ctx.server.on("upgrade", (req, socket, head) => {
-    if (ctx.authEnabled && !userFromHeaders(req.headers)) {
+    if (!authorizeUpgrade(ctx, req)) {
       socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
       socket.destroy();
       return;
@@ -22,27 +38,51 @@ export function attachWebSocket(ctx) {
 
 // ── WebSocket handling ───────────────────────────────────────────────────────
 
+const sendIfOpen = (ws, payload) => {
+  if (ws.readyState !== ws.OPEN) return false;
+  try {
+    ws.send(JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const syncPermissionState = async (ws) => {
+  const { options, current } = await ctx.getPermissionPresets();
+  sendIfOpen(ws, { type: "permissions", options, current });
+};
+
 // Sync a client that connected mid-boot with everything the normal connect
 // path sends, once the dsh agent is live (the "ready" broadcast's payload).
 const syncReadyClient = async (ws) => {
-  ws.send(JSON.stringify({ type: "ready" }));
-  ws.send(JSON.stringify({ type: "current_model", id: ctx.session?.model?.id || null, effort: ctx.currentEffort }));
-  ws.send(JSON.stringify({ type: "current_agent", id: ctx.currentAgentId }));
-  ws.send(JSON.stringify({ type: "agents", agents: ctx.switchableAgents(ws.user) }));
-  ws.send(JSON.stringify({ type: "models", models: await ctx.getAvailableModels() }));
-  chatHistory
-    .listSessions()
-    .then((sessions) =>
-      ws.send(
-        JSON.stringify({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
-      )
-    )
-    .catch((e) => console.error("[chat-history] list on ready failed:", e.message));
+  const version = ctx.sessionVersion;
+  if (!sendIfOpen(ws, { type: "ready" })) return;
+  if (!sendIfOpen(ws, { type: "current_model", id: ctx.runtimeModel?.id || ctx.session?.model?.id || null, effort: ctx.currentEffort })) return;
+  if (!sendIfOpen(ws, { type: "current_agent", id: ctx.currentAgentId })) return;
+  if (!sendIfOpen(ws, { type: "agents", agents: ctx.switchableAgents(ws.user) })) return;
+  if (ws.identity) ctx.sendUserBindings?.(ws, ws.identity.email);
+
+  const models = await ctx.getAvailableModels();
+  if (!sendIfOpen(ws, { type: "models", models })) return;
+  if (!sendIfOpen(ws, { type: "current_preset", id: ctx.currentPreset })) return;
+  // Permission state: the roster arrives on the client's list_permissions
+  // request (bridge round-trip), but the current value is pushed here so a
+  // late-connecting client immediately agrees with any switch another client
+  // already made.
+  if (ctx.currentPermission) sendIfOpen(ws, { type: "current_permission", name: ctx.currentPermission });
+  await syncPermissionState(ws);
+  if (ws.readyState !== ws.OPEN) return;
+
+  const sessions = await chatHistory.listSessions();
+  if (version !== ctx.sessionVersion) return;
+  sendIfOpen(ws, { type: "sessions", sessions, current: chatHistory.currentSessionId() });
 };
 
 ctx.wss.on("connection", (ws, req) => {
   // Identity is fixed at upgrade time (v1 ceiling: no re-auth mid-connection).
-  ws.user = ctx.authEnabled ? userFromHeaders(req.headers) : null;
+  ws.user = userForConnection(ctx, req);
+  ws.identity = ctx.authEnabled ? ws.user : (ctx.ssoEnabled ? userFromHeaders(req.headers) : null);
   ctx.clients.add(ws);
   console.log(`Client connected (${ctx.clients.size} total)`);
 
@@ -50,20 +90,28 @@ ctx.wss.on("connection", (ws, req) => {
   // broadcast re-syncs them with models/sessions once the dsh agent is live.
   if (!ctx.ready.dsh) ws.send(JSON.stringify({ type: "initializing" }));
   // Tell the client which model is currently active so the dropdown can sync.
-  const currentModelId = ctx.session?.model?.id || null;
+  const currentModelId = ctx.runtimeModel?.id || ctx.session?.model?.id || null;
   ws.send(JSON.stringify({ type: "current_model", id: currentModelId, effort: ctx.currentEffort }));
   // Sync the agent switcher: active catalog agent + switchable agent list.
   ws.send(JSON.stringify({ type: "current_agent", id: ctx.currentAgentId }));
   ws.send(JSON.stringify({ type: "agents", agents: ctx.switchableAgents(ws.user) }));
+  if (ws.identity) ctx.sendUserBindings?.(ws, ws.identity.email);
+  // Sync the agent-mode selection so the welcome picker can mark it.
+  ws.send(JSON.stringify({ type: "current_preset", id: ctx.currentPreset }));
+  if (ctx.ready.dsh) {
+    void syncPermissionState(ws).catch((e) =>
+      console.warn(`[chat-history] permission sync on connect failed: ${e.message}`)
+    );
+  }
   // Send the chat session list + current session so the sidebar syncs on connect.
   if (ctx.session) {
+    const version = ctx.sessionVersion;
     chatHistory
       .listSessions()
-      .then((sessions) =>
-        ws.send(
-          JSON.stringify({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
-        )
-      )
+      .then((sessions) => {
+        if (version !== ctx.sessionVersion) return;
+        sendIfOpen(ws, { type: "sessions", sessions, current: chatHistory.currentSessionId() });
+      })
       .catch((e) => console.error("[chat-history] list on connect failed:", e.message));
   }
   // Send initial dashboard state on connect
@@ -92,40 +140,32 @@ ctx.wss.on("connection", (ws, req) => {
         const cmd = skills.parseCommand(text);
 
         if (cmd && cmd.command === "skill") {
-          // Skill invocation: emit a skill_use block and suppress the raw
-          // /skill:... text from being echoed as a normal user message.
-          ctx.broadcast({ type: "skill_use", name: cmd.name, args: cmd.args });
-          // Mirror the user's skill invocation into the SQLite project database.
-          chatHistory.recordMessage(chatHistory.currentSessionId(), "user", text);
-
-          // Manually expand the skill content and send that to the agent. This
-          // does not rely on session.prompt() expanding slash commands.
-          // Scan the skills/ dir (same dir the skill-filesystem plugin's
-          // customSkillDirs points at, Task 5.3).
-          const fileSkills = skills.getFileSkills();
-          const skill = fileSkills.find((s) => s.name === cmd.name);
-          let promptText = text;
-          if (skill) {
-            try {
-              promptText = await skills.expandSkillContent(skill, cmd.args);
-            } catch (err) {
-              console.warn(`[skill] Failed to expand "${cmd.name}": ${err.message}`);
-            }
-          }
-          // Expand @doc:<id> attachment references (design D4).
-          promptText = await skills.expandDocRefs(ctx, promptText);
-
-          // No steer mechanism through the bridge; reject concurrent prompts
-          // host-side (Task 2.7) rather than queueing a second turn.
           if (ctx.isStreaming) {
             ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
             break;
           }
-
           // Set in-flight synchronously (before the first await) so a concurrent
           // prompt is rejected. agent_start sets it again later (idempotent).
           ctx.isStreaming = true;
           try {
+            // Skill invocation: emit a skill_use block and suppress the raw
+            // /skill:... text from being echoed as a normal user message.
+            ctx.broadcast({ type: "skill_use", name: cmd.name, args: cmd.args });
+            // Mirror the user's skill invocation into the SQLite project database.
+            chatHistory.recordMessage(chatHistory.currentSessionId(), "user", text);
+
+            // Manually expand the skill content and send that to the agent. This
+            // does not rely on session.prompt() expanding slash commands.
+            // Scan the skills/ dir (same dir the skill-filesystem plugin's
+            // customSkillDirs points at, Task 5.3).
+            const fileSkills = skills.getFileSkills();
+            const skill = fileSkills.find((s) => s.name === cmd.name);
+            let promptText = text;
+            if (skill) {
+              promptText = await skills.expandSkillContent(skill, cmd.args);
+            }
+            // Expand @doc:<id> attachment references (design D4).
+            promptText = await skills.expandDocRefs(ctx, promptText);
             await ctx.session.prompt(promptText);
           } catch (err) {
             console.error("Agent error:", err.message);
@@ -144,46 +184,37 @@ ctx.wss.on("connection", (ws, req) => {
         } else {
           // Normal prompt (includes unknown "/…" commands that fall through):
           // echo the user message and forward.
-          ctx.broadcast({ type: "user", text });
-
-          // Remote-agent fork: when a chat-mode catalog agent is active, stream
-          // from its OpenAI-compat endpoint instead of the local session. The
-          // user message is echoed above; streamRemoteChat persists both the
-          // user and assistant turns to chat-history (design D6).
-          if (ctx.currentAgentId !== "local") {
-            if (ctx.isStreaming) {
-              ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
-              break;
-            }
-            const entry = catalog.getAgentEntry(ctx.currentAgentId);
-            if (!entry) {
-              // Catalog changed under us (entry removed / no longer visible).
-              ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${ctx.currentAgentId}` }));
-              break;
-            }
-            // Expand @doc:<id> attachment references for the remote agent too.
-            await ctx.streamRemoteChat(entry, await skills.expandDocRefs(ctx, text));
-            break;
-          }
-
-          // No steer mechanism through the bridge; reject concurrent prompts
-          // host-side (Task 2.7) rather than queueing a second turn.
           if (ctx.isStreaming) {
             ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
             break;
           }
+          const entry =
+            ctx.currentAgentId !== "local" ? catalog.getAgentEntry(ctx.currentAgentId) : null;
+          if (ctx.currentAgentId !== "local" && !entry) {
+            ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${ctx.currentAgentId}` }));
+            break;
+          }
 
-          // Mirror the user prompt into the SQLite project database.
-          chatHistory.recordMessage(chatHistory.currentSessionId(), "user", text);
-
-          // Set in-flight synchronously (before the first await) so a concurrent
-          // prompt is rejected. agent_start sets it again later (idempotent).
+          // No steer mechanism through the bridge; reject concurrent prompts
+          // host-side (Task 2.7) rather than queueing a second turn. Set the
+          // guard before the first await so a concurrent prompt cannot enter.
           ctx.isStreaming = true;
-          // Expand @doc:<id> attachment references into the document content the
-          // agent sees (design D4); the user message above keeps the raw refs.
-          const promptWithDocs = await skills.expandDocRefs(ctx, text);
           try {
-            await ctx.session.prompt(promptWithDocs);
+            ctx.broadcast({ type: "user", text });
+
+            if (entry) {
+              // Remote-agent fork: expand refs before streaming from its
+              // OpenAI-compatible endpoint instead of the local session.
+              const promptText = await skills.expandDocRefs(ctx, text);
+              await ctx.streamRemoteChat(entry, promptText);
+            } else {
+              // Mirror the user prompt into the SQLite project database.
+              chatHistory.recordMessage(chatHistory.currentSessionId(), "user", text);
+              // Expand @doc:<id> attachment references into the document content the
+              // agent sees (design D4); the user message above keeps the raw refs.
+              const promptWithDocs = await skills.expandDocRefs(ctx, text);
+              await ctx.session.prompt(promptWithDocs);
+            }
           } catch (err) {
             console.error("Agent error:", err.message);
             ctx.broadcast({ type: "error", message: err.message });
@@ -192,6 +223,25 @@ ctx.wss.on("connection", (ws, req) => {
             ctx.finishTurn();
           }
         }
+        break;
+      }
+
+      case "list_bindings": {
+        if (!ws.identity) {
+          ws.send(JSON.stringify({ type: "user_bindings", model: null, mcp: [] }));
+          break;
+        }
+        ctx.sendUserBindings?.(ws, ws.identity.email);
+        break;
+      }
+
+      case "apply_bindings": {
+        if (!ws.identity) {
+          ws.send(JSON.stringify({ type: "error", message: "Authentication is required" }));
+          break;
+        }
+        const result = await ctx.applyUserBindings(ws.identity.email);
+        if (!result.ok && result.error) ws.send(JSON.stringify({ type: "error", message: result.error }));
         break;
       }
 
@@ -224,6 +274,51 @@ ctx.wss.on("connection", (ws, req) => {
           break;
         }
         const r = await ctx.switchEffortTo(data.effort || null);
+        if (!r.ok && r.error) ws.send(JSON.stringify({ type: "error", message: r.error }));
+        break;
+      }
+
+      case "list_presets": {
+        if (!ctx.ready.dsh) {
+          ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
+          break;
+        }
+        const presets = await ctx.getAgentPresets();
+        ws.send(JSON.stringify({ type: "presets", presets, current: ctx.currentPreset }));
+        break;
+      }
+
+      case "set_preset": {
+        if (!ctx.ready.dsh) {
+          ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
+          break;
+        }
+        // Same contract as set_model: a failure is an orphan error → renders
+        // as a toast, and the previous preset stays reported as current.
+        const r = await ctx.switchPresetTo(data.id);
+        if (!r.ok && r.error) ws.send(JSON.stringify({ type: "error", message: r.error }));
+        break;
+      }
+
+      case "list_permissions": {
+        if (!ctx.ready.dsh) {
+          ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
+          break;
+        }
+        const { options, current } = await ctx.getPermissionPresets();
+        ws.send(JSON.stringify({ type: "permissions", options, current }));
+        break;
+      }
+
+      case "set_permission": {
+        if (!ctx.ready.dsh) {
+          ws.send(JSON.stringify({ type: "error", message: "Agent is still initializing" }));
+          break;
+        }
+        // Live in-session switch — no restart, no pending window. A failure
+        // (streaming guard, unknown name, bridge error) is an orphan error →
+        // renders as a toast; the previous preset stays reported as current.
+        const r = await ctx.switchPermissionTo(data.name);
         if (!r.ok && r.error) ws.send(JSON.stringify({ type: "error", message: r.error }));
         break;
       }
@@ -331,10 +426,13 @@ ctx.wss.on("connection", (ws, req) => {
       }
 
       case "list_sessions": {
+        const version = ctx.sessionVersion;
         const sessions = await chatHistory.listSessions();
-        ws.send(
-          JSON.stringify({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
-        );
+        if (version === ctx.sessionVersion) {
+          ws.send(
+            JSON.stringify({ type: "sessions", sessions, current: chatHistory.currentSessionId() })
+          );
+        }
         break;
       }
 
@@ -365,8 +463,11 @@ ctx.wss.on("connection", (ws, req) => {
             messages: result.messages,
           });
           ctx.broadcast({ type: "session_changed", id: result.id });
+          const version = ctx.sessionVersion;
           const sessions = await chatHistory.listSessions();
-          ctx.broadcast({ type: "sessions", sessions, current: result.id });
+          if (version === ctx.sessionVersion) {
+            ctx.broadcast({ type: "sessions", sessions, current: result.id });
+          }
         } catch (err) {
           ws.send(JSON.stringify({ type: "error", message: err.message }));
         }
@@ -405,11 +506,4 @@ ctx.wss.on("connection", (ws, req) => {
 ctx.onDshReady = () => {
   for (const ws of ctx.clients) void syncReadyClient(ws);
 };
-
-
-
-
-
-
-
 }

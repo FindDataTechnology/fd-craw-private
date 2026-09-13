@@ -13,10 +13,20 @@ export function registerMiscRoutes(ctx) {
   // Identity introspection: lets the frontend render login state without
   // inspecting headers. email/groups are null when auth is off.
   app.get("/api/auth/me", (req, res) => {
+    const ssoUser = req.ssoUser || null;
+    const mode = ctx.authMode || "none";
+    const authenticated = ctx.authEnabled && Boolean(req.user?.email);
     res.json({
-      mode: ctx.AUTH_MODE,
+      mode,
       email: req.user?.email ?? null,
       groups: req.user?.groups ?? null,
+      authenticated,
+      loginUrl: mode === "logto" ? "/auth/login" : ctx.AUTH_LOGIN_PATH,
+      logoutUrl: mode === "logto" ? "/api/auth/logout" : ctx.AUTH_LOGOUT_PATH,
+      ssoConfigured: ctx.ssoEnabled,
+      ssoAuthenticated: Boolean(ssoUser?.email),
+      ssoEmail: ssoUser?.email ?? null,
+      ssoGroups: ssoUser?.groups ?? null,
     });
   });
 

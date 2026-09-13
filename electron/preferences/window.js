@@ -37,8 +37,8 @@ export function openPreferencesWindow() {
 // IPC handlers registered once when the app starts
 export function registerPreferencesIpc(supervisor) {
   // Allow only these keys to be read/written
-  const ALLOWED_VISIBLE_KEYS = ["LLM_API_KEY", "LLM_BASE_URL", "DEFAULT_MODEL", "DOCUMENTS_MODEL"];
-  const ALLOWED_WRITE_KEYS = ["LLM_API_KEY", "LLM_BASE_URL", "DEFAULT_MODEL", "DOCUMENTS_MODEL"];
+  const ALLOWED_VISIBLE_KEYS = ["LLM_API_KEY", "LLM_BASE_URL", "DEFAULT_MODEL"];
+  const ALLOWED_WRITE_KEYS = ["LLM_API_KEY", "LLM_BASE_URL", "DEFAULT_MODEL"];
   const ALLOWED_SERVICE_RESTART = ["server-js"];
 
   // Get whitelisted visible settings

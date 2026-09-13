@@ -32,6 +32,15 @@ function isPlaceholderArg(arg: string): boolean {
   return /\/path\//.test(arg) || /^your_/.test(arg) || /^<.*>$/.test(arg);
 }
 
+// Same header-value rule as extension-store.js hasPlaceholder: header values
+// embed the placeholder ("Bearer <your_token>") rather than being bare.
+function hasPlaceholder(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    (/\/path\//.test(value) || /your_/.test(value) || /<[^<>]+>/.test(value))
+  );
+}
+
 interface McpServerFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -61,9 +70,11 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Setup-mode field values: env key -> filled value, arg index -> filled value.
+  // Setup-mode field values: env key -> filled value, arg index -> filled value,
+  // header name -> filled value (http templates, e.g. gateway Bearer tokens).
   const [setupEnv, setSetupEnv] = useState<Record<string, string>>({});
   const [setupArgs, setSetupArgs] = useState<Record<number, string>>({});
+  const [setupHeaders, setSetupHeaders] = useState<Record<string, string>>({});
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `open` is a deliberate trigger — reset the form fields each time the modal (re)opens
   useEffect(() => {
@@ -95,6 +106,11 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
         if (isPlaceholderArg(a)) initArgs[i] = "";
       });
       setSetupArgs(initArgs);
+      const initHeaders: Record<string, string> = {};
+      Object.entries(tmpl.headers || {}).forEach(([k, v]) => {
+        if (hasPlaceholder(v)) initHeaders[k] = "";
+      });
+      setSetupHeaders(initHeaders);
       setEnabled(true);
     } else if (initialConfig) {
       setName("");
@@ -121,7 +137,8 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
   // Setup form is valid when every placeholder field is non-empty.
   const setupValid =
     Object.values(setupEnv).every((v) => v.trim().length > 0) &&
-    Object.values(setupArgs).every((v) => v.trim().length > 0);
+    Object.values(setupArgs).every((v) => v.trim().length > 0) &&
+    Object.values(setupHeaders).every((v) => v.trim().length > 0);
 
   const handleSetupSubmit = async () => {
     setError("");
@@ -130,17 +147,31 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
       return;
     }
     const tmpl = setupServer!.configTemplate;
-    const config: McpServer["config"] = {
-      command: tmpl.command,
-      args: (tmpl.args || []).map((a, i) =>
-        isPlaceholderArg(a) ? (setupArgs[i] || "").trim() : a
-      ),
-    };
-    const envObj: Record<string, string> = {};
-    Object.keys(tmpl.env || {}).forEach((k) => {
-      envObj[k] = (setupEnv[k] || "").trim();
-    });
-    if (Object.keys(envObj).length > 0) config.env = envObj;
+    let config: McpServer["config"];
+    if (tmpl.command) {
+      config = {
+        command: tmpl.command,
+        args: (tmpl.args || []).map((a, i) =>
+          isPlaceholderArg(a) ? (setupArgs[i] || "").trim() : a
+        ),
+      };
+      const envObj: Record<string, string> = {};
+      Object.keys(tmpl.env || {}).forEach((k) => {
+        envObj[k] = (setupEnv[k] || "").trim();
+      });
+      if (Object.keys(envObj).length > 0) config.env = envObj;
+    } else {
+      // http template: url is fixed; placeholder headers take the user's values.
+      config = {
+        url: tmpl.url,
+        headers: Object.fromEntries(
+          Object.entries(tmpl.headers || {}).map(([k, v]) => [
+            k,
+            hasPlaceholder(v) ? (setupHeaders[k] || "").trim() : v,
+          ])
+        ),
+      };
+    }
 
     setLoading(true);
     try {
@@ -258,6 +289,32 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
 
           {isSetup ? (
             <>
+              {!setupServer!.configTemplate.command && (
+                <div className="space-y-2">
+                  <Label>{t("extensions.mcp.fields.url")}</Label>
+                  <div className="text-xs font-mono px-3 py-2 rounded-md bg-muted text-muted-foreground break-all">
+                    {setupServer!.configTemplate.url}
+                  </div>
+                </div>
+              )}
+
+              {/* Placeholder headers: one labeled field per fillable header. */}
+              {Object.entries(setupServer!.configTemplate.headers || {}).map(([k, v]) =>
+                hasPlaceholder(v) ? (
+                  <div key={`header-${k}`} className="space-y-2">
+                    <Label htmlFor={`header-${k}`}>{k}</Label>
+                    <Input
+                      id={`header-${k}`}
+                      value={setupHeaders[k] || ""}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        setSetupHeaders((prev) => ({ ...prev, [k]: e.target.value }))
+                      }
+                      placeholder={String(v)}
+                    />
+                  </div>
+                ) : null
+              )}
+
               {/* Placeholder args: one labeled field per fillable arg, literals read-only. */}
               {tmplArgs.map((a, i) =>
                 isPlaceholderArg(a) ? (

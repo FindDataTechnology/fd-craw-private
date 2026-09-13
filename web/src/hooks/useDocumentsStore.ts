@@ -1,8 +1,10 @@
 // Documents + collections state. Fetches REST on mount; subscribes to the
 // `documents_status` WS event (forwarded by useWebSocket) for live status.
+// No query state lives here — Q&A is the chat window's job (attachments +
+// the agent's library tools).
 import { create } from "zustand";
 import * as api from "@/lib/documents-api";
-import type { DocMeta, CollectionMeta, QueryResult } from "@/lib/documents-api";
+import type { DocMeta, CollectionMeta } from "@/lib/documents-api";
 import type { ServerMessage } from "@/types/ws";
 
 interface DocumentsState {
@@ -12,28 +14,20 @@ interface DocumentsState {
   error: string | null;
   selectedDocId: string | null;
   selectedDocContent: string | null;
-  docQuery: string;
-  docAnswer: QueryResult | null;
-  docQueryLoading: boolean;
 
   load: () => Promise<void>;
   refreshDocs: () => Promise<void>;
   selectDoc: (id: string | null) => Promise<void>;
-  setDocQuery: (q: string) => void;
-  runDocQuery: () => Promise<void>;
   applyEvent: (msg: ServerMessage) => void;
 }
 
-export const useDocumentsStore = create<DocumentsState>((set, get) => ({
+export const useDocumentsStore = create<DocumentsState>((set) => ({
   documents: [],
   collections: [],
   loading: false,
   error: null,
   selectedDocId: null,
   selectedDocContent: null,
-  docQuery: "",
-  docAnswer: null,
-  docQueryLoading: false,
 
   load: async () => {
     set({ loading: true, error: null });
@@ -71,20 +65,6 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => ({
     }
   },
 
-  setDocQuery: (q) => set({ docQuery: q }),
-
-  runDocQuery: async () => {
-    const q = get().docQuery.trim();
-    if (!q) return;
-    set({ docQueryLoading: true, docAnswer: null });
-    try {
-      const docAnswer = await api.queryDocuments(q);
-      set({ docAnswer, docQueryLoading: false });
-    } catch (err) {
-      set({ docAnswer: { error: (err as Error).message }, docQueryLoading: false });
-    }
-  },
-
   applyEvent: (msg) => {
     if (msg.type !== "documents_status") return;
     const { id, status, error } = msg as unknown as { id: string; status: string; error?: string };
@@ -95,3 +75,11 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => ({
     }));
   },
 }));
+
+// Dev/test hook: expose the store on window so tests can seed library rows
+// without real uploads. Same gating as __chatStore — dev or e2e builds only,
+// never shipped.
+if (typeof window !== "undefined" && (import.meta.env.DEV || import.meta.env.VITE_E2E_SEAM === "1")) {
+  (window as unknown as { __documentsStore?: typeof useDocumentsStore }).__documentsStore =
+    useDocumentsStore;
+}

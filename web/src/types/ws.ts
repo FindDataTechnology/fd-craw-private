@@ -27,6 +27,10 @@ export type ServerMessage =
   | { type: "agents"; agents: AgentInfo[] }
   | { type: "current_agent"; id: string }
   | { type: "agent_changed"; id: string }
+  | { type: "presets"; presets: PresetInfo[]; current: string }
+  | { type: "current_preset"; id: string }
+  | { type: "permissions"; options: PermissionOption[]; current: string | null }
+  | { type: "current_permission"; name: string }
   | { type: "catalog_changed" }
   | { type: "skills"; skills: SkillInfo[] }
   | { type: "documents_status"; [k: string]: unknown }
@@ -45,7 +49,37 @@ export type ServerMessage =
   | { type: "cron_run_started"; jobId: string; success: boolean }
   | { type: "dashboard_update"; state: unknown }
   | { type: "dashboard_state"; state: unknown }
-  | { type: "extensions_changed"; resource: string; action: string; name: string; enabled?: boolean };
+  | { type: "extensions_changed"; resource: string; action: string; name: string; enabled?: boolean }
+  | { type: "market_changed" }
+  | { type: "user_bindings"; model: BindingModel | null; mcp: McpBindingState[] }
+  | { type: "runtime_binding"; model: RuntimeModel | null; mcp: { name: string; enabled: boolean }[] }
+  | { type: "runtime_binding_pending"; model: RuntimeModel | null; mcp: { name: string; enabled: boolean }[] };
+
+// A personal model binding (source "personal") or the global fallback. Both
+// sources carry the same {id, provider} shape.
+export interface BindingModel {
+  id?: string;
+  provider?: string;
+  name?: string;
+  updatedAt?: string;
+  source: "personal" | "global";
+}
+
+export interface RuntimeModel {
+  id: string;
+  provider: string;
+}
+
+// One global MCP server as seen through a user's personal overlay. `personalEnabled`
+// is null when the user has expressed no preference; `effectiveEnabled` is what
+// the shared runtime patch actually uses.
+export interface McpBindingState {
+  name: string;
+  globalEnabled: boolean;
+  personalEnabled: boolean | null;
+  effectiveEnabled: boolean;
+  locked: boolean;
+}
 
 export interface ModelInfo {
   id: string;
@@ -91,11 +125,35 @@ export interface SkillInfo {
   description?: string;
 }
 
+// One dsh agent preset (agent mode) from the roster the runtime composes.
+// `broken` carries the discovery-reported reason and marks the row unselectable.
+export interface PresetInfo {
+  id: string;
+  name: string;
+  description: string;
+  trust: "system" | "user";
+  broken?: string;
+}
+
+// One permission preset (sandbox + approval bundle) from the composed table.
+// `name` is the stable table key; `label` is the server-provided display name
+// (the raw key for the shipped table — the web bundle localizes those).
+export interface PermissionOption {
+  name: string;
+  label: string;
+  description: string;
+}
+
 export interface SessionMeta {
   id: string;
   title: string;
   createdAt?: string | number;
   updatedAt?: string | number;
+  // Preset the session started under (best-effort; null = deployment default).
+  agentPreset?: string | null;
+  // Runtime workspace the session started in (best-effort; rows written before
+  // the capability carry none and render under the sidebar's Ungrouped group).
+  workspace?: string | null;
 }
 
 // Persisted block structure on assistant messages (chat history): the tool
@@ -122,6 +180,8 @@ export interface ChatMessage {
 
 export type ClientMessage =
   | { type: "prompt"; text: string }
+  | { type: "list_bindings" }
+  | { type: "apply_bindings" }
   | { type: "list_models" }
   | { type: "set_model"; id: string }
   | { type: "set_effort"; effort: string | null }
@@ -129,6 +189,10 @@ export type ClientMessage =
   | { type: "set_workspace"; path: string }
   | { type: "list_agents" }
   | { type: "set_agent"; id: string }
+  | { type: "list_presets" }
+  | { type: "set_preset"; id: string }
+  | { type: "list_permissions" }
+  | { type: "set_permission"; name: string }
   | { type: "list_skills" }
   | { type: "list_sessions" }
   | { type: "new_session" }

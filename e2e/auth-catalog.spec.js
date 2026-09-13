@@ -21,13 +21,30 @@ test.describe("default AUTH_MODE (auth off)", () => {
   test("/api/auth/me reports mode none; catalog stays open", async ({ request }) => {
     const me = await request.get("/api/auth/me");
     expect(me.ok()).toBeTruthy();
-    expect(await me.json()).toEqual({ mode: "none", email: null, groups: null });
+    expect(await me.json()).toEqual({
+      mode: "none",
+      email: null,
+      groups: null,
+      authenticated: false,
+      loginUrl: "/oauth2/start",
+      logoutUrl: "/oauth2/sign_out",
+      ssoConfigured: false,
+      ssoAuthenticated: false,
+      ssoEmail: null,
+      ssoGroups: null,
+    });
 
     const cat = await request.get("/api/catalog");
     expect(cat.ok()).toBeTruthy();
     const json = await cat.json();
     expect(json.agents.some((a) => a.id === "local")).toBe(true);
     expect(Array.isArray(json.apps)).toBe(true);
+  });
+
+  test("auth-off mode keeps the existing open shell", async ({ page }) => {
+    await page.goto("/login");
+    await expect(page).toHaveURL(/\/chat/);
+    await expect(page.getByTestId("status-text")).toHaveText("Connected", { timeout: 15000 });
   });
 
   test("connect broker is 400 without forward auth", async ({ request }) => {
@@ -149,6 +166,8 @@ test.describe("AUTH_MODE=forward_auth", () => {
         PORT: String(AUTH_PORT),
         HOST: "127.0.0.1",
         AUTH_MODE: "forward_auth",
+        AUTH_LOGIN_PATH: "//evil.example/start",
+        AUTH_LOGOUT_PATH: "https://evil.example/sign_out",
         AGENTS_CONFIG_URL: `${FIXTURE}/config`,
         CATALOG_REFRESH_SECS: "0", // deterministic: refresh only via POST
         NANGO_SECRET_KEY: "test-nango-secret",
@@ -198,13 +217,81 @@ test.describe("AUTH_MODE=forward_auth", () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
-  test("HTTP: 401 without headers, identity with headers", async () => {
+  test("HTTP: public identity, protected APIs, and safe SSO paths", async () => {
     const anon = await fetch(`${BASE}/api/auth/me`);
-    expect(anon.status).toBe(401);
+    expect(anon.status).toBe(200);
+    expect(await anon.json()).toEqual({
+      mode: "forward_auth",
+      email: null,
+      groups: null,
+      authenticated: false,
+      loginUrl: "/oauth2/start",
+      logoutUrl: "/oauth2/sign_out",
+      // Optional SSO is a mode-none-only overlay; under forward_auth it stays off.
+      ssoConfigured: false,
+      ssoAuthenticated: false,
+      ssoEmail: null,
+      ssoGroups: null,
+    });
+
+    const login = await fetch(`${BASE}/login`);
+    expect(login.status).toBe(200);
+    const asset = await fetch(`${BASE}/assets/does-not-exist.js`);
+    expect(asset.status).not.toBe(401);
+
+    const protectedApi = await fetch(`${BASE}/api/catalog`);
+    expect(protectedApi.status).toBe(401);
 
     const me = await fetch(`${BASE}/api/auth/me`, { headers: ADMIN });
     expect(me.ok).toBeTruthy();
-    expect(await me.json()).toEqual({ mode: "forward_auth", email: "admin@corp.com", groups: ["admin"] });
+    expect(await me.json()).toEqual({
+      mode: "forward_auth",
+      email: "admin@corp.com",
+      groups: ["admin"],
+      authenticated: true,
+      loginUrl: "/oauth2/start",
+      logoutUrl: "/oauth2/sign_out",
+      ssoConfigured: false,
+      ssoAuthenticated: false,
+      ssoEmail: null,
+      ssoGroups: null,
+    });
+  });
+
+  test("login page is public and starts the default SSO flow", async ({ page }) => {
+    await page.goto(`${BASE}/chat`);
+    await expect(page).toHaveURL(`${BASE}/login`);
+    await expect(page.getByTestId("login-page")).toBeVisible();
+
+    const login = page.getByTestId("sso-login");
+    await expect(login).toBeVisible();
+    const href = await login.getAttribute("href");
+    expect(href).toContain("/oauth2/start?rd=");
+    expect(href).not.toContain("evil.example");
+  });
+
+  test("authenticated account settings show identity and sign-out", async ({ page }) => {
+    await page.route("**/api/auth/me", (route) =>
+      route.fulfill({
+        json: {
+          mode: "forward_auth",
+          email: "browser@corp.com",
+          groups: ["users"],
+          authenticated: true,
+          loginUrl: "/oauth2/start",
+          logoutUrl: "/oauth2/sign_out",
+        },
+      }),
+    );
+    await page.goto(`${BASE}/settings/account`);
+    await expect(page.getByTestId("settings-account")).toBeVisible();
+    await expect(page.getByTestId("account-email")).toHaveText("browser@corp.com");
+
+    const logout = page.getByTestId("sso-logout");
+    await expect(logout).toBeVisible();
+    const href = await logout.getAttribute("href");
+    expect(href).toContain("/oauth2/sign_out?rd=");
+    expect(href).toContain("login");
   });
 
   test("WS: upgrade rejected without headers; agents list is role-filtered", async () => {

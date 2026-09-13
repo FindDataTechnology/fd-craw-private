@@ -7,7 +7,7 @@ export interface DocMeta {
   type: string;
   status: "queued" | "indexing" | "ready" | "error";
   error?: string;
-  createdAt?: number;
+  addedAt?: string;
 }
 
 export interface CollectionMeta {
@@ -15,13 +15,7 @@ export interface CollectionMeta {
   name: string;
   description?: string;
   documentCount?: number;
-  createdAt?: number;
-}
-
-export interface QueryResult {
-  answer?: string;
-  sources?: { name: string }[];
-  error?: string;
+  createdAt?: string;
 }
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
@@ -75,15 +69,6 @@ export async function addUrl(url: string, name?: string): Promise<DocMeta> {
   return jsonOrThrow<DocMeta>(r);
 }
 
-export async function queryDocuments(query: string): Promise<QueryResult> {
-  const r = await fetch("/api/documents/query", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-  });
-  return jsonOrThrow<QueryResult>(r);
-}
-
 // ── Collections ──
 
 export async function listCollections(): Promise<CollectionMeta[]> {
@@ -120,13 +105,4 @@ export async function addDocumentToCollection(id: string, documentId: string): P
     body: JSON.stringify({ documentId }),
   });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
-}
-
-export async function queryCollection(id: string, query: string): Promise<QueryResult> {
-  const r = await fetch(`/api/collections/${encodeURIComponent(id)}/query`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-  });
-  return jsonOrThrow<QueryResult>(r);
 }

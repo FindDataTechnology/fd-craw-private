@@ -1,11 +1,8 @@
-// Playwright globalSetup: make the fast suite hermetic on machines without the
-// developer's personal data. mcp.json and agents.json are gitignored; several
-// specs assert UI that renders from their content (extensions' startup MCP
-// servers, the Agents page apps tab). When the files are absent — e.g. a CI
-// runner or a fresh clone — seed minimal fixtures at the repo root (the server
-// reads both via path.resolve() from its cwd). Existing files are never
-// touched, so dev machines keep using their real data.
-import { existsSync, writeFileSync } from "node:fs";
+// Playwright webServer: make the fast suite hermetic without touching the
+// developer's personal data. The server reads MCP_CONFIG_PATH when it is set;
+// Playwright points it at the temporary store, so an existing repo mcp.json is
+// never rewritten. agents.json is still seeded at the repo root only when absent.
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -41,8 +38,11 @@ function seedFixtures() {
     console.log("[e2e global-setup] seeded fixture agents.json (was absent)");
   }
 
-  const mcpPath = path.join(root, "mcp.json");
+  const mcpPath = process.env.MCP_CONFIG_PATH
+    ? path.resolve(process.env.MCP_CONFIG_PATH)
+    : path.join(root, "mcp.json");
   if (!existsSync(mcpPath)) {
+    mkdirSync(path.dirname(mcpPath), { recursive: true });
     writeFileSync(
       mcpPath,
       JSON.stringify(
@@ -59,7 +59,7 @@ function seedFixtures() {
       ) + "\n",
       "utf8",
     );
-    console.log("[e2e seed-fixtures] seeded fixture mcp.json (was absent)");
+    console.log(`[e2e seed-fixtures] seeded fixture MCP config at ${mcpPath} (was absent)`);
   }
 }
 

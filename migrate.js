@@ -6,9 +6,10 @@
 // legacy stores - they remain on disk as a backup / migration source.
 //
 //   - documents-store/manifest.json + per-doc source.txt  ->  documents
-//       Ready docs are marked `queued` so the indexing pipeline re-indexes them
-//       through PageIndex from their imported source_text (the old LlamaIndex
-//       SummaryIndex is incompatible). Other statuses are preserved.
+//       Docs with imported source_text land `ready` directly — under local
+//       extraction the text IS the deliverable (no re-index queue anymore).
+//       A legacy `ready` doc without source.txt lands `queued` so startup
+//       reconciliation flags it for re-adding. Other statuses are preserved.
 //   - sessions-store/*.jsonl (pi SessionManager line-delimited JSON) +
 //     chat-history-store/*.json (oldest {id,title,messages[]} format)
 //       ->  chat_sessions + chat_messages, mirroring user/assistant turns.
@@ -65,9 +66,10 @@ export async function importLegacyDocuments() {
       } catch {
         /* source may be missing for non-ready docs */
       }
-      // Ready docs must be re-indexed through PageIndex; the old LlamaIndex
-      // SummaryIndex is incompatible. Other statuses are preserved as-is.
-      const status = d.status === "ready" ? "queued" : d.status || "queued";
+      // Imported source text means extraction already happened → ready. A
+      // legacy `ready` doc WITHOUT source text cannot resume → `queued`, which
+      // startup reconciliation turns into an error row with re-add guidance.
+      const status = sourceText ? "ready" : d.status === "ready" ? "queued" : d.status || "queued";
       db.upsertDocument({
         id: d.id,
         name: d.name,

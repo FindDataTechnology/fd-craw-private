@@ -17,23 +17,29 @@ import * as cron from "./cron.js";
 import * as extensionStore from "./extension-store.js";
 import * as workdirStore from "./workdir-store.js";
 import * as catalog from "./catalog.js";
+import { initRegistryBridge, stopRegistryBridge } from "./registry-bridge.js";
 import { resolveBundleSafe } from "./bundle-manifest.js";
 import { createAppContext } from "./server/context.js";
-import { registerAuth } from "./server/auth.js";
+import { registerAuth, normalizeAuthPath } from "./server/auth.js";
+import { createLogtoAuth } from "./server/logto-auth.js";
+import { resolveSessionSecret } from "./server/session.js";
 import { registerDocumentRoutes } from "./server/routes/documents.js";
 import { registerMiscRoutes, registerStaticAndFallback } from "./server/routes/misc.js";
 import { registerLlmRoutes } from "./server/routes/llm.js";
 import { registerExtensionRoutes } from "./server/routes/extensions.js";
 import { registerChatHistoryRoutes } from "./server/routes/chat-history.js";
 import { registerTraceRoutes } from "./server/routes/trace.js";
+import { registerUserBindingRoutes } from "./server/routes/user-bindings.js";
 import { registerBotRoutes, WEBHOOK_PREFIX } from "./server/routes/bots.js";
 import { registerExternalServiceRoutes } from "./server/routes/external-services.js";
 import { attachDshEvents } from "./server/dsh-events.js";
+import { attachRuntimeBindings } from "./server/runtime-bindings.js";
 import { attachAgentSession } from "./server/agent-session.js";
 import { attachWebSocket } from "./server/ws.js";
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || "localhost";
+const MCP_CONFIG_PATH = path.resolve(process.env.MCP_CONFIG_PATH || "mcp.json");
 
 // ── Optional forward-auth (AUTH_MODE=forward_auth) ───────────────────────────
 // Identity = proxy-injected X-Forwarded-Email / X-Forwarded-Groups headers
@@ -46,7 +52,8 @@ const HOST = process.env.HOST || "localhost";
 // Volces (火山引擎) chat provider is optional: an unset LLM_API_KEY means the
 // provider is not registered and the server starts with no chat provider (chat
 // non-functional, logged) — the project's graceful-degrade convention.
-// The documents RAG reads LLM_API_KEY separately via initStore().
+// The document library no longer consumes any LLM provider config (local
+// extraction only); LLM_API_KEY here feeds chat exclusively.
 
 // Default chat model. When set, the dsh session starts on this model id;
 // otherwise the first declared profile model is used. See initDshAgent().
@@ -76,6 +83,17 @@ const ctx = createAppContext({
   PORT,
   HOST,
   AUTH_MODE: process.env.AUTH_MODE || "none",
+  SSO_ENABLED: process.env.SSO_ENABLED === "true",
+  AUTH_LOGIN_PATH: normalizeAuthPath(process.env.AUTH_LOGIN_PATH, "/oauth2/start"),
+  AUTH_LOGOUT_PATH: normalizeAuthPath(process.env.AUTH_LOGOUT_PATH, "/oauth2/sign_out"),
+  PAAS_BASE_URL: process.env.PAAS_BASE_URL || "",
+  LOGTO_ENDPOINT: process.env.LOGTO_ENDPOINT || "",
+  LOGTO_APP_ID: process.env.LOGTO_APP_ID || "",
+  LOGTO_APP_SECRET: process.env.LOGTO_APP_SECRET || "",
+  LOGTO_CLIENT_TYPE: process.env.LOGTO_CLIENT_TYPE || "confidential",
+  LOGTO_END_SESSION: process.env.LOGTO_END_SESSION || "false",
+  SESSION_TTL_HRS: process.env.SESSION_TTL_HRS || "24",
+  resolveSessionSecret: () => resolveSessionSecret({ env: process.env }),
   LLM_API_KEY: process.env.LLM_API_KEY?.trim(),
   LLM_BASE_URL: process.env.LLM_BASE_URL || "https://ark.cn-beijing.volces.com/api/coding/v3",
   DEFAULT_MODEL: process.env.DEFAULT_MODEL || "",
@@ -103,7 +121,9 @@ app.use((req, res, next) =>
 // raw). Must mount before express.static (registered in routes/misc.js).
 app.use(compression());
 
-// Forward-auth HTTP gate + ctx.requireAdmin (WS upgrade gate below).
+// Forward-auth/Logto HTTP gate + ctx.requireAdmin (WS upgrade gate below).
+ctx.logtoAuth = await createLogtoAuth(ctx);
+ctx.logtoAuth?.register(app);
 registerAuth(ctx);
 
 // Route registration. Order is semantic: app /api routes first, then the
@@ -114,12 +134,14 @@ registerLlmRoutes(ctx);
 registerExtensionRoutes(ctx);
 registerChatHistoryRoutes(ctx);
 registerTraceRoutes(ctx);
+registerUserBindingRoutes(ctx);
 registerBotRoutes(ctx);
 registerStaticAndFallback(ctx);
 registerExternalServiceRoutes(ctx);
 
 // dsh → WS event translation (attaches ctx.handleDshEvent + ctx.finishTurn).
 attachDshEvents(ctx);
+attachRuntimeBindings(ctx);
 // Agent-session state machine (model/agent switching, session ops, commands).
 attachAgentSession(ctx);
 // WebSocket upgrade gate + connection handler.
@@ -162,7 +184,7 @@ function seedStartupMcpConfigs(mcpJsonServers) {
 // now it only emits `done` on turn completion (the 1.5 round-trip placeholder).
 async function initDshAgent() {
   const { DshBridge } = await import("./dsh-bridge.js");
-  const { writeLlmProfile, writeMcpPatch, writeSkillsPatch, ensureCredentialsStore, buildScrubbedEnv } = await import("./dsh-profile.js");
+  const { writeLlmProfile, writeMcpPatch, writeSkillsPatch, writePresetsPatch, writePermissionsPatch, ensureCredentialsStore, buildScrubbedEnv } = await import("./dsh-profile.js");
 
   // Write the dsh llm-adapter profile BEFORE spawning dsh so the runtime
   // loads the Volces routes at initialize. The generator's declared
@@ -180,7 +202,7 @@ async function initDshAgent() {
   // shows them (source=startup). writeMcpPatch reads mcp.json directly for the
   // runtime patch but does NOT seed the DB — seeding is UI-only (Task 4.1).
   let dshMcpJson = {};
-  try { dshMcpJson = JSON.parse(await readFile(path.resolve("mcp.json"), "utf8")).mcpServers || {}; } catch {}
+  try { dshMcpJson = JSON.parse(await readFile(MCP_CONFIG_PATH, "utf8")).mcpServers || {}; } catch {}
   seedStartupMcpConfigs(dshMcpJson);
 
   // Write the dsh-mcp-client patch overlay (one loader entry per MCP server
@@ -219,6 +241,19 @@ async function initDshAgent() {
   if (skillMaterializeDir) skillsDirs.push(skillMaterializeDir);
   const skillsPatchPath = writeSkillsPatch(skillsDirs);
 
+  // Write the preset-roster patch overlay (agent-presets roster + preset
+  // bridge plugin). Null = unresolvable shipped preset root; the bridge then
+  // spawns without the overlay and the picker stays empty (graceful degrade).
+  const presetsPatchPath = await writePresetsPatch();
+  // The permission-mode overlay swaps the bridge row to the subclass that
+  // also serves permissions/list + permissions/set (add-permission-mode-
+  // selector). Static; always written — an absent permission service inside
+  // the child degrades to an empty roster (picker hidden, chat unaffected).
+  const permissionsPatchPath = await writePermissionsPatch();
+  // The selected agent mode is a persisted user preference (agent.preset);
+  // `standard` until a DB row exists.
+  ctx.currentPreset = ctx.db.getPreference("agent.preset") || "standard";
+
   // Default model: persisted Models-page pointer wins, else DEFAULT_MODEL env if
   // declared, else first declared model.
   let provider = "deepseek-official";
@@ -247,21 +282,29 @@ async function initDshAgent() {
     onEvent: ctx.handleDshEvent,
     mcpPatchPath,
     skillsPatchPath,
+    presetsPatchPath,
+    permissionsPatchPath,
+    agentPreset: ctx.currentPreset,
     env: dshChildEnv,
   });
   await ctx.dshBridge.start();
+  // Warm the preset roster cache so the ready sync can answer list_presets
+  // without a second bridge round-trip (best-effort: empty roster on failure).
+  await ctx.getAgentPresets();
+  // Same for the permission roster — the connect-time current_permission push
+  // needs nothing, but the first list_permissions answer is then immediate.
+  ctx.getPermissionPresets().catch(() => {});
   // MCP live-reload (design D1): the REST routes mutate the DB then call this to
   // rewrite mcp.patch.yml in place — cordis-plugin-include/hmr watches that file
   // (confirmed by source inspection; see design Open Question 1) and hot-swaps
   // dsh-mcp-client (disconnect/reconnect the affected server, no process restart).
   // Single-flight mutex + debounce serialize overlapping mutations; restart() is
   // the documented fallback (PLATFORM_MCP_HOTSWAP=0, or hot-swap never settles).
-  let mcpChain = Promise.resolve();
   const hotswapEnabled = process.env.PLATFORM_MCP_HOTSWAP !== "0";
   const HOTSWAP_SETTLE_MS = Number(process.env.PLATFORM_MCP_HOTSWAP_SETTLE_MS || 800);
-  ctx.dshUpdateMcp = () => {
-    const run = mcpChain.then(async () => {
-      const patchPath = await writeMcpPatch();
+  ctx.dshUpdateMcp = (mcpOverlay) => {
+    const update = async () => {
+      const patchPath = await writeMcpPatch({ mcpOverlay });
       if (hotswapEnabled && patchPath) {
         // The patch file was rewritten atomically (temp+rename inside
         // writeMcpPatch); cordis' Chokidar watcher fires refresh() → dsh-mcp-client
@@ -277,8 +320,13 @@ async function initDshAgent() {
       // conversation resumes from disk. Serialized behind mcpChain, so concurrent
       // mutations can't overlap-corrupt the restart.
       if (patchPath !== undefined) await ctx.dshBridge.restart({ mcpPatchPath: patchPath });
-    });
-    mcpChain = run.then(() => {}, () => {});
+    };
+    // Profile application already owns the mutation lock. Running directly here
+    // avoids queuing an MCP update behind itself while preserving one chain for
+    // ordinary global and personal mutations.
+    if (ctx.runtimeApplying?.()) return update();
+    const run = ctx.runtimeMutationChain.then(update);
+    ctx.runtimeMutationChain = run.then(() => {}, () => {});
     return run;
   };
   // Session shim: dsh prompt resolves immediately with the message id; the
@@ -300,6 +348,12 @@ async function initDshAgent() {
   };
   chatHistory.setSessionManager(dshSm);
   chatHistory.setDshBridge(ctx.dshBridge);
+  // Session rows record the preset selected when their first message lands,
+  // so a resumed session's header label names the mode it started under.
+  chatHistory.setPresetSource(() => ctx.currentPreset);
+  // …and the runtime workspace they ran in, so the sidebar groups sessions
+  // by workspace. Stamped once per session; later switches never re-group.
+  chatHistory.setWorkspaceSource(() => ctx.listWorkspaces?.().current ?? null);
   ctx.session = {
     prompt: async (text) => {
       ctx.isStreaming = true;
@@ -308,10 +362,11 @@ async function initDshAgent() {
       ctx.dshCurrentTurnId = messageId;
       trace.bindTurn(messageId);
     },
-    model: { id: model },
+    model: { id: model, provider },
     sessionManager: dshSm,
   };
   ctx.defaultModel = { id: model, provider, name: model };
+  ctx.runtimeModel = { id: model, provider, name: model };
   console.log(`[dsh] runtime ready (provider=${provider} model=${model})`);
 }
 
@@ -331,8 +386,7 @@ async function initDshAgent() {
 //   3. documents.initStore and initDshAgent run CONCURRENTLY after (2) —
 //      they share no state — but BOTH complete BEFORE migrate.
 //   4. documents.initStore's restart reconciliation still runs BEFORE
-//      migrate's legacy import enqueues re-indexing (same relative order as
-//      the sequential boot).
+//      migrate's legacy import (same relative order as the sequential boot).
 //   5. migrate, catalog.initCatalog and cron.initCron run concurrently after
 //      the dsh agent is ready (none can be prompted before then).
 server.listen(PORT, HOST, () => {
@@ -346,19 +400,11 @@ await workdirStore.initWorkdirStore();
 // the server continues (chat in-memory, documents disabled).
 await db.initDb();
 
-// Documents (PageIndex indexing) and the dsh agent both depend only on the db
-// being open — run them concurrently.
+// Documents (local-extraction library) and the dsh agent both depend only on
+// the db being open — run them concurrently.
 const documentsInit = (async () => {
   if (!db.isDbReady()) return;
-  if (!ctx.LLM_API_KEY) {
-    console.warn("[documents] LLM_API_KEY not set; documents RAG indexing/query calls will fail at call time");
-  }
-  await documents.initStore({
-    baseUrl: ctx.LLM_BASE_URL,
-    apiKey: ctx.LLM_API_KEY,
-    model: documents.DOCUMENTS_MODEL,
-    broadcast: ctx.broadcast,
-  });
+  await documents.initStore({ broadcast: ctx.broadcast });
 })();
 const dshInit = initDshAgent();
 await Promise.all([documentsInit, dshInit]);
@@ -376,8 +422,11 @@ bots.initBots(ctx);
 // chat-history-store/) into the SQLite database. Runs only on a fresh database;
 // idempotent; never deletes the legacy stores. migrate.js reads both legacy
 // chat formats directly with stdlib fs (no SDK dependency).
-// catalog.initCatalog resolves on the LOCAL catalog (cloud merges async);
-// cron reads its jobs file and starts timers.
+// catalog.initCatalog resolves on the LOCAL catalog (cloud + registry merge
+// async); cron reads its jobs file and starts timers. The registry bridge
+// resolves immediately (its first fetch runs in the background, TTL keeps the
+// snapshot warm); disabled entirely without MARKET_REGISTRY_URL/REGISTRY_URL.
+initRegistryBridge({ broadcast: ctx.broadcast });
 await Promise.all([
   migrate.runLegacyMigrations(),
   catalog.initCatalog({ broadcast: ctx.broadcast }),
@@ -399,6 +448,7 @@ async function shutdown() {
   cron.shutdown();
   bots.stopAll();
   catalog.stopCatalog();
+  stopRegistryBridge();
   await trace.shutdownTrace();
   try {
     await ctx.dshBridge?.shutdown();

@@ -71,15 +71,17 @@ export function ExtensionsPage({ type }: ExtensionsPageProps) {
             <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-md">{error}</div>
           </div>
         )}
-        {!loading && !error && activeTab === "installed" && (
-          type === "mcp" ? <McpInstalledView /> : <SkillsInstalledView />
-        )}
-        {!loading && !error && activeTab === "market" && (
-          type === "mcp" ? (
-            <McpMarketView onInstalled={() => setActiveTab("installed")} />
-          ) : (
-            <SkillsMarketView onInstalled={() => setActiveTab("installed")} />
-          )
+        {!loading && !error && (
+          <div className="p-6">
+            {activeTab === "installed" &&
+              (type === "mcp" ? <McpInstalledView /> : <SkillsInstalledView />)}
+            {activeTab === "market" &&
+              (type === "mcp" ? (
+                <McpMarketView onInstalled={() => setActiveTab("installed")} />
+              ) : (
+                <SkillsMarketView onInstalled={() => setActiveTab("installed")} />
+              ))}
+          </div>
         )}
       </div>
     </div>

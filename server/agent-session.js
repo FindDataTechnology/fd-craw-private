@@ -44,14 +44,21 @@ export async function validateWorkspace(input) {
 
 export function attachAgentSession(ctx) {
 
+function bumpSessionVersion() {
+  ctx.sessionVersion = (ctx.sessionVersion || 0) + 1;
+}
+
 // Start a new chat session: create a fresh SDK session and reset the agent's
 // in-memory messages. Rejected while streaming to avoid switching mid-turn.
 async function createNewSession() {
   if (ctx.isStreaming) throw new Error("Cannot start a new chat while the agent is responding");
   ctx.session.sessionManager.newSession();
+  const id = chatHistory.currentSessionId();
+  chatHistory.createSession(id);
+  bumpSessionVersion();
   // ponytail: dsh has no in-memory message state to reset — newSession() (shim)
   // already minted a fresh dshSessionId; the next prompt carries it.
-  return chatHistory.currentSessionId();
+  return id;
 }
 
 // Switch the live agent to an existing session by id: point the session manager at
@@ -60,14 +67,20 @@ async function createNewSession() {
 async function switchToSession(id) {
   if (ctx.isStreaming) throw new Error("Cannot switch chat while the agent is responding");
   const currentId = chatHistory.currentSessionId();
-  // ponytail: dsh has no in-memory message state to resync — switching the
-  // session id is enough; the next prompt carries the new id, and chat-history
-  // serves the sidebar's message list from SQLite.
-  if (id !== currentId) ctx.session.sessionManager.setSessionId(id);
-  // Read the resumed transcript from SQLite so session_loaded carries the real
-  // turns into the view (dsh keeps no in-memory message state to resync).
+  if (id === currentId) {
+    const sess = await chatHistory.getSession(id);
+    return { id, title: sess?.title || "Chat", messages: sess?.messages || [] };
+  }
+
+  // Validate the target before changing the live session. dsh has no in-memory
+  // message state to resync; switching the id is enough once SQLite confirms it.
+  const version = ctx.sessionVersion;
   const sess = await chatHistory.getSession(id);
-  return { id, title: sess?.title || "Chat", messages: sess?.messages || [] };
+  if (ctx.sessionVersion !== version) throw new Error("Session changed while loading");
+  if (!sess) throw new Error(`session ${id} not found`);
+  ctx.session.sessionManager.setSessionId(id);
+  bumpSessionVersion();
+  return { id, title: sess.title || "Chat", messages: sess.messages || [] };
 }
 
 // ── Command + model/session helpers (used by the prompt dispatcher) ──────────
@@ -99,12 +112,12 @@ function persistEffort(provider, effort) {
 // Switch the active thinking level. dsh has no effort RPC — the generated
 // settings.yaml IS the transport, so applying it is the same restart path as a
 // model switch (design D1). Returns { ok, error? } like switchModelTo.
-async function switchEffortTo(effort) {
+async function switchEffortToInner(effort) {
   if (ctx.isStreaming) {
     return { ok: false, error: "Cannot change the thinking level while the agent is responding" };
   }
   const modelId = ctx.session?.model?.id;
-  const provider = ctx.defaultModel?.provider;
+  const provider = ctx.session?.model?.provider || ctx.defaultModel?.provider;
   if (!modelId || !provider) return { ok: false, error: "No active model" };
   const allowed = effortsForModel(modelId);
   // null/"" = back to the provider default, always allowed.
@@ -125,6 +138,13 @@ async function switchEffortTo(effort) {
     console.error("[dsh] thinking-level switch failed:", err.message);
     return { ok: false, error: err.message };
   }
+}
+
+async function switchEffortTo(effort) {
+  if (ctx.runExclusiveRuntimeMutation) {
+    return ctx.runExclusiveRuntimeMutation(() => switchEffortToInner(effort));
+  }
+  return switchEffortToInner(effort);
 }
 
 // Refresh the model list at runtime (design D3 / spike 2). Re-runs writeLlmProfile
@@ -152,7 +172,7 @@ async function refreshDshModels() {
 // command_use block FIRST so the error attaches to that turn, while `set_model`
 // sends it bare (the client shows it as a toast: no run is open). Shared by
 // the `set_model` WS handler and the `/model` command.
-async function switchModelTo(id) {
+async function switchModelToInner(id) {
   if (ctx.isStreaming) {
     return { ok: false, error: "Cannot switch model while the agent is responding" };
   }
@@ -179,6 +199,10 @@ async function switchModelTo(id) {
     await ctx.dshBridge.restart({ provider: target.provider, model: target.id });
     ctx.session.model = { id: target.id };
     ctx.defaultModel = { id: target.id, provider: target.provider, name: target.name || target.id };
+    // Keep the effective runtime model in step: ws.js reports current_model and
+    // runtime-bindings broadcasts runtime_binding from it, so an explicit switch
+    // that left it stale would make both name the previous model.
+    ctx.runtimeModel = { id: target.id, provider: target.provider, name: target.name || target.id };
     ctx.currentEffort = effort;
     ctx.broadcast({ type: "model_changed", id, effort });
     return { ok: true };
@@ -186,6 +210,13 @@ async function switchModelTo(id) {
     console.error("[dsh] model switch failed:", err.message);
     return { ok: false, error: err.message };
   }
+}
+
+async function switchModelTo(id) {
+  if (ctx.runExclusiveRuntimeMutation) {
+    return ctx.runExclusiveRuntimeMutation(() => switchModelToInner(id));
+  }
+  return switchModelToInner(id);
 }
 
 // ── Catalog agent switching (mirrors the model-selection messages) ───────────
@@ -310,8 +341,11 @@ async function startNewSession() {
   const id = await createNewSession();
   ctx.broadcast({ type: "session_changed", id });
   ctx.broadcast({ type: "session_loaded", id, title: "New chat", messages: [], workdir: null });
+  const version = ctx.sessionVersion;
   const sessions = await chatHistory.listSessions();
-  ctx.broadcast({ type: "sessions", sessions, current: id });
+  if (version === ctx.sessionVersion) {
+    ctx.broadcast({ type: "sessions", sessions, current: id });
+  }
   return id;
 }
 
@@ -326,6 +360,117 @@ async function handleNewCommand(ws) {
   }
 }
 
+
+// ── Agent preset (agent mode) ────────────────────────────────────────────────
+
+// The preset roster the running dsh child composes, via the bridge's
+// `presets/list` (cached per child generation inside the bridge). Null roster
+// → empty list: the picker renders nothing and switching rejects. Also kept
+// on ctx.presetRoster so connect-time syncs never re-query.
+async function getAgentPresets() {
+  if (!ctx.dshBridge?.isReady?.()) return [];
+  try {
+    const presets = await ctx.dshBridge.listPresets();
+    ctx.presetRoster = Array.isArray(presets) ? presets : [];
+    return ctx.presetRoster;
+  } catch (err) {
+    console.warn("[dsh] presets/list failed:", err.message);
+    return ctx.presetRoster || [];
+  }
+}
+
+// Switch the selected agent preset. dsh composes a session's capabilities from
+// its preset at creation and refuses to recompose a session that has produced
+// turns, so — exactly like a model or workspace switch, which share the same
+// constraint — applying a choice means restarting the child with the preset
+// baked into `initialize`; it then applies to the next (blank) session. The
+// streaming guard matches set_model. Returns { ok, error? }.
+async function switchPresetToInner(id) {
+  if (ctx.isStreaming) {
+    return { ok: false, error: "Cannot change the agent mode while the agent is responding" };
+  }
+  if (id === ctx.currentPreset) return { ok: true };
+  const roster = await getAgentPresets();
+  if (!roster.length) {
+    return { ok: false, error: "No agent modes are available in this deployment" };
+  }
+  const target = roster.find((p) => p.id === id);
+  if (!target) {
+    return { ok: false, error: `Unknown agent mode: ${id}` };
+  }
+  if (target.broken) {
+    return { ok: false, error: `Agent mode "${id}" is unavailable: ${target.broken}` };
+  }
+  try {
+    await ctx.dshBridge.restart({ agentPreset: id });
+    // Restart succeeded — the choice is now the deployment default. Persisted
+    // AFTER the restart so a failed restart leaves the previous preference
+    // (still reported as current) untouched.
+    ctx.db.setPreference("agent.preset", id);
+    ctx.currentPreset = id;
+    ctx.broadcast({ type: "current_preset", id });
+    return { ok: true };
+  } catch (err) {
+    console.error("[dsh] preset switch failed:", err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+async function switchPresetTo(id) {
+  if (ctx.runExclusiveRuntimeMutation) {
+    return ctx.runExclusiveRuntimeMutation(() => switchPresetToInner(id));
+  }
+  return switchPresetToInner(id);
+}
+
+// ── Permission preset (sandbox + approval mode) ──────────────────────────────
+
+// The composed permission preset table via the bridge's `permissions/list` —
+// roster options with client labels plus the session's effective preset (the
+// deployment default until a session pins one). NOT cached: the payload's
+// `current` is live state, and calls are rare, user-triggered refreshes.
+// Returns { options, current }; empty options = no permission service
+// composed → the strip control stays hidden.
+async function getPermissionPresets() {
+  if (!ctx.dshBridge?.isReady?.()) return { options: [], current: ctx.currentPermission };
+  try {
+    const r = await ctx.dshBridge.listPermissionPresets(ctx.dshSessionId);
+    ctx.permissionOptions = Array.isArray(r?.options) ? r.options : [];
+    if (r?.current) ctx.currentPermission = r.current;
+    return { options: ctx.permissionOptions, current: ctx.currentPermission };
+  } catch (err) {
+    console.warn("[dsh] permissions/list failed:", err.message);
+    return { options: ctx.permissionOptions, current: ctx.currentPermission };
+  }
+}
+
+// Switch the LIVE session's permission preset. Deliberately unlike
+// set_model/set_workspace/set_preset: no child restart — the runtime appends
+// a durable permission/preset session event and rewrites its sandbox/approval
+// knobs in place. The streaming guard matches set_model (a loosening must
+// never interleave with a turn it was not visible to). Returns { ok, error? }.
+async function switchPermissionTo(name) {
+  if (ctx.isStreaming) {
+    return { ok: false, error: "Cannot change the permission mode while the agent is responding" };
+  }
+  if (name === ctx.currentPermission) return { ok: true };
+  const { options } = await getPermissionPresets();
+  if (!options.length) {
+    return { ok: false, error: "No permission modes are available in this deployment" };
+  }
+  if (!options.some((o) => o.name === name)) {
+    return { ok: false, error: `Unknown permission mode: ${name}` };
+  }
+  try {
+    const r = await ctx.dshBridge.setPermissionPreset(ctx.dshSessionId, name);
+    ctx.currentPermission = r?.current ?? name;
+    ctx.broadcast({ type: "current_permission", name: ctx.currentPermission });
+    return { ok: true };
+  } catch (err) {
+    console.error("[dsh] permission switch failed:", err.message);
+    return { ok: false, error: err.message };
+  }
+}
 
 // ── Workspace (dsh cwd) ─────────────────────────────────────────────────────
 
@@ -356,7 +501,7 @@ function currentWorkspace() {
 // Switch the dsh runtime's working directory. `cwd` is fixed in the initialize
 // handshake with no RPC to change it, so this is the same restart path as a
 // model or thinking-level switch. Returns { ok, error? }.
-async function switchWorkspaceTo(input) {
+async function switchWorkspaceToInner(input) {
   if (ctx.isStreaming) {
     return { ok: false, error: "Cannot change the workspace while the agent is responding" };
   }
@@ -383,6 +528,13 @@ async function switchWorkspaceTo(input) {
   return { ok: true };
 }
 
+async function switchWorkspaceTo(input) {
+  if (ctx.runExclusiveRuntimeMutation) {
+    return ctx.runExclusiveRuntimeMutation(() => switchWorkspaceToInner(input));
+  }
+  return switchWorkspaceToInner(input);
+}
+
 function listWorkspaces() {
   const current = currentWorkspace();
   return { current, recents: [current, ...readRecents().filter((p) => p !== current)] };
@@ -403,4 +555,8 @@ function listWorkspaces() {
   ctx.handleNewCommand = handleNewCommand;
   ctx.switchWorkspaceTo = switchWorkspaceTo;
   ctx.listWorkspaces = listWorkspaces;
+  ctx.getAgentPresets = getAgentPresets;
+  ctx.switchPresetTo = switchPresetTo;
+  ctx.getPermissionPresets = getPermissionPresets;
+  ctx.switchPermissionTo = switchPermissionTo;
 }

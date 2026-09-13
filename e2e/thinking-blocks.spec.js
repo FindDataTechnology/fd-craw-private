@@ -31,6 +31,58 @@ test.describe("thinking blocks", () => {
     await expect(block).toHaveAttribute("data-open", "true");
   });
 
+  // Regression: the delta batching buffer used to be two per-kind string
+  // slots flushed in a fixed text-before-thinking order. The reasoning→text
+  // boundary routinely lands inside one 50ms window, so the reasoning tail
+  // rendered AFTER the answer's opening — one thinking pass showed as two
+  // blocks sandwiching the text. The buffer is now an ordered segment list;
+  // these two tests pin arrival order in both the common and interleaved
+  // shapes. All applies run inside one evaluate, so every delta shares a
+  // single flush window and the fold via `done` is deterministic.
+  test("reasoning followed by the answer renders one thinking block before the text", async ({
+    page,
+  }) => {
+    await page.evaluate(() => {
+      const s = window.__chatStore.getState();
+      s.apply({ type: "agent_start" });
+      s.apply({ type: "thinking", delta: "let me greet them and offer" });
+      s.apply({ type: "thinking", delta: " to help with their project." });
+      s.apply({ type: "text", delta: "你好！我是编码助手。" });
+      s.apply({ type: "done" });
+    });
+    const blocks = await page.evaluate(() => {
+      const t = window.__chatStore.getState().turns.find((x) => x.role === "assistant");
+      return t.blocks.map((b) => ({ kind: b.kind, text: b.text }));
+    });
+    expect(blocks).toEqual([
+      { kind: "thinking", text: "let me greet them and offer to help with their project." },
+      { kind: "text", text: "你好！我是编码助手。" },
+    ]);
+    await expect(page.getByTestId("thinking-block")).toHaveCount(1);
+  });
+
+  test("interleaved text/thinking deltas keep their arrival order", async ({ page }) => {
+    await page.evaluate(() => {
+      const s = window.__chatStore.getState();
+      s.apply({ type: "agent_start" });
+      s.apply({ type: "thinking", delta: "let me greet them and offer to help with" });
+      s.apply({ type: "text", delta: "你好！" });
+      s.apply({ type: "thinking", delta: " their project." });
+      s.apply({ type: "text", delta: "我是编码助手。" });
+      s.apply({ type: "done" });
+    });
+    const blocks = await page.evaluate(() => {
+      const t = window.__chatStore.getState().turns.find((x) => x.role === "assistant");
+      return t.blocks.map((b) => ({ kind: b.kind, text: b.text }));
+    });
+    expect(blocks).toEqual([
+      { kind: "thinking", text: "let me greet them and offer to help with" },
+      { kind: "text", text: "你好！" },
+      { kind: "thinking", text: " their project." },
+      { kind: "text", text: "我是编码助手。" },
+    ]);
+  });
+
   test("Ctrl+O toggles thinking block expansion state", async ({ page }) => {
     await injectThinking(page, "test reasoning content");
     const block = page.getByTestId("thinking-block");

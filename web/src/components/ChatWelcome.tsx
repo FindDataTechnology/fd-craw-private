@@ -16,6 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Database, Sparkles, Search, PenLine } from "lucide-react";
 import { useChatStore } from "@/hooks/useChatStore";
+import { AgentPresetPicker } from "@/components/AgentPresetPicker";
 import type { ClientMessage } from "@/types/ws";
 import type { LucideIcon } from "lucide-react";
 
@@ -73,6 +74,10 @@ export function ChatWelcome({ onPrefill, send }: Props) {
         <h1 className="text-2xl font-semibold text-foreground">
           {t("chat.welcome.greeting")}
         </h1>
+
+        {/* Agent-mode picker (blank sessions only — this whole surface only
+            renders when there are no turns). Empty roster renders nothing. */}
+        <AgentPresetPicker send={send} />
 
         {/* Suggested prompts */}
         <section aria-labelledby="welcome-prompts-heading" className="flex flex-col gap-3">

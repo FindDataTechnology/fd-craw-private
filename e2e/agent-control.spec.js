@@ -17,13 +17,23 @@ const LOCAL = { id: "local", name: "Local" };
 const REMOTE = { id: "remote-a", name: "Remote A" };
 
 test.describe("Agent control — composer strip", () => {
+  // The socket only opens once the auth check resolves, so the server's own
+  // `agents`/`current_agent` reply can land after this page load and clobber a
+  // seed applied too early — and the control renders only for >1 agent, so a
+  // clobber makes it vanish mid-test. Re-apply until it sticks (the server
+  // sends this payload once, so this converges).
   const seed = (page, agents, currentAgent) =>
-    page.evaluate(
-      ({ agents, currentAgent }) => {
-        window.__chatStore.setState({ agents, currentAgent, pendingConfig: null, isStreaming: false });
-      },
-      { agents, currentAgent },
-    );
+    expect
+      .poll(async () => {
+        await page.evaluate(
+          ({ agents, currentAgent }) => {
+            window.__chatStore.setState({ agents, currentAgent, pendingConfig: null, isStreaming: false });
+          },
+          { agents, currentAgent },
+        );
+        return page.evaluate(() => window.__chatStore.getState().agents.length);
+      })
+      .toBe(agents.length);
 
   test.beforeEach(async ({ page }) => {
     await pinLocaleEn(page);

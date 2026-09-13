@@ -67,12 +67,45 @@ npm run dist      # 然后才能打包安装程序
 | `DEFAULT_MODEL` | 默认聊天模型（须是 `dsh-profile.js` 声明的模型 id 之一）。 |
 | `PORT` / `HOST` | 监听地址（默认 `3000` / `localhost`）。 |
 | `PLATFORM_DATA_DIR` | 磁盘存储根目录（SQLite、会话等）。 |
-| `AUTH_MODE` | 可选登录。`forward_auth` 信任反代注入的身份头。未设 = 开放访问。 |
+| `AUTH_MODE` | 登录模式：未设为开放访问，`forward_auth` 信任反代身份头，`logto` 使用 Logto OIDC 登录。 |
+| `PAAS_BASE_URL` | Logto 回调的公开地址；未设时从请求 `Host` 推导。 |
+| `SESSION_SECRET` | 会话签名密钥；未设时自动生成并持久化到 `PLATFORM_DATA_DIR/auth/session-secret`。 |
+| `SESSION_TTL_HRS` | 会话 TTL（默认 24 小时），活跃会话会自动滑动续期。 |
+| `LOGTO_ENDPOINT` / `LOGTO_APP_ID` / `LOGTO_APP_SECRET` | Logto OIDC 配置；Web 使用 confidential client，桌面使用 public/PKCE client。 |
+| `LOGTO_CLIENT_TYPE` | `confidential`（默认）或 `public`；桌面设为 `public`。 |
+| `LOGTO_END_SESSION` | 设为 `true` 时登出跳转到 Logto end-session。 |
+| `DESKTOP_SERVER_PORT` | 桌面固定端口（默认 47600），用于注册 `http://127.0.0.1:47600/auth/callback`。 |
+| `SSO_ENABLED` | 仅 `AUTH_MODE=none` 时生效：叠加**可选**登录入口（未登录仍可匿名使用）。登录后按规范化 SSO 邮箱记住个人模型与 MCP 可用开关，在共享 runtime 空闲时应用。**不是多租户隔离**——聊天/会话/文档/runtime 仍共享。要求反代允许匿名请求到达本服务，且本服务只能经由该反代访问（身份头否则可被伪造）。 |
 | `AGENTS_CONFIG_URL` / `CATALOG_REFRESH_SECS` | Agent/应用目录云端 JSON，每 N 秒刷新（默认 60）。 |
 | `NANGO_SECRET_KEY` | Nango connect session 密钥（服务端用，不发往浏览器）。 |
 | `DOCUMENTS_MODEL` | Documents RAG 模型（默认 `deepseek-v4-pro`）。 |
+| `MARKET_REGISTRY_URL` / `MARKET_REGISTRY_TOKEN` | 接入自建 [mcp-gateway-registry](https://github.com/agentic-community/mcp-gateway-registry)：把 registry 里的 MCP 服务器、技能（安装时拉取内容）、Agent 拉进扩展市场与 Agent 目录。组可见性用本地 `registry-groups.json`（已 gitignore）映射；未配置 URL 时仅用内置目录。 |
 
 想接入自建的 LLM 代理或 SaaS 连接器网关？自行部署后，按 MCP 服务器（`mcp.json`）或目录里的 `external-service` 条目接入即可——项目本身不再附带这两类服务。
+
+### Logto 登录配置
+
+Logto 控制台需要注册两个应用，并启用 organizations / organization roles 进入 ID token：
+
+1. Web confidential client：redirect URI 为 `https://<host>/auth/callback`，配置 `AUTH_MODE=logto`、`LOGTO_ENDPOINT`、`LOGTO_APP_ID`、`LOGTO_APP_SECRET`。
+2. Desktop public client：redirect URI 为 `http://127.0.0.1:47600/auth/callback`，打包设置使用 `LOGTO_CLIENT_TYPE=public`、`DESKTOP_SERVER_PORT=47600`、`SESSION_TTL_HRS=720`。桌面安装包不包含 client secret，使用 PKCE S256。
+
+打包后的桌面端从 `app.getPath("userData")/settings.json` 注入配置。至少提供 Logto 租户端点和 public client id；不要把 `LOGTO_APP_SECRET` 写入桌面设置：
+
+```json
+{
+  "AUTH_MODE": "logto",
+  "LOGTO_ENDPOINT": "https://<logto-tenant>",
+  "LOGTO_APP_ID": "<desktop-public-client-id>",
+  "LOGTO_CLIENT_TYPE": "public",
+  "SESSION_TTL_HRS": "720",
+  "DESKTOP_SERVER_PORT": "47600"
+}
+```
+
+`AUTH_MODE=logto` 不支持离线首次登录：启动时必须能访问 Logto discovery/JWKS，否则后端无法完成启动；已有未过期会话在进程存活期间仍可使用，但新登录、回调和 end-session 仍需要网络。需要开放访问时，取消 `AUTH_MODE`。
+
+组织名会映射为 group；`organization_roles` 的角色短名也会加入 group，例如 `finddata:admin` → `admin`。请在 Logto 应用的 ID token 中启用 `organizations` 和 `organization_roles`（或等价自定义 claims），并允许授权请求使用的 organizations scope。Platform 只读取这两个 claim 名称；需要管理员权限时，角色短名必须精确为 `admin`，因为目录和后台管理门禁按该名称匹配。回滚时取消 `AUTH_MODE` 即可恢复开放访问，已签发的 cookie 不再生效于认证流程。
 
 ---
 
@@ -204,12 +237,45 @@ Everything sensitive lives in **`.env`** and **`mcp.json`** (both gitignored; te
 | `DEFAULT_MODEL` | Default chat model (must be one of the model ids declared in `dsh-profile.js`). |
 | `PORT` / `HOST` | Bind address (default `3000` / `localhost`). |
 | `PLATFORM_DATA_DIR` | Root for all on-disk stores (SQLite, sessions, cron). |
-| `AUTH_MODE` | Optional login. `forward_auth` trusts proxy-injected identity headers. Unset = open access. |
+| `AUTH_MODE` | Login mode: unset for open access, `forward_auth` for trusted proxy headers, or `logto` for Logto OIDC login. |
+| `PAAS_BASE_URL` | Public callback base URL for Logto; derived from request `Host` when unset. |
+| `SESSION_SECRET` | Session signing secret; auto-generated and persisted under `PLATFORM_DATA_DIR/auth/session-secret` when unset. |
+| `SESSION_TTL_HRS` | Session TTL (default 24 hours), with sliding renewal for active sessions. |
+| `LOGTO_ENDPOINT` / `LOGTO_APP_ID` / `LOGTO_APP_SECRET` | Logto OIDC settings; web uses a confidential client and desktop uses a public/PKCE client. |
+| `LOGTO_CLIENT_TYPE` | `confidential` (default) or `public`; set to `public` for desktop. |
+| `LOGTO_END_SESSION` | Set to `true` to chain logout through Logto end-session. |
+| `DESKTOP_SERVER_PORT` | Desktop fixed port (default 47600) for `http://127.0.0.1:47600/auth/callback`. |
+| `SSO_ENABLED` | Only meaningful with `AUTH_MODE=none`: layers an **optional** sign-in entry on top of open access (anonymous use keeps working). Once signed in, a per-email preference records the user's model and MCP availability overlay, applied when the shared runtime is idle. **Not multi-tenant isolation** — chat, sessions, documents and the runtime stay shared. Requires the proxy to let anonymous requests reach the app while still injecting identity for signed-in ones, and the app must be reachable only through that proxy (the identity header is otherwise forgeable). |
 | `AGENTS_CONFIG_URL` / `CATALOG_REFRESH_SECS` | Cloud JSON for agent/app catalog, refreshed every N seconds (default 60). |
 | `NANGO_SECRET_KEY` | Server-side Nango secret for connect sessions (never sent to browser). |
 | `DOCUMENTS_MODEL` | Documents RAG model (default `deepseek-v4-pro`). |
+| `MARKET_REGISTRY_URL` / `MARKET_REGISTRY_TOKEN` | Wire in a self-hosted [mcp-gateway-registry](https://github.com/agentic-community/mcp-gateway-registry): its MCP servers, skills (content fetched at install time), and agents appear in the extension market and agent catalog. Group visibility comes from a local `registry-groups.json` (gitignored); without a URL only the bundled catalog is used. |
 
 Want a self-hosted LLM proxy or a SaaS-connector gateway? Run it yourself and wire it in as an MCP server (`mcp.json`) or as an `external-service` entry in the catalog — the project no longer ships either one.
+
+### Logto login configuration
+
+Register two applications in the Logto console and enable organizations / organization roles in ID tokens:
+
+1. Web confidential client: redirect URI `https://<host>/auth/callback`, with `AUTH_MODE=logto`, `LOGTO_ENDPOINT`, `LOGTO_APP_ID`, and `LOGTO_APP_SECRET`.
+2. Desktop public client: redirect URI `http://127.0.0.1:47600/auth/callback`, with `LOGTO_CLIENT_TYPE=public`, `DESKTOP_SERVER_PORT=47600`, and `SESSION_TTL_HRS=720`. The desktop installer contains no client secret and uses PKCE S256.
+
+The packaged desktop app injects backend configuration from `app.getPath("userData")/settings.json`. At minimum, provide the Logto tenant endpoint and public client id; never put `LOGTO_APP_SECRET` in desktop settings:
+
+```json
+{
+  "AUTH_MODE": "logto",
+  "LOGTO_ENDPOINT": "https://<logto-tenant>",
+  "LOGTO_APP_ID": "<desktop-public-client-id>",
+  "LOGTO_CLIENT_TYPE": "public",
+  "SESSION_TTL_HRS": "720",
+  "DESKTOP_SERVER_PORT": "47600"
+}
+```
+
+`AUTH_MODE=logto` does not support a first login while offline: Logto discovery and JWKS must be reachable during startup or the backend will not start. An existing unexpired session remains usable while the process is running, but new logins, callbacks, and end-session redirects still require the network. Unset `AUTH_MODE` to restore open access.
+
+Organization names become groups; role short names from `organization_roles` are added too, so `finddata:admin` maps to `admin`. Enable `organizations` and `organization_roles` in the Logto application's ID token (or equivalent custom claims), and allow the organizations scope requested by Platform. Platform reads only those two claim names. Administrative access requires the exact role short name `admin`, because catalog filtering and the admin gate match that name. To roll back, unset `AUTH_MODE` to restore open access; issued cookies are no longer used by the auth flow.
 
 ---
 

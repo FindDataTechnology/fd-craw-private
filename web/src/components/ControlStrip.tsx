@@ -17,9 +17,12 @@
 // the old value after a click. That is correct: the strip reports reality.
 
 import { useEffect, useRef, useState } from "react";
-import { Bot, ChevronDown, Folder, Loader2, SlidersHorizontal, Sparkles, TerminalSquare } from "lucide-react";
+import { Bot, ChevronDown, Folder, FolderOpen, Loader2, ShieldCheck, SlidersHorizontal, Sparkles, TerminalSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
+import { useAuthStore } from "@/hooks/useAuth";
 import { useChatStore } from "@/hooks/useChatStore";
+import { savePersonalModel } from "@/lib/bindings-api";
 import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
 
@@ -135,6 +138,20 @@ function MenuItem({
   );
 }
 
+// Shipped permission presets have localized labels/descriptions in the web
+// bundles (the runtime table carries raw keys); anything else renders the
+// server-provided label verbatim — the same rule the agent-preset picker uses.
+const PERMISSION_I18N = {
+  "read-only": "permissionReadonly",
+  "workspace-write": "permissionWrite",
+  "danger-full-access": "permissionFull",
+} as const;
+
+// The native folder picker exists only inside the Electron shell (exposed via
+// the preload bridge); in a plain browser the path input is the only entry.
+const CAN_PICK_NATIVE =
+  typeof window !== "undefined" && typeof window.platform?.pickWorkdir === "function";
+
 export function ControlStrip({ send, onOpenCommands }: Props) {
   const { t } = useTranslation();
   const status = useChatStore((s) => s.status);
@@ -149,6 +166,29 @@ export function ControlStrip({ send, onOpenCommands }: Props) {
   const agents = useChatStore((s) => s.agents);
   const currentAgent = useChatStore((s) => s.currentAgent);
   const isStreaming = useChatStore((s) => s.isStreaming);
+  const permissionOptions = useChatStore((s) => s.permissionOptions);
+  const currentPermission = useChatStore((s) => s.currentPermission);
+  // Non-null only when the socket carries an identity the server can bind to.
+  const userBindings = useChatStore((s) => s.userBindings);
+  const runtimePending = useChatStore((s) => s.runtimePending);
+  const ssoConfigured = useAuthStore((s) => s.ssoConfigured);
+  const [bindingMsg, setBindingMsg] = useState<string | null>(null);
+  const [bindingError, setBindingError] = useState<string | null>(null);
+
+  // Pinning the model currently in effect is a separate, explicit act — the
+  // picker above stays a global operation and never writes a personal row.
+  const saveAsMyModel = async () => {
+    const m = models.find((x) => x.id === currentModel);
+    if (!m) return;
+    setBindingMsg(null);
+    setBindingError(null);
+    try {
+      const res = await savePersonalModel(m.provider ?? "", m.id);
+      setBindingMsg(res.pending ? t("bindings.pending") : t("bindings.saved"));
+    } catch (e) {
+      setBindingError((e as Error).message);
+    }
+  };
 
   const agentLabel =
     agents.find((a) => a.id === currentAgent)?.name ??
@@ -189,9 +229,27 @@ export function ControlStrip({ send, onOpenCommands }: Props) {
     close();
   };
 
+  // Electron only: hand the picked folder to the same validation/confirm/
+  // restart path as a typed one. A cancelled dialog resolves null — the menu
+  // simply stays open.
+  const browseWorkspace = async (close: () => void) => {
+    const picked = await window.platform?.pickWorkdir();
+    if (picked) switchWorkspace(picked, close);
+  };
+
   const workspaceLabel = currentWorkspace
     ? currentWorkspace.split(/[/\\]/).filter(Boolean).pop() || currentWorkspace
     : t("composer.strip.workspaceUnset");
+
+  // Chip label: localized name for known presets, the server label for any
+  // user-defined table entry, `custom` when the knobs match no preset, and a
+  // placeholder while no session has pinned a value yet.
+  const permissionLabel = (name: string | null) => {
+    if (!name) return t("composer.strip.permissionUnset");
+    if (name === "custom") return t("composer.strip.permissionCustom");
+    const known = PERMISSION_I18N[name as keyof typeof PERMISSION_I18N];
+    return known ? t(`composer.strip.${known}.label`) : name;
+  };
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-0.5" data-testid="composer-control-strip">
@@ -222,8 +280,10 @@ export function ControlStrip({ send, onOpenCommands }: Props) {
                   ))}
               </div>
             )}
-            {/* A browser cannot pick a server-side directory; typing the path
-                once is the cost, and the recents list above pays it back. */}
+            {/* In a plain browser, picking a server-side directory is
+                impossible — typing the absolute path once is the cost, and the
+                recents list above pays it back. Inside the Electron shell the
+                browse button opens the native picker instead. */}
             <div className="p-2">
               <input
                 type="text"
@@ -250,6 +310,17 @@ export function ControlStrip({ send, onOpenCommands }: Props) {
                 <p data-testid="strip-workspace-error" className="mt-1 text-[10px] text-destructive">
                   {pathError}
                 </p>
+              )}
+              {CAN_PICK_NATIVE && (
+                <button
+                  type="button"
+                  onClick={() => void browseWorkspace(close)}
+                  data-testid="strip-workspace-browse"
+                  className="mt-1 flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  {t("composer.strip.workspaceBrowse")}
+                </button>
               )}
             </div>
           </div>
@@ -300,6 +371,44 @@ export function ControlStrip({ send, onOpenCommands }: Props) {
       >
         {(close) => (
           <div className="max-h-72 overflow-y-auto py-1">
+            {userBindings
+              ? currentModel && (
+                  <div className="border-b border-border px-3 py-2">
+                    <button
+                      type="button"
+                      data-testid="strip-save-model"
+                      onClick={saveAsMyModel}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      {t("bindings.saveAsMyModel")}
+                    </button>
+                    {userBindings.model && (
+                      <div className="mt-1 text-[10px] text-muted-foreground" data-testid="strip-model-source">
+                        {userBindings.model.source === "personal"
+                          ? t("bindings.myModel")
+                          : t("bindings.globalSource")}
+                      </div>
+                    )}
+                    {runtimePending && (
+                      <div className="mt-1 text-[10px] text-warning" data-testid="strip-model-pending">
+                        {t("bindings.pending")}
+                      </div>
+                    )}
+                    {bindingMsg && <div className="mt-1 text-[10px] text-muted-foreground">{bindingMsg}</div>}
+                    {bindingError && <div className="mt-1 text-[10px] text-destructive">{bindingError}</div>}
+                  </div>
+                )
+              : ssoConfigured && (
+                  <div className="border-b border-border px-3 py-2">
+                    <Link
+                      to="/login"
+                      data-testid="strip-model-signin"
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      {t("bindings.signIn")}
+                    </Link>
+                  </div>
+                )}
             {models.map((m) => (
               <MenuItem
                 key={m.id}
@@ -342,6 +451,44 @@ export function ControlStrip({ send, onOpenCommands }: Props) {
                   }}
                 />
               ))}
+            </div>
+          )}
+        </StripMenu>
+      )}
+
+      {/* Permission preset (sandbox + approval bundle). Hidden until the
+          roster arrives — a control showing nothing real teaches users to
+          ignore the strip. Unlike every restart-carrying control above, a
+          permission switch applies to the LIVE session, so there is no
+          pending window and send stays enabled; the chip re-renders when the
+          confirming current_permission broadcast lands. The current value can
+          be `custom` (knobs match no preset) — shown, never switchable. */}
+      {permissionOptions.length > 0 && (
+        <StripMenu
+          label={t("composer.strip.permission")}
+          value={permissionLabel(currentPermission)}
+          icon={<ShieldCheck className="h-3.5 w-3.5 shrink-0" />}
+          disabled={status !== "connected" || isStreaming}
+          testId="strip-permission"
+        >
+          {(close) => (
+            <div className="max-h-72 overflow-y-auto py-1">
+              {permissionOptions.map((o) => {
+                const known = PERMISSION_I18N[o.name as keyof typeof PERMISSION_I18N];
+                return (
+                  <MenuItem
+                    key={o.name}
+                    active={o.name === currentPermission}
+                    primary={known ? t(`composer.strip.${known}.label`) : o.label}
+                    secondary={known ? t(`composer.strip.${known}.desc`) : o.description || undefined}
+                    onClick={() => {
+                      close();
+                      if (o.name === currentPermission) return;
+                      send({ type: "set_permission", name: o.name });
+                    }}
+                  />
+                );
+              })}
             </div>
           )}
         </StripMenu>

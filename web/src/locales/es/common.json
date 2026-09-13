@@ -52,7 +52,16 @@
     "new": "+ Nuevo",
     "noChats": "Aún no hay chats. Haz clic en \"+ Nuevo\".",
     "untitled": "Sin título",
-    "language": "Idioma"
+    "language": "Idioma",
+    "collapse": "Contraer barra lateral",
+    "expand": "Expandir barra lateral",
+    "workspaces": "Espacios de trabajo",
+    "searchChats": "Buscar chats…",
+    "ungrouped": "Sin agrupar",
+    "showMore": "Mostrar {{count}} más",
+    "showLess": "Mostrar menos",
+    "newWorkspace": "Nuevo espacio",
+    "closeSearch": "Cerrar búsqueda"
   },
   "modelsPage": {
     "title": "Modelos",
@@ -126,6 +135,7 @@
       "workspaceUnset": "Sin carpeta",
       "workspaceRecents": "Carpetas recientes",
       "workspacePlaceholder": "Ruta absoluta a una carpeta…",
+      "workspaceBrowse": "Examinar carpetas…",
       "workspaceAbsolute": "Introduce una ruta absoluta.",
       "workspaceConfirm": "¿Cambiar la carpeta de trabajo a {{path}}?\n\nEsto reinicia el agente. Los mensajes anteriores de este chat pueden referirse a archivos que ya no existen.",
       "commands": "Comandos",
@@ -134,7 +144,22 @@
       "effort": "Razonamiento",
       "effortDefault": "Predeterminado",
       "agent": "Agente",
-      "agentUnset": "Predeterminado"
+      "agentUnset": "Predeterminado",
+      "permission": "Permisos",
+      "permissionUnset": "Predeterminado",
+      "permissionCustom": "Personalizado",
+      "permissionReadonly": {
+        "label": "Solo lectura",
+        "desc": "El agente puede leer el espacio de trabajo pero no modificarlo."
+      },
+      "permissionWrite": {
+        "label": "Escritura del espacio",
+        "desc": "El agente puede hacer cambios dentro del espacio de trabajo."
+      },
+      "permissionFull": {
+        "label": "Acceso total",
+        "desc": "El agente puede cambiar cualquier cosa, sin aprobaciones."
+      }
     }
   },
   "chat": {
@@ -165,6 +190,24 @@
         }
       },
       "viewLess": "Mostrar menos"
+    },
+    "preset": {
+      "label": "Modo del agente",
+      "unset": "Elige un modo",
+      "userBadge": "Personalizado",
+      "brokenBadge": "No disponible",
+      "names": {
+        "standard": "Modo estándar",
+        "code": "Modo PTC",
+        "minimal": "Modo mínimo",
+        "cordis": "Modo creativo"
+      },
+      "descriptions": {
+        "standard": "El agente de codificación completo: edición de archivos, shell, búsqueda de archivos y web, skills, planes, objetivos, subagentes y flujos de trabajo.",
+        "code": "Todo lo del modo estándar, con las herramientas expuestas mediante el SDK de Code Mode para que el modelo componga operaciones multipaso en un solo programa TypeScript.",
+        "minimal": "Un agente de codificación de dos herramientas: bash persistente y str_replace_editor.",
+        "cordis": "Para crear presets de agente personalizados: todo lo del modo estándar más comprobaciones en tiempo de ejecución, experimentación de plugins y guía de autoría de presets."
+      }
     },
     "header": {
       "editTitle": "Renombrar sesión",
@@ -283,12 +326,6 @@
       "addNote": "Añadir nota",
       "addUrl": "Añadir URL"
     },
-    "query": {
-      "title": "Preguntar a los documentos",
-      "placeholder": "Haz una pregunta sobre tus documentos…",
-      "ask": "Preguntar",
-      "sources": "Fuentes: {{names}}"
-    },
     "collection": {
       "title": "Colecciones",
       "namePlaceholder": "Nombre de la colección…",
@@ -299,9 +336,10 @@
       "noDocuments": "No hay documentos.",
       "addDocPlaceholder": "Añadir documento…",
       "add": "Añadir",
-      "queryPlaceholder": "Pregunta sobre esta colección…",
       "confirmDelete": "¿Eliminar esta colección?"
-    }
+    },
+    "startConversation": "Iniciar conversación…",
+    "stuckWarning": "Tarda demasiado — la ingesta pudo detenerse"
   },
   "embedded": {
     "iframeTitle": "servicio integrado",
@@ -419,6 +457,25 @@
     "delete": "Eliminar",
     "confirmDeleteTitle": "¿Eliminar el bot?",
     "confirmDelete": "Se eliminará permanentemente «{{name}}» y sus credenciales.",
+    "gridHint": "Haz clic en una plataforma para añadir un bot de ese tipo.",
+    "configuredTitle": "Bots configurados",
+    "saved": "Guardado",
+    "qr": {
+      "title": "Acceso de usuario (QR)",
+      "resolving": "Resolviendo…",
+      "copyLink": "Copiar enlace",
+      "linkCopied": "Enlace copiado",
+      "manualPrompt": "Aún no hay enlace de entrada: pega la URL que deben abrir los usuarios y guarda.",
+      "manualPlaceholder": "https://…",
+      "saveLink": "Guardar enlace",
+      "resolveFailed": "No se pudo generar el QR:",
+      "disabledNote": "El bot está desactivado; el QR aún muestra su entrada.",
+      "hint": {
+        "telegram": "Abre este enlace en Telegram y pulsa Start.",
+        "wechatOa": "Escanea con WeChat para seguir y abrir la cuenta oficial.",
+        "manual": "Escanea el código para abrir el acceso del bot."
+      }
+    },
     "types": {
       "telegram": "Telegram",
       "feishu": "Feishu / Lark",
@@ -426,10 +483,20 @@
       "wechat-oa": "Cuenta Oficial de WeChat"
     }
   },
+  "login": {
+    "title": "Iniciar sesión",
+    "description": "Este despliegue usa el inicio de sesión único de tu organización. Inicia sesión para continuar en Platform.",
+    "action": "Iniciar sesión con SSO",
+    "logout": "Cerrar sesión",
+    "loadFailed": "No se pudo cargar el estado de autenticación: {{error}}",
+    "stateError": "La sesión de inicio de sesión caducó o no coincide. Inténtalo de nuevo.",
+    "callbackError": "Error al iniciar sesión. Inténtalo de nuevo."
+  },
   "settings": {
     "title": "Ajustes",
     "sections": {
       "general": "General",
+      "account": "Cuenta",
       "models": "Modelos",
       "mcp": "Servidores MCP",
       "skills": "Habilidades",
@@ -443,6 +510,26 @@
         "dark": "Oscuro",
         "system": "Sistema"
       }
+    },
+    "account": {
+      "title": "Cuenta",
+      "email": "Correo de la sesión",
+      "openHint": "Esta instancia es abierta y no requiere una cuenta.",
+      "signedOutHint": "Inicia sesión mediante el SSO de tu organización para usar esta instancia.",
+      "optionalSsoHint": "Inicia sesión con el SSO de tu organización para conservar tu modelo y tus preferencias de MCP en este entorno compartido."
     }
+  },
+  "bindings": {
+    "myModel": "Mi modelo",
+    "saveAsMyModel": "Guardar como mi modelo",
+    "saved": "Guardado como tu modelo",
+    "pending": "Guardado: se aplicará cuando el asistente esté inactivo",
+    "globalSource": "Usando el valor global",
+    "personalMcp": "Solo para mí",
+    "apply": "Aplicar ahora",
+    "applyFailed": "No se pudo aplicar tu perfil: {{error}}",
+    "signIn": "Inicia sesión para conservar tu modelo y tus preferencias de MCP.",
+    "lockedMcp": "Bloqueado por tu administrador",
+    "continueAnonymous": "Continuar sin iniciar sesión"
   }
 }

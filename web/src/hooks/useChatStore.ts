@@ -13,8 +13,13 @@ import { create } from "zustand";
 import { showToast } from "@/components/Toast";
 import type {
   AgentInfo,
+  BindingModel,
   ChatMessage,
+  McpBindingState,
   ModelInfo,
+  PresetInfo,
+  PermissionOption,
+  RuntimeModel,
   ServerMessage,
   SessionMeta,
   SkillInfo,
@@ -54,14 +59,32 @@ interface State {
   // Bumped on every `catalog_changed` so catalog-viewing pages refetch.
   catalogVersion: number;
   skills: SkillInfo[];
+  // The dsh agent-preset roster (agent modes) and the selected one. Empty
+  // roster = the deployment composes none, and the picker renders nothing.
+  presets: PresetInfo[];
+  currentPreset: string | null;
+  // The permission preset table (sandbox + approval bundles) and the current
+  // session's effective preset. Empty options = no permission service — the
+  // strip control stays hidden. `currentPermission` renders from server state
+  // only: the current_permission broadcast after a live switch, or the
+  // permissions roster (whose current is the post-restart deployment default).
+  permissionOptions: PermissionOption[];
+  currentPermission: string | null;
+  // Identity-scoped runtime bindings (optional SSO only). `userBindings` is the
+  // requesting socket's own profile; `runtimeBinding` is the shared runtime the
+  // one dsh child is actually configured with; `runtimePending` is a saved
+  // profile waiting for an idle runtime.
+  userBindings: { model: BindingModel | null; mcp: McpBindingState[] } | null;
+  runtimeBinding: { model: RuntimeModel | null; mcp: { name: string; enabled: boolean }[] } | null;
+  runtimePending: { model: RuntimeModel | null; mcp: { name: string; enabled: boolean }[] } | null;
   // Absolute path the dsh runtime is running in, plus previously used ones.
   currentWorkspace: string | null;
   workspaceRecents: string[];
   // Which composer control is awaiting the server's confirming broadcast.
-  // dsh bakes model/effort/cwd into the `initialize` handshake, so each of
-  // these changes tears down and respawns the child — the send button stays
+  // dsh bakes model/effort/cwd/preset into the `initialize` handshake, so each
+  // of these changes tears down and respawns the child — the send button stays
   // disabled until it lands.
-  pendingConfig: "model" | "effort" | "workspace" | null;
+  pendingConfig: "model" | "effort" | "workspace" | "preset" | null;
   sessions: SessionMeta[];
   currentSessionId: string | null;
   turns: Turn[];
@@ -71,12 +94,18 @@ interface State {
   // view-level finalize; without this flag the orphaned run's late events
   // would open a fresh streaming turn and re-disable the composer.
   suppressed: boolean;
+  // Cross-page composer handoff: a non-chat page (e.g. the library's "Start
+  // conversation") parks a draft here before navigating to /chat; ChatPage
+  // consumes it into its local draft on mount and clears it. Null = nothing
+  // pending — a stale draft must never leak into a later visit.
+  composerDraft: string | null;
+  setComposerDraft: (text: string | null) => void;
   // Setters used by the WS hook.
   setStatus: (s: ConnStatus) => void;
   apply: (m: ServerMessage) => void;
   // Marks a config control as awaiting its server broadcast. Cleared by the
   // matching *_changed event, or by an error (the change was rejected).
-  setPendingConfig: (c: "model" | "effort" | "workspace" | null) => void;
+  setPendingConfig: (c: "model" | "effort" | "workspace" | "preset" | null) => void;
   // Local UI commands (never sent to server).
   addUserTurnOptimistic: (text: string) => void;
   clearView: () => void;
@@ -137,19 +166,25 @@ function appendThinking(turns: Turn[], delta: string) {
 // ── Streamed-delta batching ─────────────────────────────────────────────────
 // Every text/thinking delta used to commit its own set(): a new turns array
 // per token re-rendered the whole transcript and grew the streaming string
-// quadratically. Deltas now accumulate in a small buffer and flush as one
-// commit at most every DELTA_FLUSH_MS. Ordering is preserved exactly: any
-// non-delta event first folds the pending buffer into the same set() call
-// (tool blocks can never land before the text that preceded them), and
-// session swaps / view clears discard the buffer (those deltas belong to the
-// previous conversation).
+// quadratically. Deltas now accumulate in a small ordered segment list and
+// flush as one commit at most every DELTA_FLUSH_MS. The ordered list — not
+// two per-kind string slots — is what preserves arrival order: the
+// reasoning→text boundary routinely lands inside one window, and a fixed
+// text-before-thinking flush order rendered the reasoning tail AFTER the
+// answer's opening, splitting one thinking pass into two blocks sandwiching
+// the text. Any non-delta event first folds the pending buffer into the same
+// set() call (tool blocks can never land before the text that preceded
+// them), and session swaps / view clears discard the buffer (those deltas
+// belong to the previous conversation).
 const DELTA_FLUSH_MS = 50;
-type PendingDeltas = { text: string | null; thinking: string | null };
-let pending: PendingDeltas = { text: null, thinking: null };
+type PendingDelta = { kind: "text" | "thinking"; delta: string };
+let pending: PendingDelta[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function queueDelta(kind: "text" | "thinking", delta: string) {
-  pending[kind] = (pending[kind] ?? "") + delta;
+  const last = pending[pending.length - 1];
+  if (last?.kind === kind) last.delta += delta;
+  else pending.push({ kind, delta });
   if (!flushTimer) {
     flushTimer = setTimeout(() => {
       flushTimer = null;
@@ -161,17 +196,19 @@ function queueDelta(kind: "text" | "thinking", delta: string) {
 // Returns the turns patch for the buffered deltas (and clears the buffer),
 // or null when nothing is pending. Called inside a set()/setState() updater.
 function flushIntoTurns(state: State): { turns: Turn[] } | null {
-  if (!pending.text && !pending.thinking) return null;
+  if (pending.length === 0) return null;
   const p = pending;
-  pending = { text: null, thinking: null };
+  pending = [];
   const turns = state.turns.slice();
-  if (p.text) appendText(turns, p.text);
-  if (p.thinking) appendThinking(turns, p.thinking);
+  for (const seg of p) {
+    if (seg.kind === "text") appendText(turns, seg.delta);
+    else appendThinking(turns, seg.delta);
+  }
   return { turns };
 }
 
 function discardDeltas() {
-  pending = { text: null, thinking: null };
+  pending = [];
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;
@@ -207,6 +244,13 @@ export const useChatStore = create<State>((set) => ({
   currentAgent: null,
   catalogVersion: 0,
   skills: [],
+  presets: [],
+  currentPreset: null,
+  permissionOptions: [],
+  currentPermission: null,
+  userBindings: null,
+  runtimeBinding: null,
+  runtimePending: null,
   currentWorkspace: null,
   workspaceRecents: [],
   pendingConfig: null,
@@ -215,12 +259,21 @@ export const useChatStore = create<State>((set) => ({
   turns: [],
   isStreaming: false,
   suppressed: false,
+  composerDraft: null,
+
+  setComposerDraft: (text) => set({ composerDraft: text }),
 
   setPendingConfig: (c) => set({ pendingConfig: c }),
 
   setStatus: (s) =>
     set((state) => {
       if (s !== "disconnected") return { status: s };
+      // Only a live socket can strand a run. A socket that never connected —
+      // gated off while the auth check runs, so every page load passes through
+      // here — has no in-flight turn to finalize, and must not arm `suppressed`
+      // (that would swallow the next server-initiated run: a cron-fired prompt
+      // has no `user` echo to clear it).
+      if (state.status !== "connected") return { status: s };
       // A dropped socket used to strand `isStreaming` forever (only
       // done/session_loaded/clearView reset it) — the composer bricked until
       // the view was wiped. Finalize the open turn and suppress the orphaned
@@ -394,6 +447,18 @@ export const useChatStore = create<State>((set) => ({
         case "skills":
           return { skills: m.skills };
 
+        case "presets":
+          return { presets: m.presets, currentPreset: m.current };
+
+        case "permissions":
+          return { permissionOptions: m.options, currentPermission: m.current };
+
+        case "current_permission":
+          return { currentPermission: m.name };
+
+        case "current_preset":
+          return { currentPreset: m.id, pendingConfig: null };
+
         case "sessions":
           return {
             sessions: m.sessions,
@@ -439,8 +504,17 @@ export const useChatStore = create<State>((set) => ({
                   },
             ),
             isStreaming: false,
-            suppressed: false,
+            suppressed: state.suppressed,
           };
+
+        case "user_bindings":
+          return { userBindings: { model: m.model, mcp: m.mcp } };
+
+        case "runtime_binding":
+          return { runtimeBinding: { model: m.model, mcp: m.mcp }, runtimePending: null };
+
+        case "runtime_binding_pending":
+          return { runtimePending: { model: m.model, mcp: m.mcp } };
 
         // Non-chat channels. Ignored for now — the owning views/stores
         // subscribe to these themselves (e.g. useExtensionsStore.applyEvent
@@ -490,7 +564,11 @@ export const useChatStore = create<State>((set) => ({
 
   clearView: () => {
     discardDeltas();
-    set({ turns: [], isStreaming: false, suppressed: false });
+    set((state) => ({
+      turns: [],
+      isStreaming: false,
+      suppressed: state.suppressed || state.isStreaming,
+    }));
   },
 
   stopStreaming: () => {

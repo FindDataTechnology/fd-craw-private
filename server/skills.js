@@ -42,28 +42,59 @@ export async function expandSkillContent(skill, args) {
   return `${body}${argSection}`;
 }
 
-// Expand @doc:<id> reference tokens into the ingested document's source text so
-// the agent sees the attachment content in context (design D4). Mirrors how
-// /skill: tokens are expanded before session.prompt(). Unknown/missing ids are
-// replaced with a short note so the prompt stays coherent. No new dependency —
-// reuses documents.getDocumentContent (the same path /api/documents/:id serves).
+// Expand @doc:<id> / @collection:<id> reference tokens into LIGHT context for
+// the agent: name + bounded summary + pointers to the library MCP tools
+// (mcp__library__read_document / mcp__library__search_library). The full
+// source text is deliberately NOT injected — the agent pulls what it needs on
+// demand, which keeps prompts small regardless of document size. Mirrors how
+// /skill: tokens are expanded before session.prompt(). Unknown/missing ids
+// become a short note so the prompt stays coherent.
 export async function expandDocRefs(ctx, text) {
-  if (!text.includes("@doc:")) return text;
-  const refs = [...text.matchAll(/@doc:([A-Za-z0-9_-]+)/g)];
-  if (!refs.length) return text;
+  if (!text.includes("@doc:") && !text.includes("@collection:")) return text;
   let out = text;
-  for (const m of refs) {
+
+  for (const m of [...text.matchAll(/@doc:([A-Za-z0-9_-]+)/g)]) {
     const id = m[1];
-    // Prefix fetch at the SQL layer (12k budget — same slice the caller
-    // applied before, without loading the full column).
+    let card;
+    try {
+      card = ctx.db.getDocumentCard(id);
+    } catch (e) {
+      console.warn(`[doc] @doc:${id} lookup failed: ${e.message}`);
+    }
     let body;
-    try { body = ctx.db.getDocumentPrefix(id, 12000); }
-    catch (e) { console.warn(`[doc] @doc:${id} lookup failed: ${e.message}`); }
-    const snippet = body && body.trim()
-      ? body.trim()
-      : `(document ${id} is unavailable or empty)`;
-    out = out.replaceAll(m[0], `\n\n--- attached document ${id} ---\n${snippet}\n--- end document ${id} ---\n`);
+    if (!card) {
+      body = `[attached document ${id} is unavailable or empty]`;
+    } else if (card.status !== "ready" || !card.summary?.trim()) {
+      body = `[attached document "${card.name}" (${id}) is not ready — status: ${card.status}. Ask the user to re-add it.]`;
+    } else {
+      const summary = card.summary.trim().replace(/\s+/g, " ");
+      body =
+        `[attached document "${card.name}" (id: ${id}) — summary: ${summary}\n` +
+        `Full content: call the mcp__library__read_document tool with doc_id "${id}", ` +
+        `or mcp__library__search_library to locate relevant passages.]`;
+    }
+    out = out.replaceAll(m[0], `\n\n${body}\n`);
   }
+
+  for (const m of [...text.matchAll(/@collection:([A-Za-z0-9_-]+)/g)]) {
+    const id = m[1];
+    let body = null;
+    try {
+      const col = ctx.db.getCollection(id);
+      if (col) {
+        const members = ctx.db.listCollectionDocuments(id);
+        const names = members.map((d) => `"${d.name}" (${d.id})`).join(", ");
+        body =
+          `[collection "${col.name}" (id: ${id}) — ${members.length} document(s): ${names || "(empty)"}.\n` +
+          `Retrieve member content on demand with the mcp__library__read_document and ` +
+          `mcp__library__search_library tools (search_library accepts a collection filter).]`;
+      }
+    } catch (e) {
+      console.warn(`[doc] @collection:${id} lookup failed: ${e.message}`);
+    }
+    out = out.replaceAll(m[0], `\n\n${body ?? `[collection ${id} is unavailable]`}\n`);
+  }
+
   return out;
 }
 

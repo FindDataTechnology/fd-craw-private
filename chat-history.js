@@ -34,6 +34,15 @@ let sm = null;
 // absent, deleteSession skips the dsh-side cleanup (still removes the SQLite
 // row and any on-disk JSONL).
 let dshBridge = null;
+// The selected dsh agent preset, read at session-row creation so the row
+// records the mode the session starts under (best-effort: absent source or
+// empty value leaves the row blank = deployment default). Set by server.js.
+let presetSource = null;
+// The runtime workspace, read at session-row creation so the row records the
+// workspace the session starts in (best-effort: absent source leaves the row
+// blank = the sidebar's Ungrouped group). Set by server.js. Read once — a
+// mid-session workspace switch never re-groups a session.
+let workspaceSource = null;
 
 export async function initChatHistory() {
   SESSIONS_DIR = storeDir("sessions-store", process.env.SESSIONS_STORE_DIR);
@@ -46,6 +55,14 @@ export function setSessionManager(sessionManager) {
 
 export function setDshBridge(bridge) {
   dshBridge = bridge;
+}
+
+export function setPresetSource(source) {
+  presetSource = typeof source === "function" ? source : null;
+}
+
+export function setWorkspaceSource(source) {
+  workspaceSource = typeof source === "function" ? source : null;
 }
 
 export function getSessionsDir() {
@@ -100,15 +117,43 @@ function titleFromFirstUser(messages) {
 // message. `blocks` (optional, assistant turns) persists the block structure —
 // tool calls with results — so a reloaded session rebuilds the evidence trail.
 // No-op when the DB is unavailable (chat stays in-memory).
+export function createSession(sessionId) {
+  if (!sessionId || deletingSessions.has(sessionId) || !db.isDbReady()) return;
+  const now = new Date().toISOString();
+  if (!db.sessionExists(sessionId)) {
+    db.upsertSession(
+      sessionId,
+      "New chat",
+      now,
+      now,
+      sm?.getSessionFile?.() ?? null,
+      presetSource?.() || null,
+      workspaceSource?.() || null,
+    );
+  }
+}
+
 export function recordMessage(sessionId, role, content, blocks) {
-  if (!sessionId || !db.isDbReady()) return;
+  if (!sessionId || deletingSessions.has(sessionId) || !db.isDbReady()) return;
   const now = new Date().toISOString();
   const path = sm?.getSessionFile?.() ?? null;
 
   if (!db.sessionExists(sessionId)) {
     const title = role === "user" ? truncateTitle(content) || "New chat" : "New chat";
-    db.upsertSession(sessionId, title, now, now, path);
+    // Creation facts: the preset + workspace selected at the moment the
+    // session's first message lands. dsh locks a session to the composition
+    // it started with, and the sidebar groups by the workspace it started
+    // in — both are stamped once and never updated.
+    const agentPreset = presetSource?.() || null;
+    const workspace = workspaceSource?.() || null;
+    db.upsertSession(sessionId, title, now, now, path, agentPreset, workspace);
   } else {
+    if (role === "user" && content?.trim()) {
+      const meta = db.getSessionMeta(sessionId);
+      if (meta?.title === "New chat" && db.getChatMessages(sessionId).length === 0) {
+        db.setTitle(sessionId, truncateTitle(content), now);
+      }
+    }
     db.touchSession(sessionId, now);
     if (path) db.setSessionPath(sessionId, path);
   }
@@ -132,6 +177,8 @@ export async function listSessions() {
       updatedAt: s.updatedAt,
       messageCount: s.messageCount ?? 0,
       path: s.path || null,
+      agentPreset: s.agentPreset || null,
+      workspace: s.workspace || null,
     }));
   }
 
@@ -146,6 +193,8 @@ export async function listSessions() {
       updatedAt: null,
       messageCount: ctx.messages.length,
       path: sm?.getSessionFile?.() ?? null,
+      agentPreset: presetSource?.() || null,
+      workspace: workspaceSource?.() || null,
     });
   }
 
@@ -217,6 +266,7 @@ export function setTitle(id, rawTitle) {
 // atomic (single statement, FK CASCADE handles chat_messages); the on-disk
 // unlink is atomic per file.
 const deleteLocks = new Map();
+const deletingSessions = new Set();
 
 export class DeleteSessionError extends Error {
   constructor(code, message) {
@@ -240,6 +290,7 @@ export async function deleteSession(id) {
   const prior = deleteLocks.get(id) || Promise.resolve();
   const next = prior.then(() => undefined).catch(() => undefined);
   deleteLocks.set(id, next);
+  deletingSessions.add(id);
   try {
     await next;
     if (id === currentSessionId()) {
@@ -269,8 +320,14 @@ export async function deleteSession(id) {
         }
       }
     }
+    // A different client can switch into this session while dsh cleanup runs.
+    // Recheck immediately before the host-side delete so it remains protected.
+    if (id === currentSessionId()) {
+      throw new DeleteSessionError("active", "cannot delete the active session");
+    }
     db.deleteSession(id);
   } finally {
+    deletingSessions.delete(id);
     if (deleteLocks.get(id) === next) deleteLocks.delete(id);
   }
 }

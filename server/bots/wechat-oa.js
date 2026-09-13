@@ -11,7 +11,7 @@
 // Docs: developers.weixin.qq.com/doc/offiaccount/Message_Management
 
 import crypto from "node:crypto";
-import { xmlField, tokenCache } from "./adapter.js";
+import { postJson, xmlField, tokenCache } from "./adapter.js";
 
 const BASE = process.env.WECHAT_OA_BASE_URL || "https://api.weixin.qq.com";
 
@@ -44,6 +44,30 @@ export const registry = {
     { key: "appSecret", label: "AppSecret", secret: true },
     { key: "token", label: "Callback Token", secret: true },
   ],
+
+  // User-entry QR: a permanent (QR_LIMIT) scene QR minted via qrcode/create;
+  // the browser gets the public showqrcode URL, never the access token.
+  // Only verified service accounts accept the call — an unsupported account
+  // type or API error throws, and the route falls back to the manual-link state.
+  qr: {
+    strategy: "wechat-qrcode",
+    hintKey: "botsPage.qr.hint.wechatOa",
+    async resolve(cred) {
+      const create = async () =>
+        postJson(
+          `${BASE}/cgi-bin/qrcode/create?access_token=${await tokenFor(cred).get()}`,
+          { action_name: "QR_LIMIT_STR_SCENE", action_info: { scene: { scene_str: `entry:${cred.appId}` } } },
+        );
+      let j = await create();
+      if (j.errcode === 40014 || j.errcode === 42001) { // invalid/expired access_token
+        tokenFor(cred).invalidate();
+        j = await create();
+      }
+      if (j.errcode) throw new Error(`qrcode/create: ${j.errcode} ${j.errmsg}`);
+      if (!j.ticket) throw new Error("qrcode/create returned no ticket");
+      return { url: `https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket=${encodeURIComponent(j.ticket)}` };
+    },
+  },
 
   async verifyWebhook(req, cred) {
     checkSignature(cred, req.query);

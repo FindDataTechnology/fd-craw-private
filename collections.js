@@ -2,16 +2,16 @@
 //
 // Named groups of documents. Collections and their memberships persist in the
 // project SQLite database (db.js). Collection CRUD + membership management are
-// thin wrappers over the db helpers; querying a collection reuses the existing
-// PageIndex-through-LlamaIndex retrieval (delegated to documents.js) but scoped
-// to the collection's ready member documents.
+// thin wrappers over the db helpers. A collection is a chat-starting selection
+// ("Start conversation" hands its members to the chat composer) and an optional
+// scoping filter for the agent's library search tool — there is no
+// collection-scoped RAG query anymore.
 //
 // Deleting a document cascade-removes its memberships (FK ON DELETE CASCADE);
 // deleting a collection removes its memberships but leaves documents intact.
 
 import { randomUUID } from "node:crypto";
 import * as db from "./db.js";
-import { queryCollectionDocuments } from "./documents.js";
 
 function notFound(msg) {
   return Object.assign(new Error(msg), { status: 404 });
@@ -64,10 +64,4 @@ export function addDocument(collectionId, documentId) {
 // Remove a document from a collection. Idempotent (no error if not a member).
 export function removeDocument(collectionId, documentId) {
   db.removeDocumentFromCollection(collectionId, documentId);
-}
-
-// Query within a collection: retrieve over only its ready member documents.
-export async function queryCollection(collectionId, query) {
-  if (!db.getCollection(collectionId)) throw notFound("Collection not found");
-  return queryCollectionDocuments(query, collectionId);
 }
