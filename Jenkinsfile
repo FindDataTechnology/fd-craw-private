@@ -58,6 +58,41 @@ pipeline {
       }
     }
 
+    // Boot the image before pushing it. A build that compiles is not an image
+    // that runs: the first version of this pipeline pruned @llamaindex/core out
+    // of node_modules and produced an image that died at boot with
+    // ERR_MODULE_NOT_FOUND — which only shows up when something actually starts
+    // server.js. This is that something. Runs on bridge networking on 3101, so it
+    // never touches the production pod's host-network port 3100.
+    stage('Smoke test') {
+      steps {
+        sh '''
+          set -e
+          docker rm -f platform-smoke >/dev/null 2>&1 || true
+          rm -rf /tmp/platform-smoke
+          mkdir -p /tmp/platform-smoke
+          chown 1000:1000 /tmp/platform-smoke
+          docker run -d --name platform-smoke \
+            -e AUTH_MODE=none -e PORT=3000 -e HOST=0.0.0.0 \
+            -e PLATFORM_DATA_DIR=/data -e NODE_ENV=production \
+            -v /tmp/platform-smoke:/data -p 3101:3000 \
+            "$IMAGE:$TAG" >/dev/null
+          ok=0
+          for i in $(seq 1 40); do
+            sleep 5
+            if [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' http://127.0.0.1:3101/api/config)" = "200" ]; then
+              ok=1; echo "smoke: /api/config healthy after ~$((i*5))s"; break
+            fi
+          done
+          if [ "$ok" != "1" ]; then
+            echo "SMOKE TEST FAILED — image does not serve /api/config; server logs follow"
+            docker logs platform-smoke 2>&1 | tail -40
+            exit 1
+          fi
+        '''
+      }
+    }
+
     stage('Push to Harbor') {
       steps {
         withCredentials([usernamePassword(credentialsId: 'harbor-platform',
@@ -75,7 +110,12 @@ pipeline {
   }
 
   post {
-    always { sh 'docker logout "$REGISTRY" || true' }
+    always {
+      // Also drops the smoke container: the stage exits early on failure without
+      // cleaning up, and a leftover one would hold 3101 for the next build.
+      sh 'docker rm -f platform-smoke >/dev/null 2>&1 || true'
+      sh 'docker logout "$REGISTRY" || true'
+    }
     // The tag is what the ArgoCD manifest needs to reference; it is deliberately
     // not bumped here (same as law-bench) — the platform manifest is committed by
     // hand so a deploy is always a reviewable commit.

@@ -124,12 +124,17 @@ COPY . .
 
 # Build the React frontend, then all bundled Linux resources.
 # predist = build-node + verify-bundle.
-# The prune drops build-only deps (vite, electron, biome, typescript, playwright)
-# from the tree the runtime stage copies — they are ~150MB that never executes at
-# runtime. It must come AFTER web:build/predist, which need them.
+#
+# No `npm prune --omit=dev` here, deliberately — it was tried and it produced an
+# image that dies at boot with ERR_MODULE_NOT_FOUND. @llamaindex/readers is the
+# only @llamaindex package in `dependencies` and it declares @llamaindex/core as
+# a peer, so prune drops the whole @llamaindex tree (core/env/openai, 344MB) even
+# though readers/docx/dist/index.js imports it at load time. Same failure mode as
+# the dsh peer rows above. The saving is illusory anyway: root devDependencies are
+# only electron/typescript/playwright/biome (~12MB) — the web build's deps live in
+# web/node_modules and are never copied to the runtime stage.
 RUN npm run web:build \
-    && npm run predist \
-    && npm prune --omit=dev
+    && npm run predist
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM ${BASE_IMAGE} AS runtime
