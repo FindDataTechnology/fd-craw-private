@@ -59,33 +59,46 @@ pipeline {
     }
 
     // Boot the image before pushing it. A build that compiles is not an image
-    // that runs: the first version of this pipeline pruned @llamaindex/core out
-    // of node_modules and produced an image that died at boot with
-    // ERR_MODULE_NOT_FOUND — which only shows up when something actually starts
-    // server.js. This is that something. Runs on bridge networking on 3101, so it
-    // never touches the production pod's host-network port 3100.
+    // that runs: two revisions of this pipeline produced images that bound port
+    // 3000 and then died moments later — one with @llamaindex/core pruned out of
+    // node_modules (ERR_MODULE_NOT_FOUND), one whose runtime stage omitted the
+    // dsh-profile-template/ dir that dsh-profile.js reads at startup (ENOENT).
+    // Neither shows up at build time. This is what shows up.
     stage('Smoke test') {
       steps {
         sh '''
           set -e
           docker rm -f platform-smoke >/dev/null 2>&1 || true
-          rm -rf /tmp/platform-smoke
-          mkdir -p /tmp/platform-smoke
-          chown 1000:1000 /tmp/platform-smoke
+          # No published port and no bind mount, both deliberately:
+          #  * a -v path is resolved by the HOST daemon while this script runs
+          #    inside the Jenkins pod, so a directory created here is not the one
+          #    that gets mounted; docker then silently creates a root-owned dir
+          #    that the container's UID 1000 cannot write, and the app dies in
+          #    first-run with EACCES. The image already ships a writable /data,
+          #    which is all this test wants anyway.
+          #  * -p would publish on the HOST's loopback, which this pod cannot
+          #    reach, so the probe would fail even on a perfectly good image.
+          # The image ships curl, and the probe below runs inside the
+          # container's own netns — nothing has to leave it.
           docker run -d --name platform-smoke \
             -e AUTH_MODE=none -e PORT=3000 -e HOST=0.0.0.0 \
             -e PLATFORM_DATA_DIR=/data -e NODE_ENV=production \
-            -v /tmp/platform-smoke:/data -p 3101:3000 \
             "$IMAGE:$TAG" >/dev/null
           ok=0
           for i in $(seq 1 40); do
             sleep 5
-            if [ "$(curl -s -o /dev/null -m 5 -w '%{http_code}' http://127.0.0.1:3101/api/config)" = "200" ]; then
+            if docker exec platform-smoke curl -fsS -m 5 http://127.0.0.1:3000/api/config >/dev/null 2>&1; then
               ok=1; echo "smoke: /api/config healthy after ~$((i*5))s"; break
+            fi
+            # server.js binds the port BEFORE it finishes async agent init, so a
+            # crash lands after a listening socket appeared — polling the probe
+            # alone would just look like a slow start. Catch the death directly.
+            if [ "$(docker inspect -f '{{.State.Running}}' platform-smoke 2>/dev/null)" != "true" ]; then
+              echo "smoke: container exited after ~$((i*5))s"; break
             fi
           done
           if [ "$ok" != "1" ]; then
-            echo "SMOKE TEST FAILED — image does not serve /api/config; server logs follow"
+            echo "SMOKE TEST FAILED — image does not serve /api/config; logs follow"
             docker logs platform-smoke 2>&1 | tail -40
             exit 1
           fi
@@ -112,7 +125,7 @@ pipeline {
   post {
     always {
       // Also drops the smoke container: the stage exits early on failure without
-      // cleaning up, and a leftover one would hold 3101 for the next build.
+      // cleaning up, and `docker run` would then refuse the next build's name.
       sh 'docker rm -f platform-smoke >/dev/null 2>&1 || true'
       sh 'docker logout "$REGISTRY" || true'
     }

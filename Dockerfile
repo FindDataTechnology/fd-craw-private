@@ -174,6 +174,10 @@ COPY --chown=node:node --from=builder /app/scripts ./scripts
 COPY --chown=node:node --from=builder /app/supervisor ./supervisor
 COPY --chown=node:node --from=builder /app/bootstrap ./bootstrap
 COPY --chown=node:node --from=builder /app/skills ./skills
+# Read at RUNTIME by dsh-profile.js (it copies the two bridge plugins out of here
+# into $DSH_HOME/profiles/<name>), so the builder copy above is not enough — an
+# image without this dir boots, binds the port, then dies on ENOENT.
+COPY --chown=node:node --from=builder /app/dsh-profile-template ./dsh-profile-template
 
 # Persistent state lives under /data: SQLite, sessions, chat-history, cron,
 # dev-settings.json. PLATFORM_DATA_DIR points the supervisor (local-services.js)
