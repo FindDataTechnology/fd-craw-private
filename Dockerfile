@@ -19,8 +19,16 @@
 # the bundled standalone Node (resources/node) is built for verify-bundle but not
 # used at runtime.
 
+# ── Base image ───────────────────────────────────────────────────────────────
+# A build arg because the two build hosts have opposite network access: the
+# GitHub runner (docker-deploy.yml) reaches Docker Hub, while the China build
+# host (Jenkins on cheap-3) cannot reach registry-1.docker.io at all and pulls
+# the cluster's Harbor mirror instead — its Jenkinsfile passes that as
+# BASE_IMAGE. Declared before the first FROM so both stages can use it.
+ARG BASE_IMAGE=node:25-bookworm-slim
+
 # ── Builder ──────────────────────────────────────────────────────────────────
-FROM node:25-bookworm-slim AS builder
+FROM ${BASE_IMAGE} AS builder
 
 # python3/make/g++ for native addons (better-sqlite3); curl + tar for
 # build-node, which curls the Node standalone release tarball and extracts it.
@@ -116,11 +124,15 @@ COPY . .
 
 # Build the React frontend, then all bundled Linux resources.
 # predist = build-node + verify-bundle.
+# The prune drops build-only deps (vite, electron, biome, typescript, playwright)
+# from the tree the runtime stage copies — they are ~150MB that never executes at
+# runtime. It must come AFTER web:build/predist, which need them.
 RUN npm run web:build \
-    && npm run predist
+    && npm run predist \
+    && npm prune --omit=dev
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
-FROM node:25-bookworm-slim AS runtime
+FROM ${BASE_IMAGE} AS runtime
 
 # ca-certificates for outbound HTTPS (Volces upstreams); curl for the
 # Docker HEALTHCHECK. Everything else is bundled under resources/ and needs
@@ -133,28 +145,30 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
 WORKDIR /app
 
 # Production deps (native addons already compiled in the builder), built frontend,
-# and the bundled Node.
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /opt/dsh /opt/dsh
-COPY --from=builder /opt/dsh-home /opt/dsh-home
+# and the bundled Node. Ownership is applied on the way in (`--chown`) instead of
+# with a recursive `chown -R` afterwards: chown rewrites every inode, so a later
+# RUN would duplicate the whole tree — node_modules included — into an extra layer.
+COPY --chown=node:node --from=builder /app/node_modules ./node_modules
+COPY --chown=node:node --from=builder /opt/dsh /opt/dsh
+COPY --chown=node:node --from=builder /opt/dsh-home /opt/dsh-home
 ENV PATH="/opt/dsh/node_modules/.bin:${PATH}" \
     DSH_HOME="/opt/dsh-home"
-COPY --from=builder /app/web/dist ./web/dist
-COPY --from=builder /app/resources ./resources
+COPY --chown=node:node --from=builder /app/web/dist ./web/dist
+COPY --chown=node:node --from=builder /app/resources ./resources
 
 # Application source: all root .js (server.js, paths.js, local-services.js,
 # bundle-manifest.js, chat-history.js, documents.js, mcp-bridge.js, …) + the
 # root JSON data files extension-store.js reads at runtime (market-catalog*.json)
 # + the dirs the supervisor/launcher need at runtime.
-COPY --from=builder /app/package.json /app/platform.bundle.json /app/mcp.example.json ./
-COPY --from=builder /app/market-catalog.json /app/market-catalog-skills.json ./
-COPY --from=builder /app/*.js ./
-COPY --from=builder /app/server ./server
-COPY --from=builder /app/lib ./lib
-COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/supervisor ./supervisor
-COPY --from=builder /app/bootstrap ./bootstrap
-COPY --from=builder /app/skills ./skills
+COPY --chown=node:node --from=builder /app/package.json /app/platform.bundle.json /app/mcp.example.json ./
+COPY --chown=node:node --from=builder /app/market-catalog.json /app/market-catalog-skills.json ./
+COPY --chown=node:node --from=builder /app/*.js ./
+COPY --chown=node:node --from=builder /app/server ./server
+COPY --chown=node:node --from=builder /app/lib ./lib
+COPY --chown=node:node --from=builder /app/scripts ./scripts
+COPY --chown=node:node --from=builder /app/supervisor ./supervisor
+COPY --chown=node:node --from=builder /app/bootstrap ./bootstrap
+COPY --chown=node:node --from=builder /app/skills ./skills
 
 # Persistent state lives under /data: SQLite, sessions, chat-history, cron,
 # dev-settings.json. PLATFORM_DATA_DIR points the supervisor (local-services.js)
@@ -166,8 +180,10 @@ ENV NODE_ENV=production \
     PLATFORM_DATA_DIR=/data
 
 # Run as the image's non-root `node` user (UID/GID 1000 in the official node image).
-# /data is chowned so first-run seeding + the sidecars can write there.
-RUN mkdir -p /data && chown -R node:node /data /app
+# Only /data is writable at runtime (PLATFORM_DATA_DIR); the app tree already
+# carries node ownership from the COPY --chown above, so there is no recursive
+# chown here — see the note on those COPY lines.
+RUN mkdir -p /data && chown node:node /data
 USER node
 
 EXPOSE 3000
