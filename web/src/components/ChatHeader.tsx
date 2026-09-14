@@ -16,6 +16,7 @@ import { Pencil, X, Check, MoreHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useChatStore } from "@/hooks/useChatStore";
 import { ChatSessionMenu } from "@/components/ChatSessionMenu";
+import { LocalFileButton } from "@/components/preview/LocalFileButton";
 import { presetDisplayName } from "@/components/AgentPresetPicker";
 
 interface Props {
@@ -188,6 +189,7 @@ export function ChatHeader({ send }: Props) {
             {presetLabel}
           </span>
         )}
+        <LocalFileButton className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" />
         <button
           type="button"
           ref={overflowRef}

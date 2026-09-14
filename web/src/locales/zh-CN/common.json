@@ -531,5 +531,15 @@
     "signIn": "登录后可保留你自己的模型和 MCP 偏好。",
     "lockedMcp": "管理员已锁定",
     "continueAnonymous": "不登录，直接使用"
+  },
+  "preview": {
+    "title": "文件预览",
+    "close": "关闭预览",
+    "download": "下载",
+    "loading": "加载中…",
+    "openLocal": "预览本地文件",
+    "openInDrawer": "预览",
+    "noRenderer": "此文件类型暂不支持预览。",
+    "downloadName": "下载 {{name}}"
   }
 }

@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import { Database, Sparkles, Search, PenLine } from "lucide-react";
 import { useChatStore } from "@/hooks/useChatStore";
 import { AgentPresetPicker } from "@/components/AgentPresetPicker";
+import { LocalFileButton } from "@/components/preview/LocalFileButton";
 import type { ClientMessage } from "@/types/ws";
 import type { LucideIcon } from "lucide-react";
 
@@ -155,6 +156,9 @@ export function ChatWelcome({ onPrefill, send }: Props) {
 
         {/* Footer: model + agent */}
         <footer className="flex items-center gap-3 border-t border-border pt-4 text-xs text-muted-foreground">
+          {/* Preview a file without starting a conversation — the welcome state
+              is where "just show me this file" most often lands. */}
+          <LocalFileButton className="flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground" />
           {currentModel && (
             <button
               type="button"

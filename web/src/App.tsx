@@ -17,6 +17,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-
 import { useTranslation } from "react-i18next";
 import { PanelLeft } from "lucide-react";
 import { useChatStore } from "@/hooks/useChatStore";
+import { usePreviewStore } from "@/hooks/usePreviewStore";
 import { useAuthStore } from "@/hooks/useAuth";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { Sidebar } from "@/components/Sidebar";
@@ -38,6 +39,10 @@ const TraceDetailPage = lazy(() =>
 const ExternalServicePage = lazy(() =>
   import("@/pages/EmbeddedServicePages").then((m) => ({ default: m.ExternalServicePage })),
 );
+// The preview drawer is code-split for the same reason as the pages above, and
+// one more: a session that never previews a file should not download the
+// renderers (mammoth among them).
+const PreviewDrawer = lazy(() => import("@/components/preview/PreviewDrawer"));
 
 function RouteFallback() {
   return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
@@ -60,6 +65,7 @@ export default function App() {
   );
   const { t } = useTranslation();
   const toggleAllThinking = useChatStore((s) => s.toggleAllThinking);
+  const previewOpen = usePreviewStore((s) => s.target !== null);
   const location = useLocation();
   const navigate = useNavigate();
   // Off-canvas nav drawer (below md the 240px rail would starve the content
@@ -242,6 +248,14 @@ export default function App() {
         </Suspense>
         <ToastHost />
       </div>
+
+      {/* File preview overlays the shell instead of replacing a region, so the
+          chat (and its socket) stays mounted while a file is open. */}
+      {previewOpen && (
+        <Suspense fallback={null}>
+          <PreviewDrawer />
+        </Suspense>
+      )}
 
       {settingsOpen && (
         <Routes>

@@ -531,5 +531,15 @@
     "signIn": "Inicia sesión para conservar tu modelo y tus preferencias de MCP.",
     "lockedMcp": "Bloqueado por tu administrador",
     "continueAnonymous": "Continuar sin iniciar sesión"
+  },
+  "preview": {
+    "title": "Vista previa de archivo",
+    "close": "Cerrar vista previa",
+    "download": "Descargar",
+    "loading": "Cargando…",
+    "openLocal": "Previsualizar un archivo local",
+    "openInDrawer": "Previsualizar",
+    "noRenderer": "No hay vista previa para este tipo de archivo.",
+    "downloadName": "Descargar {{name}}"
   }
 }

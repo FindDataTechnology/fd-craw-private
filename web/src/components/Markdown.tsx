@@ -5,12 +5,16 @@
 // SAFETY: rehype-raw is deliberately NOT enabled — raw HTML in model output
 // is rendered as text, closing the XSS surface without needing DOMPurify.
 
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { showToast } from "@/components/Toast";
+import { EChart } from "@/components/EChart";
+import { useChatStore } from "@/hooks/useChatStore";
+import { usePreviewStore } from "@/hooks/usePreviewStore";
+import { baseName, fileUrl, linkRef } from "@/lib/file-preview";
 
 const LANGS = [
   "typescript",
@@ -94,14 +98,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
           h1: (props) => <h1 className="mb-2 mt-4 text-lg font-semibold" {...props} />,
           h2: (props) => <h2 className="mb-2 mt-4 text-base font-semibold" {...props} />,
           h3: (props) => <h3 className="mb-2 mt-3 text-sm font-semibold" {...props} />,
-          a: (props) => (
-            <a
-              className="text-primary underline underline-offset-2 hover:opacity-80"
-              target="_blank"
-              rel="noopener noreferrer"
-              {...props}
-            />
-          ),
+          a: MarkdownLink,
           code: CodeRenderer,
           pre: ({ children }) => <>{children}</>, // pre is emitted by CodeRenderer instead
           table: (props) => (
@@ -124,6 +121,35 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
   );
 });
 
+// A file reference in model output opens the preview drawer instead of
+// navigating: our own file route verbatim, or a relative path with a previewable
+// extension (a model writing `[report](report.pdf)` should still land in the
+// drawer). Every other link keeps its normal behaviour.
+// biome-ignore lint/suspicious/noExplicitAny: react-markdown passes an opaque, untyped props bag to custom renderers
+function MarkdownLink({ href, children, ...rest }: any) {
+  const openPreview = usePreviewStore((s) => s.open);
+  const onClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    // Read the workspace at click time rather than subscribing: the drawer
+    // resolves the path against the root the server currently serves from.
+    const ref = linkRef(href, useChatStore.getState().currentWorkspace);
+    if (!ref) return;
+    e.preventDefault();
+    openPreview({ name: baseName(ref.rel), url: fileUrl(ref.root, ref.rel) });
+  };
+  return (
+    <a
+      className="text-primary underline underline-offset-2 hover:opacity-80"
+      target="_blank"
+      rel="noopener noreferrer"
+      href={href}
+      onClick={onClick}
+      {...rest}
+    >
+      {children}
+    </a>
+  );
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 // biome-ignore lint/suspicious/noExplicitAny: react-markdown v9 passes an opaque, untyped props bag to custom code renderers
 function CodeRenderer(props: any) {
@@ -138,7 +164,27 @@ function CodeRenderer(props: any) {
     );
   }
   const lang = (className ?? "").replace(/^language-/, "").split(/\s+/)[0] || "text";
+  if (lang === "echarts") return <ChartBlock code={raw} />;
   return <HighlightedCode code={raw} lang={lang} />;
+}
+
+// A fenced `echarts` block renders as a chart when its body parses as a JSON
+// object, and as the ordinary code block otherwise — which is also the streaming
+// case, since a half-arrived fence is simply unparseable and upgrades to a chart
+// once it completes. No error state, no streaming-aware branch.
+function ChartBlock({ code }: { code: string }) {
+  const option = useMemo(() => {
+    try {
+      const parsed: unknown = JSON.parse(code);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as object)
+        : null;
+    } catch {
+      return null;
+    }
+  }, [code]);
+  if (!option) return <HighlightedCode code={code} lang="echarts" />;
+  return <EChart option={option} />;
 }
 
 function HighlightedCode({ code, lang }: { code: string; lang: string }) {

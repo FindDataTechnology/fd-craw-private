@@ -30,6 +30,7 @@ import { registerExtensionRoutes } from "./server/routes/extensions.js";
 import { registerChatHistoryRoutes } from "./server/routes/chat-history.js";
 import { registerTraceRoutes } from "./server/routes/trace.js";
 import { registerUserBindingRoutes } from "./server/routes/user-bindings.js";
+import { registerFileRoutes } from "./server/routes/files.js";
 import { registerBotRoutes, WEBHOOK_PREFIX } from "./server/routes/bots.js";
 import { registerExternalServiceRoutes } from "./server/routes/external-services.js";
 import { attachDshEvents } from "./server/dsh-events.js";
@@ -136,6 +137,9 @@ registerChatHistoryRoutes(ctx);
 registerTraceRoutes(ctx);
 registerUserBindingRoutes(ctx);
 registerBotRoutes(ctx);
+// Preview drawer file serving — mounted with the other /api routes, BEFORE the
+// static SPA fallback, so the catch-all cannot shadow /api/files.
+registerFileRoutes(ctx);
 registerStaticAndFallback(ctx);
 registerExternalServiceRoutes(ctx);
 

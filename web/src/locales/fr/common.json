@@ -531,5 +531,15 @@
     "signIn": "Connectez-vous pour conserver votre modèle et vos préférences MCP.",
     "lockedMcp": "Verrouillé par votre administrateur",
     "continueAnonymous": "Continuer sans se connecter"
+  },
+  "preview": {
+    "title": "Aperçu du fichier",
+    "close": "Fermer l’aperçu",
+    "download": "Télécharger",
+    "loading": "Chargement…",
+    "openLocal": "Aperçu d’un fichier local",
+    "openInDrawer": "Aperçu",
+    "noRenderer": "Aucun aperçu disponible pour ce type de fichier.",
+    "downloadName": "Télécharger {{name}}"
   }
 }

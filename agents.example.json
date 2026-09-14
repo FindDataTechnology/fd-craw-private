@@ -59,6 +59,18 @@
       "apiUrl": "https://nango.example.com",
       "tags": ["integration"],
       "version": "1.0.0"
+    },
+    {
+      "id": "kkfileview",
+      "type": "app",
+      "kind": "external-service",
+      "name": "File Preview Service",
+      "description": "Optional: renders file types the built-in preview drawer cannot (legacy Office, media, archives)",
+      "icon": "file-eye",
+      "url": "http://localhost:8012",
+      "embedded": true,
+      "tags": ["file-preview"],
+      "version": "1.0.0"
     }
   ]
 }

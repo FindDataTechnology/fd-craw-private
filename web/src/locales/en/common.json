@@ -531,5 +531,15 @@
       "optionalSsoHint": "Sign in with your organization’s SSO to keep your own model and MCP preferences on this shared runtime.",
       "signedOutHint": "Sign in through your organization’s SSO to use this instance."
     }
+  },
+  "preview": {
+    "title": "File preview",
+    "close": "Close preview",
+    "download": "Download",
+    "loading": "Loading…",
+    "openLocal": "Preview a local file",
+    "openInDrawer": "Preview",
+    "noRenderer": "No preview available for this file type.",
+    "downloadName": "Download {{name}}"
   }
 }

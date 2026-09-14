@@ -1,7 +1,9 @@
-import { ChevronRight, Loader2, Wrench } from "lucide-react";
+import { ChevronRight, Eye, Loader2, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
-import type { Block } from "@/hooks/useChatStore";
+import { useChatStore, type Block } from "@/hooks/useChatStore";
+import { usePreviewStore } from "@/hooks/usePreviewStore";
+import { baseName, fileUrl, findFilePath, resolveRef } from "@/lib/file-preview";
 import { memo, useId } from "react";
 
 interface Props {
@@ -23,6 +25,13 @@ function ToolBlockBase({ block, onToggle }: Props) {
   const { t } = useTranslation();
   const { name, args, state, result, partial, open } = block;
   const bodyId = useId();
+  const openPreview = usePreviewStore((s) => s.open);
+  // Subscribed (not read by getState) so a later workspace switch re-resolves
+  // the file reference against the root the server would now serve from.
+  const workspace = useChatStore((s) => s.currentWorkspace);
+  // Any file the call named — written, or just read — is offerable. A path that
+  // does not resolve to a served root simply yields no action.
+  const fileRef = state === "done" ? resolveRef(findFilePath(args, result) ?? "", workspace) : null;
   const accent =
     state === "running"
       ? "border-l-primary"
@@ -62,6 +71,19 @@ function ToolBlockBase({ block, onToggle }: Props) {
       </button>
       {open && (
         <div id={bodyId} className="max-h-72 space-y-2 overflow-y-auto border-t border-border px-3 py-2 text-[11px]">
+          {fileRef && (
+            <button
+              type="button"
+              data-testid="tool-preview"
+              onClick={() =>
+                openPreview({ name: baseName(fileRef.rel), url: fileUrl(fileRef.root, fileRef.rel) })
+              }
+              className="inline-flex items-center gap-1 rounded-sm border border-border bg-background px-2 py-0.5 font-medium text-foreground hover:bg-muted"
+            >
+              <Eye className="h-3 w-3" aria-hidden="true" />
+              {t("preview.openInDrawer")}
+            </button>
+          )}
           {args !== undefined && args !== null && (
             <Section label={t("turn.input")} body={stringify(args)} />
           )}
