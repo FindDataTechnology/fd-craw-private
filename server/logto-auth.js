@@ -63,16 +63,23 @@ function keyForHeader(header, jwks) {
   return createPublicKey({ key, format: "jwk" });
 }
 
+// JWS alg -> the digest Node needs. ECDSA signatures are verified in JWS encoding
+// (raw r||s, "ieee-p1363"), not DER; dsaEncoding is ignored for RSA, so RS256 rides
+// the same call. Logto's stock tenant key signs ES384 — supporting only
+// RS256/ES256 rejects every token it issues.
+const ID_TOKEN_ALGS = { RS256: "sha256", ES256: "sha256", ES384: "sha384", ES512: "sha512" };
+
 function verifyIdToken(token, discovery, clientId, nonce, now = Date.now()) {
   const parts = String(token || "").split(".");
   if (parts.length !== 3) throw new Error("Invalid ID token");
   const header = decodeJson(parts[0]);
   const payload = decodeJson(parts[1]);
   const signature = Buffer.from(parts[2], "base64url");
-  if (!["RS256", "ES256"].includes(header.alg)) throw new Error("Unsupported ID token algorithm");
+  const hash = ID_TOKEN_ALGS[header.alg];
+  if (!hash) throw new Error("Unsupported ID token algorithm");
   const discoveryKeys = discovery.jwks || {};
   const key = keyForHeader(header, discoveryKeys);
-  if (!verify(null, Buffer.from(`${parts[0]}.${parts[1]}`), key, signature)) {
+  if (!verify(hash, Buffer.from(`${parts[0]}.${parts[1]}`), { key, dsaEncoding: "ieee-p1363" }, signature)) {
     throw new Error("Invalid ID token signature");
   }
   const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud].filter(Boolean);

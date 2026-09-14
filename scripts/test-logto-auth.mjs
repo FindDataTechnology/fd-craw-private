@@ -20,6 +20,9 @@ const discovery = {
 const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const jwk = publicKey.export({ format: "jwk" });
 const jwks = { keys: [{ ...jwk, kid: "test-key", use: "sig", alg: "ES256" }] };
+// Logto's stock tenant key is EC P-384 and signs ES384.
+const p384 = generateKeyPairSync("ec", { namedCurve: "secp384r1" });
+const p384Jwks = { keys: [{ ...p384.publicKey.export({ format: "jwk" }), kid: "p384-key", use: "sig", alg: "ES384" }] };
 
 function response(body, ok = true) {
   return { ok, status: ok ? 200 : 400, json: async () => body };
@@ -38,8 +41,8 @@ function config(overrides = {}) {
   };
 }
 
-function idToken({ nonce, exp = Math.floor(Date.now() / 1000) + 60, claims = {} } = {}) {
-  const header = JSON.stringify({ alg: "ES256", kid: "test-key", typ: "JWT" });
+function idToken({ nonce, exp = Math.floor(Date.now() / 1000) + 60, claims = {}, key = privateKey, alg = "ES256", kid = "test-key" } = {}) {
+  const header = JSON.stringify({ alg, kid, typ: "JWT" });
   const payload = JSON.stringify({
     iss: issuer,
     aud: "client",
@@ -51,7 +54,9 @@ function idToken({ nonce, exp = Math.floor(Date.now() / 1000) + 60, claims = {} 
     ...claims,
   });
   const body = `${Buffer.from(header).toString("base64url")}.${Buffer.from(payload).toString("base64url")}`;
-  const signature = signJwt("sha256", Buffer.from(body), privateKey).toString("base64url");
+  const hash = alg === "ES384" ? "sha384" : "sha256";
+  // JWS signatures are raw r||s, not DER — sign the way a real OP does.
+  const signature = signJwt(hash, Buffer.from(body), { key, dsaEncoding: "ieee-p1363" }).toString("base64url");
   return `${body}.${signature}`;
 }
 
@@ -209,4 +214,63 @@ test("sliding renewal refreshes near-expiry cookies only", async () => {
 
 test("organization claims map to groups", () => {
   assert.deepEqual(mapGroups({ organizations: ["finddata"], organization_roles: ["finddata:admin"] }), ["finddata", "admin"]);
+});
+
+function callbackRequest(nonce) {
+  const req = request("/auth/callback?code=code&state=state");
+  req.headers.cookie = `paas_oauth_state=${signSession({ state: "state", nonce, exp: Math.floor(Date.now() / 1000) + 60 }, secret)}`;
+  return req;
+}
+
+test("ES384 ID tokens verify (Logto's stock algorithm)", async () => {
+  const nonce = "nonce";
+  const token = idToken({ nonce, key: p384.privateKey, alg: "ES384", kid: "p384-key" });
+  const auth = await createLogtoAuth(config(), {
+    fetchImpl: responseStub({ tokenBody: { id_token: token }, jwksBody: p384Jwks }),
+  });
+  const res = responseRecorder();
+  await registerHandlers(auth)["/auth/callback"](callbackRequest(nonce), res);
+  assert.equal(res.redirectUrl, "/");
+  assert.ok(sessionCookie(res));
+});
+
+test("a tampered ES384 signature is rejected", async () => {
+  const nonce = "nonce";
+  const [header, payload, encodedSignature] = idToken({ nonce, key: p384.privateKey, alg: "ES384", kid: "p384-key" }).split(".");
+  const signature = Buffer.from(encodedSignature, "base64url");
+  signature[0] ^= 0x01;
+  const tampered = `${header}.${payload}.${signature.toString("base64url")}`;
+  const auth = await createLogtoAuth(config(), {
+    fetchImpl: responseStub({ tokenBody: { id_token: tampered }, jwksBody: p384Jwks }),
+  });
+  const res = responseRecorder();
+  await registerHandlers(auth)["/auth/callback"](callbackRequest(nonce), res);
+  assert.equal(res.redirectUrl, "/?auth_error=token");
+  assert.equal(sessionCookie(res), undefined);
+});
+
+test("an unknown ID-token algorithm is rejected", async () => {
+  const nonce = "nonce";
+  const token = idToken({ nonce, key: p384.privateKey, alg: "HS256", kid: "p384-key" });
+  const auth = await createLogtoAuth(config(), {
+    fetchImpl: responseStub({ tokenBody: { id_token: token }, jwksBody: p384Jwks }),
+  });
+  const res = responseRecorder();
+  await registerHandlers(auth)["/auth/callback"](callbackRequest(nonce), res);
+  assert.equal(res.redirectUrl, "/?auth_error=token");
+  assert.equal(sessionCookie(res), undefined);
+});
+
+test("RS256 ID tokens still verify", async () => {
+  const nonce = "nonce";
+  const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const rsaJwks = { keys: [{ ...rsa.publicKey.export({ format: "jwk" }), kid: "rsa-key", use: "sig", alg: "RS256" }] };
+  const token = idToken({ nonce, key: rsa.privateKey, alg: "RS256", kid: "rsa-key" });
+  const auth = await createLogtoAuth(config(), {
+    fetchImpl: responseStub({ tokenBody: { id_token: token }, jwksBody: rsaJwks }),
+  });
+  const res = responseRecorder();
+  await registerHandlers(auth)["/auth/callback"](callbackRequest(nonce), res);
+  assert.equal(res.redirectUrl, "/");
+  assert.ok(sessionCookie(res));
 });
