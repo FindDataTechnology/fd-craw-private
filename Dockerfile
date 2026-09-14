@@ -9,15 +9,17 @@
 #   docker build -t harbor.local/paas_private/platform .
 #   docker run -p 3000:3000 -v platform-data:/data harbor.local/paas_private/platform
 #
-# Multi-stage: the builder compiles native addons + builds web/dist + builds all
-# Linux bundled resources (`npm run predist`); the runtime stage copies only what
-# is needed. Node 25 is used in BOTH stages: the same major the release.yml CI
-# uses, AND the lockfile was generated under npm 11 (Node 22's npm 10 misreads
-# it — "Missing: zod@... from lock file"). The system Node ABI then matches the
-# native addons compiled at `npm ci` time (better-sqlite3, tree-sitter); the
-# supervisor runs server.js + sidecars on the system Node (process.execPath), so
-# the bundled standalone Node (resources/node) is built for verify-bundle but not
-# used at runtime.
+# Multi-stage: the builder compiles native addons + builds web/dist; the runtime
+# stage copies only what is needed. Node 25 is used in BOTH stages: the same major
+# the release.yml CI uses, AND the lockfile was generated under npm 11 (Node 22's
+# npm 10 misreads it — "Missing: zod@... from lock file"). The system Node ABI then
+# matches the native addons compiled at `npm ci` time (better-sqlite3, tree-sitter).
+#
+# `npm run predist` is deliberately NOT run here. It builds resources/node — the
+# standalone Node the *desktop* bundle needs — while the supervisor runs server.js
+# on the system Node (process.execPath: this image's own Node), so nothing in the
+# container would use it. It is also a 53 MB download from nodejs.org that stalls
+# from the China build host.
 
 # ── Base image ───────────────────────────────────────────────────────────────
 # A build arg because the two build hosts have opposite network access: the
@@ -118,12 +120,12 @@ RUN npm config set fetch-retries 5 fetch-retry-mintimeout 20000 fetch-retry-maxt
          @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5 \
          @deepseek-ai/dsh-sdk-protocol@0.1.1-rc.2
 
-# Copy the rest of the source. Built resource payload dirs are .dockerignored so
-# a host's mac/win binaries never leak in — resources are built fresh for Linux.
+# Copy the rest of the source. resources/ is .dockerignored: it holds only the
+# platform-specific standalone Node that predist downloads, which this image does
+# not build and does not use.
 COPY . .
 
-# Build the React frontend, then all bundled Linux resources.
-# predist = build-node + verify-bundle.
+# Build the React frontend. (No `npm run predist` — see the header note.)
 #
 # No `npm prune --omit=dev` here, deliberately — it was tried and it produced an
 # image that dies at boot with ERR_MODULE_NOT_FOUND. @llamaindex/readers is the
@@ -133,15 +135,14 @@ COPY . .
 # the dsh peer rows above. The saving is illusory anyway: root devDependencies are
 # only electron/typescript/playwright/biome (~12MB) — the web build's deps live in
 # web/node_modules and are never copied to the runtime stage.
-RUN npm run web:build \
-    && npm run predist
+RUN npm run web:build
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM ${BASE_IMAGE} AS runtime
 
 # ca-certificates for outbound HTTPS (Volces upstreams); curl for the
-# Docker HEALTHCHECK. Everything else is bundled under resources/ and needs
-# no system packages.
+# Docker HEALTHCHECK. Everything else is bundled in node_modules / web/dist and
+# needs no system packages.
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
@@ -149,17 +150,16 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
 
 WORKDIR /app
 
-# Production deps (native addons already compiled in the builder), built frontend,
-# and the bundled Node. Ownership is applied on the way in (`--chown`) instead of
-# with a recursive `chown -R` afterwards: chown rewrites every inode, so a later
-# RUN would duplicate the whole tree — node_modules included — into an extra layer.
+# Production deps (native addons already compiled in the builder) and the built
+# frontend. Ownership is applied on the way in (`--chown`) instead of with a
+# recursive `chown -R` afterwards: chown rewrites every inode, so a later RUN
+# would duplicate the whole tree — node_modules included — into an extra layer.
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /opt/dsh /opt/dsh
 COPY --chown=node:node --from=builder /opt/dsh-home /opt/dsh-home
 ENV PATH="/opt/dsh/node_modules/.bin:${PATH}" \
     DSH_HOME="/opt/dsh-home"
 COPY --chown=node:node --from=builder /app/web/dist ./web/dist
-COPY --chown=node:node --from=builder /app/resources ./resources
 
 # Application source: all root .js (server.js, paths.js, local-services.js,
 # bundle-manifest.js, chat-history.js, documents.js, mcp-bridge.js, …) + the
