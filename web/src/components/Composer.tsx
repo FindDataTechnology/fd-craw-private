@@ -24,6 +24,8 @@ import type { ClientMessage } from "@/types/ws";
 import { cn } from "@/lib/utils";
 import { showToast } from "@/components/Toast";
 import { uploadFile } from "@/lib/documents-api";
+import { usePreviewStore } from "@/hooks/usePreviewStore";
+import { fileUrl, type FileRef } from "@/lib/file-preview";
 
 // One attached document chip. `key` is the local chip identity — the server
 // document id doesn't exist until the upload resolves.
@@ -33,6 +35,9 @@ interface Attachment {
   name: string;
   state: "uploading" | "attached" | "error";
   error?: string;
+  // Where the server stored this file's original, so the chip can open it in
+  // the preview drawer. Set on success and on extraction failure alike.
+  preview?: FileRef;
 }
 let attachSeq = 0;
 
@@ -66,6 +71,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   // restarting runtime would just error.
   const pendingConfig = useChatStore((s) => s.pendingConfig);
   const hasPermissionRoster = useChatStore((s) => s.permissionOptions.length > 0);
+  const openPreview = usePreviewStore((s) => s.open);
 
   const [acIdx, setAcIdx] = useState(0);
   // Esc "dismisses" the picker without clearing the composer (a separate
@@ -201,7 +207,13 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
         setAttachments((a) =>
           a.map((x) =>
             x.key === key
-              ? { ...x, id: doc.id, name: doc.name || f.name, state: "attached" as const }
+              ? {
+                  ...x,
+                  id: doc.id,
+                  name: doc.name || f.name,
+                  state: "attached" as const,
+                  preview: doc.preview ?? undefined,
+                }
               : x,
           ),
         );
@@ -212,8 +224,13 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
           continue;
         }
         const message = (err as Error).message.slice(0, 120);
+        // Extraction failed, but the server still stored the original: keep the
+        // reference so the failed chip can show the file.
+        const preview = (err as Error & { preview?: FileRef }).preview;
         setAttachments((a) =>
-          a.map((x) => (x.key === key ? { ...x, state: "error" as const, error: message } : x)),
+          a.map((x) =>
+            x.key === key ? { ...x, state: "error" as const, error: message, preview } : x,
+          ),
         );
         // The chip shows the failure; the toast carries the reason.
         showToast(t("composer.uploadFailed", { message: message.slice(0, 80) }));
@@ -228,6 +245,13 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
     abortRef.current.get(key)?.abort();
     abortRef.current.delete(key);
     setAttachments((a) => a.filter((x) => x.key !== key));
+  };
+
+  // Open a chip's stored original in the preview drawer. Only chips whose file
+  // the server actually stored carry a reference.
+  const previewAttachment = (a: Attachment) => {
+    if (!a.preview) return;
+    openPreview({ name: a.name, url: fileUrl(a.preview.root, a.preview.rel) });
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -369,7 +393,18 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
                 ) : (
                   <Paperclip className="h-3 w-3 text-muted-foreground" />
                 )}
-                <span className="max-w-[12rem] truncate">{a.name}</span>
+                {a.preview ? (
+                  <button
+                    type="button"
+                    onClick={() => previewAttachment(a)}
+                    aria-label={t("preview.openInDrawer")}
+                    className="max-w-[12rem] truncate underline-offset-2 hover:underline focus-visible:underline"
+                  >
+                    {a.name}
+                  </button>
+                ) : (
+                  <span className="max-w-[12rem] truncate">{a.name}</span>
+                )}
                 <button
                   onClick={() => removeAttachment(a.key)}
                   aria-label={a.state === "uploading" ? t("composer.cancelUpload") : t("composer.removeAttachment")}
@@ -386,6 +421,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
             ref={fileInputRef}
             type="file"
             multiple
+            data-testid="composer-file-input"
             className="hidden"
             onChange={(e) => {
               attachFiles(Array.from(e.target.files ?? []));

@@ -7,9 +7,8 @@
 // origin is never served inline — anything off the safe-type allowlist forces a
 // download disposition with an opaque type.
 
-import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { storeDir } from "../../paths.js";
 
 // Uploaded files get their own root, apart from the agent workspace: the agent
@@ -34,16 +33,43 @@ const INLINE_TYPES = new Map([
   [".log", "text/plain; charset=utf-8"],
 ]);
 
-// Write a buffer into the uploads root under a collision-free name and return
-// the { root, path } reference the serving route resolves. This is the write
-// path into the uploads root; it has no HTTP surface yet — the composer still
-// indexes attachments for RAG (a non-goal of this change).
-export async function saveUploadFile(buffer, filename) {
-  await mkdir(UPLOADS_DIR, { recursive: true });
-  const safe = path.basename(String(filename || "upload")).replace(/[^\w.-]+/g, "_");
-  const name = `${randomUUID()}-${safe}`;
-  await writeFile(path.join(UPLOADS_DIR, name), buffer);
-  return { root: "uploads", path: name };
+// A document id is a UUID; anything else in a key position is refused rather
+// than resolved. DELETE /api/documents/:id takes its id from the URL, so a
+// crafted id must never be able to name a directory outside the uploads root.
+function safeKey(key) {
+  const k = String(key ?? "");
+  return /^[A-Za-z0-9_-]{1,64}$/.test(k) ? k : null;
+}
+
+// Write a buffer under a per-document directory and return the { root, rel }
+// reference the serving route resolves. Keying by document id makes the stored
+// original a pure function of that id: nothing has to be persisted to find it
+// again, and removing the document removes the directory (removeUploadDir).
+// This is the write path for composer attachments.
+export async function saveUploadFile(buffer, filename, key) {
+  const id = safeKey(key);
+  if (!id) throw new Error("saveUploadFile requires a safe key");
+  const dir = path.join(UPLOADS_DIR, id);
+  await mkdir(dir, { recursive: true });
+  // A leading dot would make the stored name a dotfile, which the serving route
+  // refuses (dotfiles: "deny") — the reference would 403 forever. Strip leading
+  // dots, and never let the name collapse to "." or "..": path.join would
+  // resolve that back onto the uploads root and the write would fail EISDIR.
+  const safe =
+    path.basename(String(filename || "upload"))
+      .replace(/[^\w.-]+/g, "_")
+      .replace(/^\.+/, "") || "upload";
+  const rel = `${id}/${safe}`;
+  await writeFile(path.join(UPLOADS_DIR, rel), buffer);
+  return { root: "uploads", rel };
+}
+
+// Remove a document's stored original. Idempotent: a missing directory is a
+// success, so deleting a document twice does not error.
+export async function removeUploadDir(key) {
+  const id = safeKey(key);
+  if (!id) return;
+  await rm(path.join(UPLOADS_DIR, id), { recursive: true, force: true });
 }
 
 function rootsFor(ctx) {
@@ -105,7 +131,12 @@ export function registerFileRoutes(ctx) {
     } else {
       res.type("application/octet-stream");
     }
-    // sendFile adds Range/ETag/HEAD and keeps the Content-Type already set.
-    res.sendFile(real, { dotfiles: "deny" });
+    // Send the path RELATIVE to the served root: `send` applies its dotfile
+    // policy to the path it is handed, so an absolute path makes a dot in the
+    // root's own prefix (a home dir like /Users/john.doe, or the e2e temp root)
+    // look like a forbidden dotfile and 403s every file. Relative keeps the
+    // guard where it belongs — a `.env` inside the root is still denied.
+    // sendFile also adds Range/ETag/HEAD and keeps the Content-Type already set.
+    res.sendFile(path.relative(realRoot, real), { root: realRoot, dotfiles: "deny" });
   });
 }

@@ -1,6 +1,8 @@
 // Client wrappers for the document + collection REST endpoints.
 // Mirrors the vanilla app.js behavior but typed and React-friendly.
 
+import type { FileRef } from "@/lib/file-preview";
+
 export interface DocMeta {
   id: string;
   name: string;
@@ -8,6 +10,9 @@ export interface DocMeta {
   status: "queued" | "indexing" | "ready" | "error";
   error?: string;
   addedAt?: string;
+  // Where the upload's original was stored for the preview drawer. Present
+  // whenever the request carried a file — including on extraction failure.
+  preview?: FileRef | null;
 }
 
 export interface CollectionMeta {
@@ -48,7 +53,21 @@ export async function uploadFile(file: File, signal?: AbortSignal): Promise<DocM
   const fd = new FormData();
   fd.append("file", file);
   const r = await fetch("/api/documents", { method: "POST", body: fd, signal });
-  return jsonOrThrow<DocMeta>(r);
+  if (!r.ok) {
+    // A failed extraction still stored the original, so carry its preview
+    // reference on the thrown error — the chip stays previewable even when
+    // indexing failed. jsonOrThrow would discard this response body.
+    let body: { error?: string; preview?: FileRef } | null = null;
+    try {
+      body = await r.json();
+    } catch {
+      /* non-JSON error body */
+    }
+    const err = new Error(body?.error || `HTTP ${r.status}`) as Error & { preview?: FileRef };
+    if (body?.preview) err.preview = body.preview;
+    throw err;
+  }
+  return r.json() as Promise<DocMeta>;
 }
 
 export async function addText(content: string, name?: string): Promise<DocMeta> {

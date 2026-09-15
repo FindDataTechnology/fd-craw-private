@@ -5,6 +5,8 @@
 // failure). Status transitions still broadcast as documents_status WS events
 // as a consistency mechanism.
 
+import { removeUploadDir, saveUploadFile } from "./files.js";
+
 export function registerDocumentRoutes(ctx) {
   const { app, db, documents, collections, upload } = ctx;
 
@@ -27,12 +29,26 @@ export function registerDocumentRoutes(ctx) {
         url: req.body.url,
       });
 
+      // Persist the original alongside ingestion so the composer chip can
+      // preview it. addDocument returns an id on BOTH outcomes, so the file is
+      // stored even when extraction failed — the case where a user most wants
+      // to open the source. Best-effort: a write failure must not fail the
+      // attachment, whose real job (ingestion) already happened.
+      let preview = null;
+      if (req.file) {
+        try {
+          preview = await saveUploadFile(req.file.buffer, req.file.originalname, result.id);
+        } catch (err) {
+          console.error(`[documents] storing attachment original failed: ${err.message}`);
+        }
+      }
+
       // Extraction failed: the row persists as `error` (visible in the list);
       // 422 lets the client attachment chip show the failure.
       if (result.status === "error") {
-        return res.status(422).json({ error: result.error, id: result.id, status: "error" });
+        return res.status(422).json({ error: result.error, id: result.id, status: "error", preview });
       }
-      res.json(result);
+      res.json({ ...result, preview });
     } catch (err) {
       res.status(err.status || 500).json({ error: err.message });
     }
@@ -54,6 +70,15 @@ export function registerDocumentRoutes(ctx) {
 
   app.delete("/api/documents/:id", async (req, res) => {
     const removed = await documents.removeDocument(req.params.id);
+    // Removing the document removes its stored attachment original too, so a
+    // delete never orphans bytes on disk (idempotent; refuses unsafe keys).
+    // Best-effort AND guarded: Express 4 does not catch a rejected async
+    // handler, and nothing upstream handles unhandled rejections, so an fs
+    // error here (EBUSY while the preview still streams the file, EPERM) would
+    // take the whole server down for a delete that already succeeded.
+    await removeUploadDir(req.params.id).catch((err) => {
+      console.error(`[documents] removing stored original failed: ${err.message}`);
+    });
     res.status(removed ? 200 : 404).json({ removed });
   });
 

@@ -98,6 +98,10 @@ export default defineConfig({
             DOCUMENTS_STORE_DIR: storeDirs.docs,
             SESSIONS_STORE_DIR: storeDirs.sessions,
             DB_PATH: storeDirs.db,
+            // Root for stores that have no specific override — notably
+            // uploads/, which attachment preview now writes the original into.
+            // Without this the suite drops uploaded files in the repo root.
+            PLATFORM_DATA_DIR: storeDirs.root,
             MCP_CONFIG_PATH: path.join(storeDirs.root, "mcp.json"),
             LLM_PROVIDERS_STORE: storeDirs.llmProviders,
             LLM_DEFAULT_STORE: storeDirs.llmDefault,

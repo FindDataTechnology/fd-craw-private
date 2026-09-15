@@ -24,6 +24,7 @@ chat-history-store/
 documents-store/
 sessions-store/
 cron-store/
+/uploads/
 knowledge-store.archive/
 test-results/
 # DB custom-skill materialization dir (runtime artifact; rebuilt from the DB)

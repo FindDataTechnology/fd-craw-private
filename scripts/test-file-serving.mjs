@@ -7,7 +7,7 @@
 
 import assert from "node:assert/strict";
 import { createServer, request as httpRequest } from "node:http";
-import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -16,7 +16,7 @@ import { test } from "node:test";
 // it before importing the route (a dev machine's ./uploads must not be touched).
 const DATA_DIR = await mkdtemp(path.join(tmpdir(), "file-preview-data-"));
 process.env.PLATFORM_DATA_DIR = DATA_DIR;
-const { registerFileRoutes, UPLOADS_DIR, saveUploadFile } = await import(
+const { registerFileRoutes, UPLOADS_DIR, saveUploadFile, removeUploadDir } = await import(
   "../server/routes/files.js"
 );
 
@@ -114,17 +114,88 @@ test("HTML and unknown types are forced to download, not served inline", async (
   }
 });
 
-test("uploads root serves files written by saveUploadFile", async () => {
-  const stored = await saveUploadFile(Buffer.from("uploaded bytes"), "my report.csv");
+test("uploads root serves files written by saveUploadFile, keyed by document id", async () => {
+  const stored = await saveUploadFile(Buffer.from("uploaded bytes"), "my report.csv", "doc-123");
   const app = await appWith(await mkdtemp(path.join(tmpdir(), "ws-")));
 
-  const res = await request(app, file(stored.root, stored.path));
+  assert.equal(stored.root, "uploads");
+  assert.equal(stored.rel, "doc-123/my_report.csv");
+
+  const res = await request(app, file(stored.root, stored.rel));
   assert.equal(res.status, 200);
   assert.equal(res.body.toString(), "uploaded bytes");
   // CSV is not an inline type: the client fetches it for the table renderer,
   // which a download disposition does not block.
   assert.match(res.headers["content-disposition"], /^attachment;/);
   assert.ok(UPLOADS_DIR.startsWith(DATA_DIR));
+});
+
+test("removeUploadDir removes a document's stored original and is idempotent", async () => {
+  const stored = await saveUploadFile(Buffer.from("bytes"), "a.bin", "doc-456");
+  const app = await appWith(await mkdtemp(path.join(tmpdir(), "ws-")));
+  assert.equal((await request(app, file(stored.root, stored.rel))).status, 200);
+
+  await removeUploadDir("doc-456");
+  assert.equal((await request(app, file(stored.root, stored.rel))).status, 404);
+
+  // Deleting twice must not error (a document row can be removed after its
+  // original is already gone).
+  await removeUploadDir("doc-456");
+});
+
+test("removeUploadDir refuses a key that would escape the uploads root", async () => {
+  // DELETE /api/documents/:id passes a URL-derived id straight to this helper,
+  // so a crafted key must be a no-op rather than a traversal.
+  const sentinel = path.join(DATA_DIR, "sentinel");
+  await mkdir(sentinel);
+  await removeUploadDir("../sentinel");
+  await removeUploadDir("..");
+  await removeUploadDir("a/../../sentinel");
+  assert.ok((await stat(sentinel)).isDirectory());
+});
+
+test("a root under a dotted path still serves; only dotfiles inside the root are refused", async () => {
+  // The dotfiles policy must be relative to the served root. Applied to an
+  // absolute path it would read a dot in the root's OWN prefix (a home dir like
+  // /Users/john.doe, or the e2e temp root) as a forbidden dotfile and 403
+  // everything.
+  const parent = await mkdtemp(path.join(tmpdir(), "wsparent-"));
+  const ws = path.join(parent, ".dotted-root");
+  await mkdir(ws);
+  await writeFile(path.join(ws, "ok.txt"), "served");
+  await writeFile(path.join(ws, ".env"), "SECRET");
+  const app = await appWith(ws);
+
+  const ok = await request(app, file("workspace", "ok.txt"));
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.toString(), "served");
+
+  // The guard still protects what it is for: a dotfile inside the root.
+  const secret = await request(app, file("workspace", ".env"));
+  assert.equal(secret.status, 403);
+  assert.ok(!secret.body.toString().includes("SECRET"));
+});
+
+test("a dotted upload filename is stored under a name the route can serve", async () => {
+  // Stored as-is, `.env` would be a dotfile: the route refuses it and the
+  // returned reference would 403 forever. The sanitizer strips the leading dot.
+  const stored = await saveUploadFile(Buffer.from("SECRET=x"), ".env", "doc-789");
+  assert.equal(stored.rel, "doc-789/env");
+
+  const app = await appWith(await mkdtemp(path.join(tmpdir(), "ws-")));
+  const res = await request(app, file(stored.root, stored.rel));
+  assert.equal(res.status, 200);
+  assert.equal(res.body.toString(), "SECRET=x");
+});
+
+test("an upload filename that would resolve onto the root is not silently lost", async () => {
+  // ".." normalizes back onto the uploads root, where writeFile fails EISDIR —
+  // which the ingest route swallows, leaving the attachment without a preview.
+  const stored = await saveUploadFile(Buffer.from("x"), "..", "doc-790");
+  assert.equal(stored.rel, "doc-790/upload");
+
+  const app = await appWith(await mkdtemp(path.join(tmpdir(), "ws-")));
+  assert.equal((await request(app, file(stored.root, stored.rel))).status, 200);
 });
 
 test("an unknown root is rejected", async () => {
