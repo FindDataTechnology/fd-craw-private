@@ -29,6 +29,8 @@ knowledge-store.archive/
 test-results/
 # DB custom-skill materialization dir (runtime artifact; rebuilt from the DB)
 custom-skills/
+# Hosted-gateway per-user cell roots (CELL_DATA_ROOT default; one dir per user)
+cell-data/
 
 # Headless local-services launcher dev state (generated creds, written under
 # PLATFORM_DATA_DIR / CWD by bootstrap/first-run.js).
@@ -70,7 +72,9 @@ connect-app/
 
 # Runtime-generated auth material. `resolveSessionSecret()` writes
 # ./auth/session-secret whenever PLATFORM_DATA_DIR is unset (dev runs), so this
-# dir appears in the working tree after any local `npm start`.
-auth/
+# dir appears in the working tree after any local `npm start`. Anchored to the
+# repo root on purpose: a bare `auth/` also matched openspec/specs/auth/ and
+# every openspec change's specs/auth/ delta, silently untracking them.
+/auth/
 # Deployment scratch (image build contexts / live-pod patches)
 .platform-*.tar.gz
