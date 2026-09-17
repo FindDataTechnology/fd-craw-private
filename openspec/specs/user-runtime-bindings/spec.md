@@ -27,7 +27,7 @@ The server SHALL expose `GET /api/users/me/bindings` only to a request with a se
 
 ### Requirement: Authenticated users can save a personal model binding
 
-The server SHALL expose `PUT /api/users/me/model` to an authenticated identity. The request body SHALL contain `providerId` and `modelId`; the server SHALL validate that the pair is present in the configured available model list, normalize the identity email, and persist the pair as that identity's model binding. Saving a personal binding SHALL NOT change the global default model or provider configuration. The server SHALL request application of the resulting effective profile when the shared runtime is idle. If the runtime is streaming or another profile operation is in progress, the server SHALL persist the binding and return a pending state rather than interrupting the operation. An unknown or unavailable model SHALL be rejected without changing persistence.
+The server SHALL expose `PUT /api/users/me/model` to an authenticated identity. The request body SHALL contain `providerId` and `modelId`; the server SHALL validate that the pair is present in the configured available model list, normalize the identity email, and persist the pair as that identity's model binding. Saving a personal binding SHALL NOT change the global default model or provider configuration. In a hosted cell the saved binding SHALL apply to the cell's own runtime as the global model-selection path does — the cell's single user is the runtime's only owner — and a binding saved while the runtime is streaming SHALL be applied when the current turn completes. An unknown or unavailable model SHALL be rejected without changing persistence.
 
 #### Scenario: valid model is saved
 - **WHEN** an authenticated user saves an available `{ "providerId": "...", "modelId": "..." }` pair
@@ -35,14 +35,15 @@ The server SHALL expose `PUT /api/users/me/model` to an authenticated identity. 
 - **AND** the global default model remains unchanged
 
 #### Scenario: model is applied while idle
-- **WHEN** a saved personal model is applied while the shared runtime is idle
-- **THEN** the runtime restarts with the selected provider and model
-- **AND** clients receive the resulting active model state
+- **WHEN** a saved personal model is applied while the user's runtime is idle
+- **THEN** that user's runtime restarts with the selected provider and model
+- **AND** that user's clients receive the resulting active model state
+- **AND** no other user's runtime is affected
 
 #### Scenario: model is saved while busy
-- **WHEN** an authenticated user saves a valid model while the runtime is streaming
+- **WHEN** an authenticated user saves a valid model while their runtime is streaming
 - **THEN** the binding is persisted
-- **AND** the response reports a pending application
+- **AND** the response reports that application follows the current turn's completion
 - **AND** the in-flight response is not interrupted
 
 #### Scenario: invalid model is rejected
@@ -80,31 +81,18 @@ The server SHALL expose `PATCH /api/users/me/mcp/:name/enable` to an authenticat
 - **AND** the response reports a pending application
 - **AND** the current MCP tool set is not changed until the runtime is idle
 
-### Requirement: Personal profiles apply to the shared runtime without preemption
+### Requirement: Runtime bindings are cell-scoped state
 
-The shared dsh runtime SHALL have one effective runtime profile at a time, composed from the global model/default MCP configuration and the active authenticated user's personal bindings. When an identity with a different effective profile connects or saves a binding, the runtime binding coordinator SHALL apply it only while the runtime is idle. A model change SHALL use the existing restart path; an MCP-only change SHALL use the existing hot-swap path. While a response, restart, or hot-swap is in progress, the requested profile SHALL be retained as pending and retried after the operation completes. A failed application SHALL leave the previous runtime profile active and report the failure to the requesting identity.
+In a hosted cell, per-user model bindings and MCP availability SHALL be stored in the cell's own database and SHALL take effect for that cell's runtime at cell start and on save, without an inter-user application protocol. The server SHALL NOT expose, in any response, another user's bindings or runtime state; within a cell there is exactly one binding scope (the cell's user), so `personalEnabled` overlays over a shared runtime's `globalEnabled` remain only for single-process non-cell modes.
 
-#### Scenario: idle profile switch
-- **WHEN** the runtime is idle and an authenticated user's effective profile differs from the active profile
-- **THEN** the coordinator applies the user's model and MCP availability
-- **AND** all clients observe the resulting runtime state
+#### Scenario: bindings apply at cell start
+- **WHEN** a user's cell starts and that user has a saved model binding and MCP availability
+- **THEN** the cell's runtime boots with that model
+- **AND** the cell's MCP patch reflects that user's enabled/disabled servers
 
-#### Scenario: busy profile switch becomes pending
-- **WHEN** a user requests a different profile while a response is streaming
-- **THEN** the request is retained as pending
-- **AND** the streaming response completes normally
-- **AND** the pending profile is applied after the runtime becomes idle
-
-#### Scenario: failed profile application preserves runtime
-- **WHEN** applying a pending profile fails
-- **THEN** the previous model and MCP tool set remain active
-- **AND** the requesting client receives an error
-- **AND** the pending request is not silently reported as applied
-
-#### Scenario: pending profile is re-requested explicitly
-- **WHEN** an authenticated user calls `POST /api/users/me/bindings/apply` after a profile was deferred
-- **THEN** the coordinator re-attempts the saved profile
-- **AND** applies it if the runtime is idle, or reports it as still pending if it is not
+#### Scenario: no cross-user application machinery
+- **WHEN** a user saves bindings in a hosted cell while any other user's cell exists
+- **THEN** only the saving user's cell and runtime are involved in applying the change
 
 ### Requirement: WebSocket state is identity-aware without exposing other users
 
