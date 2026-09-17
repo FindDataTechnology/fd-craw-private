@@ -340,7 +340,7 @@ async function handleModelCommand(args, ws) {
 async function startNewSession() {
   const id = await createNewSession();
   ctx.broadcast({ type: "session_changed", id });
-  ctx.broadcast({ type: "session_loaded", id, title: "New chat", messages: [], workdir: null });
+  ctx.broadcast({ type: "session_loaded", id, title: "New chat", messages: [] });
   const version = ctx.sessionVersion;
   const sessions = await chatHistory.listSessions();
   if (version === ctx.sessionVersion) {

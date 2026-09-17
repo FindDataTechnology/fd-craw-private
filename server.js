@@ -15,7 +15,6 @@ import * as bots from "./server/bots.js";
 import * as migrate from "./migrate.js";
 import * as cron from "./cron.js";
 import * as extensionStore from "./extension-store.js";
-import * as workdirStore from "./workdir-store.js";
 import * as catalog from "./catalog.js";
 import { initRegistryBridge, stopRegistryBridge } from "./registry-bridge.js";
 import { resolveBundleSafe } from "./bundle-manifest.js";
@@ -422,7 +421,6 @@ server.listen(PORT, HOST, () => {
 });
 
 await chatHistory.initChatHistory();
-await workdirStore.initWorkdirStore();
 // Open the SQLite project database (chat, documents, index, preferences) before
 // feature init. Degrades gracefully: if it cannot open, dbReady stays false and
 // the server continues (chat in-memory, documents disabled).

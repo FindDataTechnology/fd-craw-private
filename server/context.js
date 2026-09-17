@@ -20,7 +20,6 @@ import * as migrate from "../migrate.js";
 import * as cron from "../cron.js";
 import * as extensionStore from "../extension-store.js";
 import * as skillMaterialize from "../skill-materialize.js";
-import * as workdirStore from "../workdir-store.js";
 import * as catalog from "../catalog.js";
 
 // Split a bundle-manifest permissions policy ("mcp:<name>"/"skill:<name>" →
@@ -63,7 +62,6 @@ export function createAppContext(config) {
     cron,
     extensionStore,
     skillMaterialize,
-    workdirStore,
     catalog,
 
     // Injected by server.js after express/http/wss are constructed.
