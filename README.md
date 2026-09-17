@@ -107,6 +107,12 @@ Logto 控制台需要注册两个应用，并启用 organizations / organization
 
 组织名会映射为 group；`organization_roles` 的角色短名也会加入 group，例如 `finddata:admin` → `admin`。请在 Logto 应用的 ID token 中启用 `organizations` 和 `organization_roles`（或等价自定义 claims），并允许授权请求使用的 organizations scope。Platform 只读取这两个 claim 名称；需要管理员权限时，角色短名必须精确为 `admin`，因为目录和后台管理门禁按该名称匹配。回滚时取消 `AUTH_MODE` 即可恢复开放访问，已签发的 cookie 不再生效于认证流程。
 
+### 托管部署（cell 运行约定）
+
+云部署把每个用户放进一个独立的 **cell**：一个 `server.js` 进程 + 它自己的 dsh 运行时 + 它自己的数据目录。cell 之间不共享任何可变状态，隔离由进程边界保证，而不是靠应用内部的多租户逻辑；桌面版和 `npm start` 就是这个模型的单 cell 形态。
+
+每个 cell 的环境变量矩阵（`PLATFORM_DATA_DIR`、`DSH_HOME`、`MCP_CONFIG_PATH`、`PORT`、`HOST`、`AUTH_MODE=forward_auth`、`CLOUD_MODE=1`、`CELL_GATEWAY_SECRET`）和两条硬性规则——只监听回环地址，以及 cell 数据目录必须在本地磁盘上（所有存储都是 SQLite + WAL，放在 NFS 上会损坏）——见 `.env.example` 的 "Hosted cells" 一节，那里也给出了手工启动两个 cell 的完整命令。
+
 ---
 
 ## 架构概览
@@ -276,6 +282,12 @@ The packaged desktop app injects backend configuration from `app.getPath("userDa
 `AUTH_MODE=logto` does not support a first login while offline: Logto discovery and JWKS must be reachable during startup or the backend will not start. An existing unexpired session remains usable while the process is running, but new logins, callbacks, and end-session redirects still require the network. Unset `AUTH_MODE` to restore open access.
 
 Organization names become groups; role short names from `organization_roles` are added too, so `finddata:admin` maps to `admin`. Enable `organizations` and `organization_roles` in the Logto application's ID token (or equivalent custom claims), and allow the organizations scope requested by Platform. Platform reads only those two claim names. Administrative access requires the exact role short name `admin`, because catalog filtering and the admin gate match that name. To roll back, unset `AUTH_MODE` to restore open access; issued cookies are no longer used by the auth flow.
+
+### Hosted deployment (the cell run contract)
+
+A cloud deployment puts each user in a separate **cell**: one `server.js` process, its own dsh runtime, its own data directory. No mutable state crosses cells, so isolation comes from the process boundary rather than from multi-tenant logic inside the app; the desktop app and `npm start` are the single-cell form of the same thing.
+
+The per-cell env matrix (`PLATFORM_DATA_DIR`, `DSH_HOME`, `MCP_CONFIG_PATH`, `PORT`, `HOST`, `AUTH_MODE=forward_auth`, `CLOUD_MODE=1`, `CELL_GATEWAY_SECRET`) and the two hard rules — bind loopback only, and keep cell data on local disk because every store is SQLite + WAL and SQLite over NFS corrupts — are documented in the "Hosted cells" section of `.env.example`, together with a complete two-cell worked example.
 
 ---
 

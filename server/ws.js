@@ -10,7 +10,7 @@ import { userFromHeaders } from "./auth.js";
 
 export function authorizeUpgrade(ctx, req) {
   return ctx.authMode === "forward_auth"
-    ? Boolean(userFromHeaders(req.headers))
+    ? Boolean(userFromHeaders(req.headers, ctx.headerTrust))
     : ctx.authMode === "logto"
       ? Boolean(ctx.logtoAuth?.userFromCookie(req.headers.cookie))
       : true;
@@ -18,7 +18,7 @@ export function authorizeUpgrade(ctx, req) {
 
 export function userForConnection(ctx, req) {
   return ctx.authMode === "forward_auth"
-    ? userFromHeaders(req.headers)
+    ? userFromHeaders(req.headers, ctx.headerTrust)
     : ctx.authMode === "logto"
       ? ctx.logtoAuth?.userFromCookie(req.headers.cookie)
       : null;
@@ -82,7 +82,7 @@ const syncReadyClient = async (ws) => {
 ctx.wss.on("connection", (ws, req) => {
   // Identity is fixed at upgrade time (v1 ceiling: no re-auth mid-connection).
   ws.user = userForConnection(ctx, req);
-  ws.identity = ctx.authEnabled ? ws.user : (ctx.ssoEnabled ? userFromHeaders(req.headers) : null);
+  ws.identity = ctx.authEnabled ? ws.user : (ctx.ssoEnabled ? userFromHeaders(req.headers, ctx.headerTrust) : null);
   ctx.clients.add(ws);
   console.log(`Client connected (${ctx.clients.size} total)`);
 
@@ -232,16 +232,6 @@ ctx.wss.on("connection", (ws, req) => {
           break;
         }
         ctx.sendUserBindings?.(ws, ws.identity.email);
-        break;
-      }
-
-      case "apply_bindings": {
-        if (!ws.identity) {
-          ws.send(JSON.stringify({ type: "error", message: "Authentication is required" }));
-          break;
-        }
-        const result = await ctx.applyUserBindings(ws.identity.email);
-        if (!result.ok && result.error) ws.send(JSON.stringify({ type: "error", message: result.error }));
         break;
       }
 

@@ -247,6 +247,141 @@ npm run test:e2e:live:smoke
 
 ---
 
+## Multi-tenant cloud deployment (gateway + cells)
+
+The single-process deployment above serves **one** shared runtime. The hosted
+product shape is different: each user gets their own isolated runtime, and a
+thin **gateway** in front authenticates them and routes to it.
+
+```
+                  ┌──────────────────────────────────────────────┐
+browser ──https──►│ gateway  (gateway/index.js)                  │
+                  │  Logto login · session cookie · WS upgrade    │
+                  │  cell registry: spawn / health / idle reap    │
+                  └───────┬───────────────────┬──────────────────┘
+                          │ loopback + gateway secret
+              ┌───────────▼─────────┐  ┌──────▼──────────────┐
+              │ cell alice          │  │ cell bob            │
+              │  server.js + dsh    │  │  server.js + dsh    │
+              │  /data/<alice>/…    │  │  /data/<bob>/…      │
+              └─────────────────────┘  └─────────────────────┘
+```
+
+A **cell** is exactly the single-process deployment above — one `server.js`,
+one dsh child, one data root — so the desktop app and `npm start` are the
+one-cell form of the same thing. Nothing inside a cell knows other users exist;
+that is what makes isolation a process boundary instead of application logic.
+
+### Running it
+
+```bash
+# One gateway, which starts cells as users arrive.
+CELL_GATEWAY_SECRET=$(openssl rand -base64 32) \
+CELL_DATA_ROOT=/data/cells \
+GATEWAY_PORT=3080 GATEWAY_HOST=127.0.0.1 \
+AUTH_MODE=logto PAAS_BASE_URL=https://paas.example.com \
+LOGTO_ENDPOINT=https://auth.example.com LOGTO_APP_ID=… LOGTO_APP_SECRET=… \
+SESSION_SECRET=$(openssl rand -base64 32) \
+node gateway/index.js
+```
+
+`npm run gateway` is the same thing. Cells are spawned by the gateway; you
+never start them by hand in production (`.env.example` documents the per-cell
+env matrix for doing so while debugging).
+
+### Environment
+
+**Gateway:** `GATEWAY_PORT` (default 3080), `GATEWAY_HOST` (bind address — this
+is the deploy's public surface), `CELL_DATA_ROOT` (per-user data root),
+`CELL_GATEWAY_SECRET` (**required**; the gateway and cells share it),
+`CELL_IDLE_REAP_SECS` (default `0` = never), `CELL_START_TIMEOUT_MS` (default
+60000), plus the `LOGTO_*` / `SESSION_SECRET` / `PAAS_BASE_URL` set from the
+Logto section above.
+
+**Cells** are configured entirely by the spawner: `PLATFORM_DATA_DIR`,
+`DSH_HOME`, `MCP_CONFIG_PATH`, `PORT`, `HOST=127.0.0.1`, `AUTH_MODE=forward_auth`,
+`CLOUD_MODE=1`, `CELL_GATEWAY_SECRET`, `CELL_USER_EMAIL`. They inherit the
+gateway's environment for everything else, which is how they get `LLM_API_KEY`
+and friends. `DSH_SHARED_HOME` (default `~/.dsh`) is the deployment's installed
+dsh tree; a fresh per-user `DSH_HOME` is scaffolded from `dsh-profile-template/`
+and linked to it read-only, so every cell resolves the same bundles without a
+per-user install.
+
+Two rules are not optional:
+
+1. **Cells bind loopback only.** Never expose a cell port. The gateway is the
+   only reachable surface; the secret is defence-in-depth for the shared-host
+   case, not a substitute for this.
+2. **`CELL_DATA_ROOT` must be local disk.** Every store is SQLite + WAL, and
+   SQLite over NFS corrupts. A network filesystem here will lose data.
+
+### Logto app registration
+
+The gateway is the **only** Logto client; cells never talk to the identity
+provider. Register one confidential web application with redirect URI
+`<PAAS_BASE_URL>/auth/callback` and post-logout `<PAAS_BASE_URL>/`, enable the
+`organizations` / `organization_roles` claims as described above, and give the
+gateway `LOGTO_ENDPOINT` / `LOGTO_APP_ID` / `LOGTO_APP_SECRET`. Group names
+still arrive as cell identity (`X-Forwarded-Groups`), so `admin` remains the
+administrative group.
+
+### Sizing and lifecycle
+
+Each resident cell is a Node process plus a dsh child plus that user's page
+cache — budget **roughly 150–300 MB per cell** and size the host for the number
+of users you expect *concurrently resident*. 100 resident cells wants on the
+order of 20–30 GB of RAM, so the always-on default is comfortable to low
+hundreds of users on a modest pool and wants reaping or Phase 3 density work
+beyond that.
+
+Cells are **always-on by default**: the first authenticated request starts one
+and it stays. Being started means the user's cron jobs fire and bots poll,
+which is the point. Setting `CELL_IDLE_REAP_SECS` trades that away: after that
+much idle time a cell is stopped. The reaper asks the cell for its enabled
+scheduled work before stopping it, and a cell with **any enabled cron job or
+bot is exempt** — so "reaped" never silently breaks a schedule that the user
+set up and left enabled. A disabled job does not block reaping.
+
+The offline contract, which must be stated to users: **a stopped cell means
+that user's chat is briefly unavailable on their next visit and their scheduled
+jobs do not fire while it is stopped.** Coming back is a cold start — the
+server boots and completes its dsh handshake before the agent can answer, which
+is seconds, once per idle cycle. Nothing is lost; the data root persists.
+
+### Observability and operation
+
+```bash
+curl http://127.0.0.1:3080/healthz                 # liveness (+ resident cell count)
+curl -H "Cookie: paas_session=…" http://127.0.0.1:3080/api/gateway/status
+```
+
+`/api/gateway/status` is admin-gated and lists every cell as
+`{user, userId, state, pid, port, lastTraffic, uptimeMs, error}`. `state` is
+`starting` → `running` → `stopping`, or `error` when a cell exits unexpectedly
+(its user's next request cold-starts a fresh one). A crash is scoped: one cell's
+failure never touches another user's.
+
+`SIGTERM` on the gateway stops every cell before exiting, so a redeploy does not
+leak one process per user on the host.
+
+### Phase 3 outlook (explicitly out of scope today)
+
+Cells here are child processes on one host, and `gateway/spawner.js` is the only
+file that knows that. The intended next step replaces `spawn()` with a k8s
+client and PVC-per-user, at which point:
+
+- **Density and isolation** come from pods and namespaces rather than process
+  cgroups; the gateway↔cell contract (HTTP + WS to a loopback-reachable cell,
+  identity via headers + shared secret) is unchanged.
+- **Durability**: cell data roots move to per-user PVCs, and backup/restore
+  becomes a per-directory operation — the layout was chosen so it would be.
+  Until then, **losing the host loses that host's users' data**; there is no
+  replication or backup in this cut.
+- **Scaling**: the gateway is single-instance and in-memory, so cells are not
+  HA either. That is a deliberate first-cut trade, not an oversight.
+
+---
+
 ## File map
 
 ```
@@ -261,4 +396,14 @@ argocd/
 .github/workflows/
   docker-deploy.yml                 # build + push + GitOps commit-back
   release.yml                       # (unchanged) Electron .dmg/.exe installers
+
+gateway/                            # multi-tenant front door (not used by the single-process deploy)
+  index.js                          # Logto auth, routing, WS upgrade, /healthz + /api/gateway/status
+  spawner.js                        # cell lifecycle: spawn, health, idle reap, shutdown
+  proxy.js                          # HTTP + WebSocket forwarding; injects the verified identity
+scripts/
+  test-cell-containment.mjs         # a cell writes only under its data roots
+  test-cell-isolation.mjs           # two cells: no cross-cell state, events, or errors
+  test-cell-gateway.mjs             # gateway auth, routing, sticky WS, restart, idle reap
+  test-cell-bindings.mjs            # saved bindings are what a cell boots on
 ```

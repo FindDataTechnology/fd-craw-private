@@ -46,6 +46,11 @@ export function createAppContext(config) {
     authMode: config.AUTH_MODE || "none",
     authEnabled: config.AUTH_MODE === "forward_auth" || config.AUTH_MODE === "logto",
     ssoEnabled: config.AUTH_MODE !== "forward_auth" && config.AUTH_MODE !== "logto" && config.SSO_ENABLED === true,
+    // Hosted-cell identity trust (see userFromHeaders in server/auth.js). Null
+    // = reachability-only trust (dev, desktop, a proxy deployment). Set = the
+    // cell honors identity headers only from a caller holding the gateway
+    // secret, because on a shared host loopback binding is not a boundary.
+    headerTrust: config.CLOUD_MODE ? { secret: config.CELL_GATEWAY_SECRET || "" } : null,
     // Bundle-manifest permissions splitter (extensions routes + MCP seeding).
     splitPolicy,
 
@@ -80,10 +85,11 @@ export function createAppContext(config) {
     // the /api/supervisor/status route). This is the global default pointer,
     // not necessarily the model currently running for an optional SSO user.
     defaultModel: null,
-    // Effective shared-runtime state. It is global because Platform has one dsh
-    // child; personal ownership is intentionally not broadcast.
+    // Effective runtime state. In a hosted cell the cell's single user owns it
+    // outright; in a shared-runtime deployment it reflects whoever last applied
+    // a profile. `runtimeMcpOverlay` is the personal availability subtracted
+    // from the global MCP set, so a global re-apply preserves it.
     runtimeModel: null,
-    runtimeOwner: null,
     runtimeMcpOverlay: {},
     pendingBindings: new Map(),
     runtimeMutationChain: Promise.resolve(),
@@ -144,6 +150,13 @@ export function createAppContext(config) {
   };
 
   // ctx.finishTurn is attached by server/dsh-events.js (attachDshEvents).
+
+  // A hosted cell without a gateway secret trusts nobody: every identity
+  // header would be rejected, so the deployment would look authenticated-off
+  // rather than fail loudly. Say so at boot.
+  if (ctx.headerTrust && !ctx.headerTrust.secret) {
+    console.warn("[auth] CLOUD_MODE is set without CELL_GATEWAY_SECRET — identity headers will never be trusted");
+  }
 
   ctx.broadcast = (data) => {
     const msg = JSON.stringify(data);

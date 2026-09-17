@@ -28,8 +28,12 @@ function expressApp(ctx) {
   const app = express();
   ctx.app = app;
   registerAuth(ctx);
-  app.get("/protected", (req, res) => res.json({ user: req.user || null }));
-  app.get("/api/auth/me", (req, res) => res.json({ user: req.user || null }));
+  const echo = (req, res) => res.json({ user: req.user || null });
+  app.get("/protected", echo);
+  app.get("/api/auth/me", echo);
+  // A genuinely protected route: /api/* other than /api/auth/me is never
+  // "public" in the forward-auth gate, so this is where a 401 is observable.
+  app.get("/api/private", echo);
   return app;
 }
 
@@ -63,4 +67,44 @@ test("forward_auth preserves proxy email casing", () => {
     email: "User@Example.COM",
     groups: ["users"],
   });
+});
+
+// ── Hosted-cell identity trust (CLOUD_MODE + CELL_GATEWAY_SECRET) ────────────
+
+function forwardAuthCtx(trust) {
+  return { authMode: "forward_auth", authEnabled: true, ssoEnabled: false, headerTrust: trust };
+}
+
+const IDENTITY = { "x-forwarded-email": "user@example.com", "x-forwarded-groups": "admin" };
+
+test("hosted cell honors identity headers carrying the gateway secret", async () => {
+  const app = expressApp(forwardAuthCtx({ secret: "s3cret" }));
+  const res = await request(app, "/api/private", { ...IDENTITY, "x-cloud-gateway-secret": "s3cret" });
+  assert.equal(res.status, 200);
+  assert.deepEqual(JSON.parse(res.body).user, { email: "user@example.com", groups: ["admin"] });
+});
+
+test("hosted cell treats identity headers without the secret as absent", async () => {
+  const app = expressApp(forwardAuthCtx({ secret: "s3cret" }));
+  const res = await request(app, "/api/private", IDENTITY);
+  assert.equal(res.status, 401);
+});
+
+test("hosted cell rejects a wrong gateway secret without echoing the identity", async () => {
+  const app = expressApp(forwardAuthCtx({ secret: "s3cret" }));
+  const res = await request(app, "/api/private", { ...IDENTITY, "x-cloud-gateway-secret": "guess" });
+  assert.equal(res.status, 401);
+});
+
+test("hosted cell with no configured secret trusts no identity headers", async () => {
+  const app = expressApp(forwardAuthCtx({ secret: "" }));
+  const res = await request(app, "/api/private", { ...IDENTITY, "x-cloud-gateway-secret": "" });
+  assert.equal(res.status, 401);
+});
+
+test("gate is inert outside hosted mode (headerTrust null)", async () => {
+  const app = expressApp(forwardAuthCtx(null));
+  const res = await request(app, "/api/private", IDENTITY);
+  assert.equal(res.status, 200);
+  assert.deepEqual(JSON.parse(res.body).user, { email: "user@example.com", groups: ["admin"] });
 });

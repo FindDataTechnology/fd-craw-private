@@ -3,6 +3,13 @@
 // oauth2-proxy → Logto). TRUST BOUNDARY: enabling this asserts the server is
 // reachable ONLY through the forward-auth proxy — bind to localhost /
 // firewall it, otherwise these headers are attacker-controlled.
+//
+// Hosted cells (CLOUD_MODE) cannot rely on that reachability assumption: the
+// gateway and the cells share a host, so anything that can reach the cell's
+// loopback port could forge the headers. There the trust is enforced actively
+// with a shared secret the gateway injects; see `userFromHeaders`'s `trust`.
+
+import { timingSafeEqual } from "node:crypto";
 
 // Paths exempt from the identity requirement, because the caller is an
 // external service that cannot supply the proxy header. Each exempt path MUST
@@ -37,7 +44,22 @@ const isLogtoPublicRequest = (req) => {
 
 const isExempt = (p) => AUTH_EXEMPT_PREFIXES.some((prefix) => p.startsWith(prefix));
 
-export function userFromHeaders(headers) {
+// The header the gateway injects alongside the identity headers in hosted mode.
+export const GATEWAY_SECRET_HEADER = "x-cloud-gateway-secret";
+
+function secretMatches(provided, expected) {
+  if (typeof provided !== "string" || !expected) return false;
+  const given = Buffer.from(provided);
+  const want = Buffer.from(expected);
+  return given.length === want.length && timingSafeEqual(given, want);
+}
+
+// `trust` is ctx.headerTrust: null outside hosted mode, `{ secret }` inside it.
+// When set, identity headers count only if the request also carries the gateway
+// secret — an unauthorised caller's headers are treated as absent entirely, so
+// the request proceeds as unauthenticated rather than as the spoofed identity.
+export function userFromHeaders(headers, trust) {
+  if (trust && !secretMatches(headers[GATEWAY_SECRET_HEADER], trust.secret)) return null;
   const email = String(headers["x-forwarded-email"] || "").trim();
   if (!email) return null;
   const groups = String(headers["x-forwarded-groups"] || "")
@@ -51,7 +73,7 @@ export function userFromHeaders(headers) {
 // logto verifies the signed session cookie and ignores those headers.
 export function registerAuth(ctx) {
   ctx.app.use((req, res, next) => {
-    const headerUser = userFromHeaders(req.headers);
+    const headerUser = userFromHeaders(req.headers, ctx.headerTrust);
     if (ctx.authMode === "logto") {
       if (isLogtoPublicRequest(req) || isExempt(req.path)) {
         const user = ctx.logtoAuth?.authenticate(req, res);

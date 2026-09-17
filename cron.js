@@ -118,7 +118,10 @@ async function addJob({ cron, when, prompt }) {
   jobs.set(id, scheduled);
   await saveJobs();
   broadcastJobStatus(id);
-  return scheduled;
+  // Return the client-facing shape, never the live record: it carries the
+  // node-schedule Job handle (a circular object), and the WS reply serializes
+  // this value. Same stripping listJobs/getJob already apply.
+  return getJob(id);
 }
 
 async function removeJob(id) {

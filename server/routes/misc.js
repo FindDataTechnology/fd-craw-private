@@ -8,7 +8,7 @@ import express from "express";
 import { WEB_DIST } from "../context.js";
 
 export function registerMiscRoutes(ctx) {
-  const { app, catalog, db } = ctx;
+  const { app, catalog, db, cron } = ctx;
 
   // Identity introspection: lets the frontend render login state without
   // inspecting headers. email/groups are null when auth is off.
@@ -121,6 +121,17 @@ export function registerMiscRoutes(ctx) {
       currentModel: ctx.defaultModel ? ctx.defaultModel.id : null,
       uptimeMs: process.uptime() * 1000,
     });
+  });
+
+  // ── Gateway-internal: enabled scheduled work ──────────────────────────────
+  // The hosted gateway's idle reaper asks this before stopping a cell: a cell
+  // holding an enabled cron job or bot is never reaped, because reaping means
+  // that user's scheduled work silently stops firing. Only counts leave here.
+  app.get("/api/gateway/jobs", (_req, res) => {
+    if (!db.isDbReady()) return res.json({ enabledCron: 0, enabledBots: 0 });
+    const enabledCron = cron.listJobs().filter((j) => !j.paused && j.status !== "expired" && j.status !== "completed").length;
+    const enabledBots = db.listBots().filter((b) => b.enabled).length;
+    res.json({ enabledCron, enabledBots });
   });
 
   // ── User preferences endpoints (single-user, key/value) ──────────────────

@@ -20,7 +20,7 @@
 // Writes atomically (temp+rename) and returns the declared model list so server.js
 // can source its model selector without a dsh listModels RPC (dsh has none stock;
 // the generator's declared list IS the dsh list — dsh loads exactly this file).
-import { readFileSync, mkdirSync, chmodSync, existsSync, statSync } from "node:fs";
+import { readFileSync, mkdirSync, chmodSync, existsSync, statSync, copyFileSync, symlinkSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
@@ -284,6 +284,44 @@ export function buildScrubbedEnv() {
 // runtime that boots in parallel with server.js (no host-side retry needed).
 const PROFILE_NAME = process.env.DSH_PROFILE || "platform";
 const MCP_PATCH_PATH = join(DSH_HOME, "profiles", PROFILE_NAME, "mcp.patch.yml");
+
+// ── DSH home bootstrap ───────────────────────────────────────────────────────
+// A hosted cell gets a FRESH DSH_HOME per user, so nothing about the profile
+// can be assumed to exist the way it does in a long-lived ~/.dsh: dsh refuses
+// to boot with `profile "platform" does not exist`, and even with the scaffold
+// present it cannot resolve its bundles without the installed module tree.
+// Materialize the scaffold from dsh-profile-template/ (the same four files the
+// Dockerfile copies) and link the deployment's read-only module tree in, so
+// every cell resolves identical code without a per-user install.
+const TEMPLATE_DIR = join(dirname(fileURLToPath(import.meta.url)), "dsh-profile-template");
+const SCAFFOLD_FILES = ["package.json", "pnpm-workspace.yaml", "cordis.yml", "cordis.patch.yml"];
+// Two module levels matter: `profiles/node_modules` carries the bundles dsh
+// composes (dsh-base, …), and `profiles/<name>/node_modules` carries the
+// profile's own pinned deps (dsh-sdk-jsonrpc-server, dsh-agent-presets) that
+// the preset bridge imports by bare specifier.
+const MODULE_LINK_DIRS = [join("profiles", "node_modules"), join("profiles", PROFILE_NAME, "node_modules")];
+// The deployment's installed dsh tree. Distinct from DSH_HOME only when DSH_HOME
+// is a per-user cell home; in dev/desktop they are the same directory.
+const SHARED_DSH_HOME = process.env.DSH_SHARED_HOME || join(homedir(), ".dsh");
+
+export function ensureDshHome() {
+  const profileDir = join(DSH_HOME, "profiles", PROFILE_NAME);
+  mkdirSync(profileDir, { recursive: true });
+  for (const file of SCAFFOLD_FILES) {
+    const target = join(profileDir, file);
+    if (!existsSync(target)) copyFileSync(join(TEMPLATE_DIR, file), target);
+  }
+  for (const dir of MODULE_LINK_DIRS) {
+    const link = join(DSH_HOME, dir);
+    const shared = join(SHARED_DSH_HOME, dir);
+    if (existsSync(link) || resolve(shared) === resolve(link) || !existsSync(shared)) continue;
+    try {
+      symlinkSync(shared, link, "dir");
+    } catch (err) {
+      console.warn(`[dsh-profile] could not link shared dsh modules at ${dir}: ${err.message}`);
+    }
+  }
+}
 
 // Map one host MCP config ({command,args,env,cwd} stdio | {url,headers} http) to
 // a dsh-mcp-client cordis loader entry. Unknown shape → null (skipped, warned).

@@ -1,5 +1,15 @@
-// Optional SSO users can persist a model and MCP availability overlay. The
-// runtime is still shared, so the effective profile is applied only while idle.
+// Identity-scoped model + MCP availability bindings.
+//
+// Hosted cell (CLOUD_MODE): the cell's single user IS the runtime's owner, so
+// their saved bindings are the runtime's configuration — applied at cell start
+// (server.js) and on save, with no inter-user coordination to perform.
+//
+// Shared-runtime deployment (dev, desktop, a single-process install): many
+// identities still share one dsh child, so a saved binding is applied to that
+// shared runtime and an application requested mid-turn is deferred until the
+// turn completes. The old runtime-OWNER flip and its per-identity preemption
+// bookkeeping are gone — a binding applies for whoever asked, and the cell
+// boundary is what keeps two users' runtimes apart.
 
 import * as db from "../db.js";
 
@@ -96,7 +106,6 @@ export function attachRuntimeBindings(ctx) {
 
     const previous = {
       model: ctx.runtimeModel,
-      owner: ctx.runtimeOwner,
       mcp: { ...(ctx.runtimeMcpOverlay || {}) },
     };
     try {
@@ -118,13 +127,11 @@ export function attachRuntimeBindings(ctx) {
 
       await ctx.dshUpdateMcp?.(personalMcp);
       ctx.runtimeMcpOverlay = personalMcp;
-      ctx.runtimeOwner = email;
       ctx.broadcastRuntimeBinding();
       ctx.pendingBindings.delete(email);
       return { ok: true, pending: false };
     } catch (err) {
       ctx.runtimeModel = previous.model;
-      ctx.runtimeOwner = previous.owner;
       ctx.runtimeMcpOverlay = previous.mcp;
       if (ctx.session) ctx.session.model = previous.model ? { id: previous.model.id, provider: previous.model.provider } : ctx.session.model;
       return { ok: false, error: err.message };

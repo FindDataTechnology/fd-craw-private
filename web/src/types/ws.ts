@@ -181,7 +181,6 @@ export interface ChatMessage {
 export type ClientMessage =
   | { type: "prompt"; text: string }
   | { type: "list_bindings" }
-  | { type: "apply_bindings" }
   | { type: "list_models" }
   | { type: "set_model"; id: string }
   | { type: "set_effort"; effort: string | null }

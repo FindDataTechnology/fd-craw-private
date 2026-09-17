@@ -85,6 +85,11 @@ const ctx = createAppContext({
   HOST,
   AUTH_MODE: process.env.AUTH_MODE || "none",
   SSO_ENABLED: process.env.SSO_ENABLED === "true",
+  // Hosted-cell mode. Set by the cloud gateway's spawner, never by a human:
+  // it turns on the active identity-trust gate in server/auth.js (see
+  // CLOUD_MODE / CELL_GATEWAY_SECRET in .env.example).
+  CLOUD_MODE: process.env.CLOUD_MODE === "1" || process.env.CLOUD_MODE === "true",
+  CELL_GATEWAY_SECRET: process.env.CELL_GATEWAY_SECRET || "",
   AUTH_LOGIN_PATH: normalizeAuthPath(process.env.AUTH_LOGIN_PATH, "/oauth2/start"),
   AUTH_LOGOUT_PATH: normalizeAuthPath(process.env.AUTH_LOGOUT_PATH, "/oauth2/sign_out"),
   PAAS_BASE_URL: process.env.PAAS_BASE_URL || "",
@@ -188,7 +193,17 @@ function seedStartupMcpConfigs(mcpJsonServers) {
 // now it only emits `done` on turn completion (the 1.5 round-trip placeholder).
 async function initDshAgent() {
   const { DshBridge } = await import("./dsh-bridge.js");
-  const { writeLlmProfile, writeMcpPatch, writeSkillsPatch, writePresetsPatch, writePermissionsPatch, ensureCredentialsStore, buildScrubbedEnv } = await import("./dsh-profile.js");
+  const { writeLlmProfile, writeMcpPatch, writeSkillsPatch, writePresetsPatch, writePermissionsPatch, ensureCredentialsStore, ensureDshHome, buildScrubbedEnv } = await import("./dsh-profile.js");
+
+  // Scaffold $DSH_HOME if it is fresh — a hosted cell's per-user home always
+  // is, and dsh refuses to boot a profile that was never materialized.
+  ensureDshHome();
+
+  // Hosted cells only: the spawner passes the cell's user, whose saved bindings
+  // ARE this runtime's configuration. Empty in dev/desktop, where the shared
+  // runtime keeps its global default and its overlay-apply path.
+  const cellEmail = ctx.CLOUD_MODE ? String(process.env.CELL_USER_EMAIL || "") : "";
+  const cellUser = cellEmail && db.isDbReady() ? cellEmail : "";
 
   // Write the dsh llm-adapter profile BEFORE spawning dsh so the runtime
   // loads the Volces routes at initialize. The generator's declared
@@ -212,7 +227,11 @@ async function initDshAgent() {
   // Write the dsh-mcp-client patch overlay (one loader entry per MCP server
   // from mcp.json + DB). The bridge passes it via --patch;
   // null = no servers configured, flag omitted (Task 4.1/4.2).
-  const mcpPatchPath = await writeMcpPatch();
+  // In a cell the user's saved MCP availability is THE availability (there is
+  // no shared runtime for it to be an overlay on), so it is folded into the
+  // boot patch rather than left to apply on some later request.
+  const cellMcpOverlay = cellUser ? db.getUserMcpBindings(cellUser) : null;
+  const mcpPatchPath = await writeMcpPatch({ mcpOverlay: cellMcpOverlay });
 
   // Write the skill-filesystem config override (customSkillDirs) so dsh
   // discovers the project's skills/ dir AND the DB-custom-skill materialization
@@ -258,19 +277,24 @@ async function initDshAgent() {
   // `standard` until a DB row exists.
   ctx.currentPreset = ctx.db.getPreference("agent.preset") || "standard";
 
-  // Default model: persisted Models-page pointer wins, else DEFAULT_MODEL env if
-  // declared, else first declared model.
+  // Default model: in a cell the user's saved binding wins (it IS this
+  // runtime's configuration); otherwise the persisted Models-page pointer,
+  // else DEFAULT_MODEL env if declared, else the first declared model.
   let provider = "deepseek-official";
   let model = "deepseek-v4-flash";
   if (ctx.dshModels.length) {
     const llmProviders = await import("./llm-providers.js");
     const saved = llmProviders.getDefault();
+    const bound = cellUser ? db.getUserModelBinding(cellUser) : null;
+    const boundModel = bound && ctx.dshModels.find((m) => m.id === bound.id && m.provider === bound.provider);
     const pick =
+      boundModel ||
       (saved.modelId && ctx.dshModels.find((m) => m.id === saved.modelId)) ||
       (ctx.DEFAULT_MODEL && ctx.dshModels.find((m) => m.id === ctx.DEFAULT_MODEL)) ||
       ctx.dshModels[0];
     provider = pick.provider;
     model = pick.id;
+    if (boundModel) console.log(`[dsh] cell binding: starting on ${provider}/${model}`);
     // Restore the persisted thinking level, but only if this model still
     // declares it (writeLlmProfile already projected it into settings.yaml).
     const savedEffort = ctx.db.getPreference(`llm.effort.${provider}`) || null;

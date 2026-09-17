@@ -1,0 +1,225 @@
+// ── Cell spawner ─────────────────────────────────────────────────────────────
+//
+// Maps a verified identity to a running cell (one server.js process + its dsh
+// child + a per-user data root) and owns that process's lifecycle: spawn on
+// first traffic, health via the cell's listening port, optional idle reaping,
+// and reaping every child on gateway shutdown.
+//
+// This is the seam Phase 3 replaces: swapping `spawn()` for a k8s client is
+// meant to touch nothing else, so everything orchestration-shaped lives here.
+
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { createServer, connect } from "node:net";
+import path from "node:path";
+
+// A stable, filesystem-safe per-user directory name. Derived by hashing rather
+// than by sanitizing the email so a hostile address can never contribute a path
+// segment (`..`, a leading `/`) — the mapping is one-way and the email itself
+// stays in the cell's own DB.
+export function userIdFor(email) {
+  return createHash("sha256").update(String(email).trim().toLowerCase()).digest("hex").slice(0, 16);
+}
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.unref();
+    probe.on("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+// Resolve once something accepts connections on the port. The cell's own boot
+// is listen-first (server.js listens before the dsh agent finishes), so a
+// listening port means the app can answer; the client's WS gets the app's own
+// `initializing` event and a later ready-sync, rather than the gateway holding
+// the request for the full agent boot.
+function waitForPort(port, timeoutMs, isDead) {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve, reject) => {
+    const attempt = () => {
+      if (isDead()) return reject(new Error("cell process exited during startup"));
+      const socket = connect(port, "127.0.0.1");
+      socket.once("connect", () => {
+        socket.destroy();
+        resolve();
+      });
+      socket.once("error", () => {
+        socket.destroy();
+        if (Date.now() > deadline) return reject(new Error(`cell did not listen on ${port} within ${timeoutMs}ms`));
+        setTimeout(attempt, 200);
+      });
+    };
+    attempt();
+  });
+}
+
+export function createCellRegistry(config) {
+  const { dataRoot, secret, startTimeoutMs, idleReapSecs, serverEntry, cwd, env: baseEnv } = config;
+  const cells = new Map();
+  let shuttingDown = false;
+  let reaper = null;
+
+  function record(user) {
+    const userId = userIdFor(user.email);
+    return cells.get(userId);
+  }
+
+  function spawnCell(user) {
+    const userId = userIdFor(user.email);
+    const root = path.join(dataRoot, userId);
+    return (async () => {
+      const port = await freePort();
+      await mkdir(root, { recursive: true });
+      const cell = {
+        userId,
+        email: user.email,
+        state: "starting",
+        port,
+        pid: null,
+        child: null,
+        startedAt: Date.now(),
+        lastTraffic: Date.now(),
+        error: null,
+      };
+      cells.set(userId, cell);
+
+      const env = {
+        ...baseEnv,
+        PORT: String(port),
+        HOST: "127.0.0.1",
+        PLATFORM_DATA_DIR: path.join(root, "data"),
+        DSH_HOME: path.join(root, "dsh"),
+        MCP_CONFIG_PATH: path.join(root, "mcp.json"),
+        AUTH_MODE: "forward_auth",
+        CLOUD_MODE: "1",
+        CELL_GATEWAY_SECRET: secret,
+        // The cell's user, so bindings saved earlier apply at boot rather than
+        // waiting for the first request (a cell has exactly one user).
+        CELL_USER_EMAIL: user.email,
+      };
+      const child = spawn(process.execPath, [serverEntry], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+      cell.child = child;
+      cell.pid = child.pid;
+      child.stdout.on("data", (buf) => process.stdout.write(`[cell ${userId}] ${buf}`));
+      child.stderr.on("data", (buf) => process.stderr.write(`[cell ${userId}] ${buf}`));
+      child.on("exit", (code, signal) => {
+        // A cell that exits unexpectedly is marked so its user's next traffic
+        // respawns it; other users' cells are untouched.
+        if (cells.get(userId) !== cell) return;
+        if (cell.state === "stopping") {
+          cells.delete(userId);
+          return;
+        }
+        cell.state = "error";
+        cell.error = `exited (code=${code} signal=${signal})`;
+        cell.child = null;
+        console.error(`[gateway] cell ${userId} exited unexpectedly: ${cell.error}`);
+      });
+
+      await waitForPort(port, startTimeoutMs, () => child.exitCode !== null);
+      cell.state = "running";
+      console.log(`[gateway] cell ${userId} running on 127.0.0.1:${port} (pid ${cell.pid})`);
+      return cell;
+    })();
+  }
+
+  // `inflight` collapses concurrent first requests for the same user onto one
+  // spawn — the "starting" state two parallel requests would otherwise both
+  // observe, each launching its own cell.
+  function ensure(user) {
+    const userId = userIdFor(user.email);
+    const existing = cells.get(userId);
+    if (existing && existing.state === "running") {
+      existing.lastTraffic = Date.now();
+      return Promise.resolve(existing);
+    }
+    if (existing?.starting) return existing.starting;
+    const started = spawnCell(user).finally(() => {
+      const cell = cells.get(userId);
+      if (cell) delete cell.starting;
+    });
+    const cell = cells.get(userId);
+    if (cell) cell.starting = started;
+    return started;
+  }
+
+  function stop(userId, reason) {
+    const cell = cells.get(userId);
+    if (!cell) return false;
+    cell.state = "stopping";
+    cell.child?.kill("SIGTERM");
+    // A cell that ignores SIGTERM (wedged dsh child) must not keep the host's
+    // memory forever; escalate once the grace period lapses.
+    const child = cell.child;
+    setTimeout(() => { if (child && child.exitCode === null) child.kill("SIGKILL"); }, 5000).unref();
+    console.log(`[gateway] cell ${userId} stopping (${reason})`);
+    return true;
+  }
+
+  async function enabledScheduledWork(cell) {
+    const res = await fetch(`http://127.0.0.1:${cell.port}/api/gateway/jobs`, {
+      headers: { "x-forwarded-email": cell.email, "x-cloud-gateway-secret": secret },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) throw new Error(`jobs probe HTTP ${res.status}`);
+    return res.json();
+  }
+
+  async function reapIdle() {
+    if (shuttingDown) return;
+    const cutoff = Date.now() - idleReapSecs * 1000;
+    for (const cell of [...cells.values()]) {
+      if (cell.state !== "running" || cell.lastTraffic > cutoff) continue;
+      let work;
+      try {
+        work = await enabledScheduledWork(cell);
+      } catch (err) {
+        console.warn(`[gateway] cell ${cell.userId} jobs probe failed (${err.message}); not reaping`);
+        continue;
+      }
+      if (work.enabledCron || work.enabledBots) {
+        console.log(`[gateway] cell ${cell.userId} idle but holds ${work.enabledCron} cron / ${work.enabledBots} bot job(s); keeping it up`);
+        continue;
+      }
+      stop(cell.userId, "idle");
+    }
+  }
+
+  if (idleReapSecs > 0) {
+    const everyMs = Math.max(5000, Math.min(60_000, (idleReapSecs * 1000) / 4));
+    reaper = setInterval(() => { reapIdle().catch((e) => console.warn(`[gateway] reaper failed: ${e.message}`)); }, everyMs);
+    reaper.unref();
+  }
+
+  function status() {
+    return [...cells.values()].map((cell) => ({
+      user: cell.email,
+      userId: cell.userId,
+      state: cell.state,
+      pid: cell.pid,
+      port: cell.port,
+      lastTraffic: new Date(cell.lastTraffic).toISOString(),
+      uptimeMs: Date.now() - cell.startedAt,
+      error: cell.error,
+    }));
+  }
+
+  async function shutdown() {
+    shuttingDown = true;
+    if (reaper) clearInterval(reaper);
+    const victims = [...cells.keys()];
+    for (const userId of victims) stop(userId, "gateway shutdown");
+    await new Promise((r) => setTimeout(r, 800));
+    for (const cell of cells.values()) {
+      if (cell.child && cell.child.exitCode === null) cell.child.kill("SIGKILL");
+    }
+  }
+
+  return { ensure, record, status, stop, shutdown, cells };
+}
