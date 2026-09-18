@@ -146,10 +146,13 @@ function serialize(entry) {
 }
 
 // Role visibility: an entry with a non-empty roles[] is served only when the
-// user's groups intersect it. No user (auth off) → only role-less entries.
+// user's groups intersect it. No user (auth off) means the requester is the
+// machine owner — everything is visible, matching requireAdmin and market
+// visibility semantics.
 function visible(entry, user) {
   if (!entry.roles?.length) return true;
-  return (user?.groups ?? []).some((g) => entry.roles.includes(g));
+  if (!user) return true;
+  return (user.groups ?? []).some((g) => entry.roles.includes(g));
 }
 
 export function getCatalogFor(user) {

@@ -230,7 +230,11 @@ async function initDshAgent() {
   // no shared runtime for it to be an overlay on), so it is folded into the
   // boot patch rather than left to apply on some later request.
   const cellMcpOverlay = cellUser ? db.getUserMcpBindings(cellUser) : null;
-  const mcpPatchPath = await writeMcpPatch({ mcpOverlay: cellMcpOverlay });
+  // Role filtering for the boot patch: the owner's latest observed groups
+  // (per-request identity leaves no boot-time state; the snapshot persists
+  // it). Missing snapshot (first boot) ⇒ null ⇒ no filtering.
+  const cellOwnerGroups = cellUser ? (await import("./server/owner-groups.js")).readOwnerGroups()?.groups ?? null : null;
+  const mcpPatchPath = await writeMcpPatch({ mcpOverlay: cellMcpOverlay, userGroups: cellOwnerGroups });
 
   // Write the skill-filesystem config override (customSkillDirs) so dsh
   // discovers the project's skills/ dir AND the DB-custom-skill materialization
@@ -329,9 +333,9 @@ async function initDshAgent() {
   // the documented fallback (PLATFORM_MCP_HOTSWAP=0, or hot-swap never settles).
   const hotswapEnabled = process.env.PLATFORM_MCP_HOTSWAP !== "0";
   const HOTSWAP_SETTLE_MS = Number(process.env.PLATFORM_MCP_HOTSWAP_SETTLE_MS || 800);
-  ctx.dshUpdateMcp = (mcpOverlay) => {
+  ctx.dshUpdateMcp = (mcpOverlay, userGroups = null) => {
     const update = async () => {
-      const patchPath = await writeMcpPatch({ mcpOverlay });
+      const patchPath = await writeMcpPatch({ mcpOverlay, userGroups });
       if (hotswapEnabled && patchPath) {
         // The patch file was rewritten atomically (temp+rename inside
         // writeMcpPatch); cordis' Chokidar watcher fires refresh() → dsh-mcp-client

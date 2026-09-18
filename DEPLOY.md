@@ -223,6 +223,38 @@ otherwise), so the token is mandatory for registry entries to appear.
 Rollback: remove the ConfigMap key and the Secret key, restart — back to
 bundled-only catalog, no leftover state (bridge snapshots are in-memory).
 
+### Role-gated market entries (Logto groups)
+
+Registry entries can be restricted to users holding a specific Logto role
+(mapped into the platform's `groups` from Logto organizations/organization
+roles at login). The registry API carries no group metadata, so visibility
+groups come from an optional local file next to the data dir (CWD in the
+container), `registry-groups.json`:
+
+```json
+{
+  "servers": { "fd-cn-report": ["analysts"] },
+  "skills":  { "contract-review": ["legal"] },
+  "agents":  { "agents-weather": ["team-a"] }
+}
+```
+
+Behavior (add-role-gated-extensions): a gated entry is hidden from the market
+for users outside its groups; installing one stamps `requiredGroups` on the
+MCP record and is rejected server-side for non-members; at runtime the
+effective MCP profile drops stamped servers the current user's groups no
+longer cover — so **revoking a Logto role takes effect on the user's next
+profile application or cell restart** (in a hosted cell the owner's latest
+groups are snapshotted to `PLATFORM_DATA_DIR/owner-groups.json` to survive
+restarts). Bundled catalog entries never carry groups; with auth off
+(desktop/dev) the requester is the machine owner and sees and installs
+everything.
+
+Operational note: renaming a group in Logto (or in `registry-groups.json`)
+strands the mapping — gated servers silently disappear for affected users
+until the file is updated. That is the designed failure mode: fail closed,
+restore on fix.
+
 **Ops access to the registry host** (updated 2026-09-18): china-cheap-1 is
 `100.64.0.11` on the finddata Tailscale mesh (self-hosted control plane at
 124.220.7.175; the paas workstation's profile `finddata` = chengs-mac

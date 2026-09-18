@@ -57,8 +57,8 @@ export function seedMcpServer({ name, config, enabled = true, origin = "user", l
   return db.seedExtensionConfig({ name, type: "mcp", config, enabled, origin, locked, permissions });
 }
 
-export function addMcpServer({ name, config, enabled = true }) {
-  return db.addExtensionConfig({ name, type: "mcp", config, enabled });
+export function addMcpServer({ name, config, enabled = true, requiredGroups = null }) {
+  return db.addExtensionConfig({ name, type: "mcp", config, enabled, requiredGroups });
 }
 
 export function updateMcpServer(name, { config, enabled }) {
@@ -129,6 +129,27 @@ export async function loadMarketCatalogSkills() {
 }
 
 export async function getMarketCatalog(user = null) {
+  const { mcpServers, skills } = await mergedMarketCatalog();
+  const servers = mcpServers.map((s) => ({
+    ...s,
+    requiresConfig: requiresConfig(s.configTemplate),
+  }));
+  // sort ready-to-use first, then alphabetical. The JSON file order is a hint, this is the source of truth.
+  servers.sort((a, b) => {
+    if (a.requiresConfig !== b.requiresConfig) return a.requiresConfig ? 1 : -1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return {
+    mcpServers: servers.filter((s) => visibleToUser(s, user)),
+    skills: skills.filter((s) => visibleToUser(s, user)),
+  };
+}
+
+// The merged catalog BEFORE per-user visibility filtering — the install
+// admission check needs an entry's groups even when the requesting user must
+// not see it (that's exactly the bypass it exists to close).
+async function mergedMarketCatalog() {
   const [mcpServers, skills] = await Promise.all([
     loadMarketCatalog(),
     loadMarketCatalogSkills(),
@@ -141,31 +162,28 @@ export async function getMarketCatalog(user = null) {
   const registryServers = registry.mcpServers.filter((s) => !bundledMcpNames.has(s.name));
   const bundledSkillNames = new Set((skills.skills || []).map((s) => s.name));
   const registrySkills = registry.skills.filter((s) => !bundledSkillNames.has(s.name));
-
-  const servers = [...(mcpServers.mcpServers || []), ...registryServers].map((s) => ({
-    ...s,
-    requiresConfig: requiresConfig(s.configTemplate),
-  }));
-  // sort ready-to-use first, then alphabetical. The JSON file order is a hint, this is the source of truth.
-  servers.sort((a, b) => {
-    if (a.requiresConfig !== b.requiresConfig) return a.requiresConfig ? 1 : -1;
-    return a.name.localeCompare(b.name);
-  });
-
-  const allSkills = [...(skills.skills || []), ...registrySkills];
   return {
-    mcpServers: servers.filter((s) => visibleToUser(s, user)),
-    skills: allSkills.filter((s) => visibleToUser(s, user)),
+    mcpServers: [...(mcpServers.mcpServers || []), ...registryServers],
+    skills: [...(skills.skills || []), ...registrySkills],
   };
 }
 
-// Group visibility for registry-sourced entries: an entry with a non-empty
-// groups[] is served only when the user's groups intersect it. Bundled entries
-// carry no groups and stay visible to everyone. No user (auth off) ⇒ only
-// group-less entries are visible, matching agent-catalog role semantics.
-function visibleToUser(entry, user) {
+// Resolve a market MCP entry by name for the install admission check.
+// Returns null when no catalog entry carries that name (a hand-entered
+// config, not a market install — ungated by definition).
+export async function findMarketMcpEntry(name) {
+  const { mcpServers } = await mergedMarketCatalog();
+  return mcpServers.find((s) => s.name === name) || null;
+}
+
+// Group visibility for market entries: an entry with a non-empty groups[] is
+// served only when the user's groups intersect it. No user (auth off) means
+// the requester is the machine owner and everything is visible — matching
+// requireAdmin's auth-off semantics (a deployment with no identities has no
+// one to exclude).
+export function visibleToUser(entry, user) {
   if (!Array.isArray(entry.groups) || entry.groups.length === 0) return true;
-  if (!user) return false;
+  if (!user) return true;
   return (user.groups ?? []).some((g) => entry.groups.includes(g));
 }
 

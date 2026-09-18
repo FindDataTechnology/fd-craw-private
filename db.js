@@ -261,6 +261,15 @@ const MIGRATIONS = [
         ON user_mcp_bindings(email)`,
     ],
   },
+  {
+    // Role gating for market-installed MCP entries (add-role-gated-extensions):
+    // null = ungated; a JSON array of group names required to keep the server
+    // in the effective runtime profile. Stamped at install time only.
+    version: 13,
+    statements: [
+      `ALTER TABLE extension_configs ADD COLUMN required_groups TEXT`,
+    ],
+  },
 ];
 
 function nowIso() {
@@ -915,6 +924,7 @@ function serializeExtensionConfig(row) {
     enabled: !!row.enabled,
     locked: !!row.locked,
     permissions: parsePermissions(row.permissions),
+    requiredGroups: parsePermissions(row.requiredGroups),
   };
 }
 
@@ -922,7 +932,7 @@ export function listExtensionConfigs() {
   if (!dbReady) return [];
   return db
     .prepare(
-      "SELECT id, name, type, config_json AS configJson, enabled, source, origin, locked, permissions, created_at AS createdAt, updated_at AS updatedAt FROM extension_configs ORDER BY name"
+      "SELECT id, name, type, config_json AS configJson, enabled, source, origin, locked, permissions, required_groups AS requiredGroups, created_at AS createdAt, updated_at AS updatedAt FROM extension_configs ORDER BY name"
     )
     .all()
     .map(serializeExtensionConfig);
@@ -932,7 +942,7 @@ export function getExtensionConfig(name) {
   if (!dbReady) return null;
   const row = db
     .prepare(
-      "SELECT id, name, type, config_json AS configJson, enabled, source, origin, locked, permissions, created_at AS createdAt, updated_at AS updatedAt FROM extension_configs WHERE name = ?"
+      "SELECT id, name, type, config_json AS configJson, enabled, source, origin, locked, permissions, required_groups AS requiredGroups, created_at AS createdAt, updated_at AS updatedAt FROM extension_configs WHERE name = ?"
     )
     .get(name);
   return serializeExtensionConfig(row);
@@ -940,20 +950,20 @@ export function getExtensionConfig(name) {
 
 // INSERT OR IGNORE so startup seeding doesn't overwrite user edits.
 // Returns the existing row if it was already present, or the newly inserted row.
-export function seedExtensionConfig({ name, type, config, enabled = true, source = "startup", origin = "user", locked = false, permissions = null }) {
+export function seedExtensionConfig({ name, type, config, enabled = true, source = "startup", origin = "user", locked = false, permissions = null, requiredGroups = null }) {
   if (!dbReady) return null;
   const existing = getExtensionConfig(name);
   if (existing) return existing;
-  return addExtensionConfig({ name, type, config, enabled, source, origin, locked, permissions });
+  return addExtensionConfig({ name, type, config, enabled, source, origin, locked, permissions, requiredGroups });
 }
 
-export function addExtensionConfig({ name, type, config, enabled = true, source = "user", origin = "user", locked = false, permissions = null }) {
+export function addExtensionConfig({ name, type, config, enabled = true, source = "user", origin = "user", locked = false, permissions = null, requiredGroups = null }) {
   if (!dbReady) return null;
   const id = crypto.randomUUID();
   const now = nowIso();
   stmt(
-    `INSERT INTO extension_configs (id, name, type, config_json, enabled, source, origin, locked, permissions, created_at, updated_at)
-     VALUES (@id, @name, @type, @config_json, @enabled, @source, @origin, @locked, @permissions, @created_at, @updated_at)`
+    `INSERT INTO extension_configs (id, name, type, config_json, enabled, source, origin, locked, permissions, required_groups, created_at, updated_at)
+     VALUES (@id, @name, @type, @config_json, @enabled, @source, @origin, @locked, @permissions, @required_groups, @created_at, @updated_at)`
   ).run({
     id,
     name,
@@ -964,6 +974,7 @@ export function addExtensionConfig({ name, type, config, enabled = true, source 
     origin,
     locked: locked ? 1 : 0,
     permissions: permissions ? JSON.stringify(permissions) : null,
+    required_groups: requiredGroups ? JSON.stringify(requiredGroups) : null,
     created_at: now,
     updated_at: now,
   });

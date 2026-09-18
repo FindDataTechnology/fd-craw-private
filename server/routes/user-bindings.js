@@ -37,7 +37,7 @@ export function registerUserBindingRoutes(ctx) {
     if (!target) return res.status(400).json({ error: "Unknown provider or model" });
     try {
       db.setUserModelBinding(user.email, target.provider, target.id);
-      const result = await ctx.applyUserBindings(user.email);
+      const result = await ctx.applyUserBindings(user.email, user.groups ?? null);
       res.json({ ok: result.ok, pending: result.pending, ...(result.error ? { error: result.error } : {}), binding: db.getUserModelBinding(user.email) });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -63,7 +63,7 @@ export function registerUserBindingRoutes(ctx) {
     }
     try {
       db.setUserMcpBinding(user.email, name, enabled);
-      const result = await ctx.applyUserBindings(user.email);
+      const result = await ctx.applyUserBindings(user.email, user.groups ?? null);
       res.json({ ok: result.ok, pending: result.pending, ...(result.error ? { error: result.error } : {}), binding: { name, enabled } });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -77,7 +77,7 @@ export function registerUserBindingRoutes(ctx) {
       return res.status(503).json({ error: "User bindings are disabled (database unavailable)" });
     }
     try {
-      const result = await ctx.applyUserBindings(user.email);
+      const result = await ctx.applyUserBindings(user.email, user.groups ?? null);
       res.json({ ok: result.ok, pending: result.pending, ...(result.error ? { error: result.error } : {}) });
     } catch (err) {
       res.status(500).json({ error: err.message });

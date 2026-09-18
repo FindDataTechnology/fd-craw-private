@@ -7,8 +7,8 @@ export function registerExtensionRoutes(ctx) {
   const { app, db, extensionStore, skillMaterialize, broadcast } = ctx;
   const bundle = ctx.bundle;
 
-  const requireAdmin = (req, res) => {
-    if (!ctx.requireAdmin(req, res)) return false;
+  const requireMcpManage = (req, res) => {
+    if (!ctx.requireMcpManage(req, res)) return false;
     return true;
   };
 
@@ -26,20 +26,34 @@ export function registerExtensionRoutes(ctx) {
     if (!db.isDbReady()) {
       return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
     }
-    if (!requireAdmin(req, res)) return;
+    if (!requireMcpManage(req, res)) return;
     const { name, config, enabled } = req.body || {};
     if (!name || !config) {
       return res.status(400).json({ error: "Missing name or config" });
     }
+    // Market install admission (design D3): resolve the merged catalog entry
+    // by the submitted name. A gated entry requires the requester's groups to
+    // intersect and stamps requiredGroups onto the record for runtime
+    // filtering. No catalog match (hand-entered config) or no groups ⇒
+    // ungated, exactly the pre-change behavior. Auth off = machine owner ⇒
+    // unrestricted, still stamped.
+    let requiredGroups = null;
+    const entry = await extensionStore.findMarketMcpEntry(name);
+    if (entry?.groups?.length) {
+      requiredGroups = entry.groups;
+      if (ctx.authEnabled && !(req.user?.groups ?? []).some((g) => requiredGroups.includes(g))) {
+        return res.status(403).json({ error: `MCP server "${name}" requires one of groups: ${requiredGroups.join(", ")}` });
+      }
+    }
     try {
-      const server = extensionStore.addMcpServer({ name, config, enabled });
+      const server = extensionStore.addMcpServer({ name, config, enabled, requiredGroups });
       // broadcast immediately so the UI refreshes right away, then
       // connect in the background. The connection attempt can take up to 10s
       // (timeout); we don't want to block the UI on it. The config is already
       // saved; the connection is best-effort.
       broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
       res.json(server);
-      ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+      ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
     } catch (err) {
       if (err.message?.includes("UNIQUE constraint")) {
         return res.status(409).json({ error: `MCP server "${name}" already exists` });
@@ -53,7 +67,7 @@ export function registerExtensionRoutes(ctx) {
     if (!db.isDbReady()) {
       return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
     }
-    if (!requireAdmin(req, res)) return;
+    if (!requireMcpManage(req, res)) return;
     const { name } = req.params;
     const { config, enabled } = req.body || {};
     try {
@@ -71,7 +85,7 @@ export function registerExtensionRoutes(ctx) {
       if (configChanged || enabledChanged) {
         // dsh owns MCP connections via the profile; rewrite the watched patch so
         // cordis HMR hot-swaps dsh-mcp-client (no restart on the primary path).
-        ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+        ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
         broadcast({ type: "extensions_changed", resource: "mcp", action: "updated", name });
       }
       res.json(server);
@@ -85,7 +99,7 @@ export function registerExtensionRoutes(ctx) {
     if (!db.isDbReady()) {
       return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
     }
-    if (!requireAdmin(req, res)) return;
+    if (!requireMcpManage(req, res)) return;
     const { name } = req.params;
     const server = extensionStore.getMcpServer(name);
     if (!server) {
@@ -97,7 +111,7 @@ export function registerExtensionRoutes(ctx) {
     extensionStore.removeMcpServer(name);
     broadcast({ type: "extensions_changed", resource: "mcp", action: "removed", name });
     res.json({ ok: true });
-    ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+    ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
   });
 
   // Enable or disable an MCP server.
@@ -105,7 +119,7 @@ export function registerExtensionRoutes(ctx) {
     if (!db.isDbReady()) {
       return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
     }
-    if (!requireAdmin(req, res)) return;
+    if (!requireMcpManage(req, res)) return;
     const { name } = req.params;
     const { enabled } = req.body || {};
     if (typeof enabled !== "boolean") {
@@ -122,7 +136,7 @@ export function registerExtensionRoutes(ctx) {
     // broadcast + respond immediately; update (dsh hot-swap) in background.
     broadcast({ type: "extensions_changed", resource: "mcp", action: "toggled", name, enabled });
     res.json(updated);
-    ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+    ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
   });
 
   // List all skills (file-based + custom from database).
@@ -265,7 +279,7 @@ export function registerExtensionRoutes(ctx) {
   // Get the market catalog (MCP servers + skills), filtered per user: bundled
   // entries are always visible; registry entries carrying groups require a
   // user-group intersection (extension-marketplace spec). req.user is null
-  // when auth is off, which hides all group-gated registry entries.
+  // when auth is off — the machine owner, who sees everything.
   app.get("/api/extensions/market", async (req, res) => {
     try {
       const catalog = await extensionStore.getMarketCatalog(req.user ?? null);
@@ -286,6 +300,11 @@ export function registerExtensionRoutes(ctx) {
     const entry = getMarketEntries().skills.find((s) => s.name === name);
     if (!entry) {
       return res.status(404).json({ error: `Registry skill "${name}" not found` });
+    }
+    // Admission mirrors the MCP market rule: a gated entry requires the
+    // requester's groups to intersect. Auth off = machine owner ⇒ unrestricted.
+    if (entry.groups?.length && ctx.authEnabled && !(req.user?.groups ?? []).some((g) => entry.groups.includes(g))) {
+      return res.status(403).json({ error: `Skill "${name}" requires one of groups: ${entry.groups.join(", ")}` });
     }
     let raw;
     try {

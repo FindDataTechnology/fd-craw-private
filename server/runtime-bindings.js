@@ -95,7 +95,9 @@ export function attachRuntimeBindings(ctx) {
 
   // Runs inside runExclusiveRuntimeMutation, so `applying` is already true for
   // the whole call — the busy check lives in applyUserBindings.
-  async function applyProfile(email) {
+  // `groups` (nullable) is the applying user's live groups for the MCP role
+  // filter; omitted/null filters nothing (auth-off callers).
+  async function applyProfile(email, groups = null) {
     if (!email || ctx.isStreaming) {
       const model = db.getUserModelBinding(email);
       const mcp = email ? db.getUserMcpBindings(email) : {};
@@ -125,7 +127,7 @@ export function attachRuntimeBindings(ctx) {
         ctx.broadcast({ type: "model_changed", id: target.id, provider: target.provider });
       }
 
-      await ctx.dshUpdateMcp?.(personalMcp);
+      await ctx.dshUpdateMcp?.(personalMcp, groups);
       ctx.runtimeMcpOverlay = personalMcp;
       ctx.broadcastRuntimeBinding();
       ctx.pendingBindings.delete(email);
@@ -138,7 +140,7 @@ export function attachRuntimeBindings(ctx) {
     }
   }
 
-  ctx.applyUserBindings = async (email) => {
+  ctx.applyUserBindings = async (email, groups = null) => {
     if (!email) return { ok: false, error: "Authentication is required" };
     if (ctx.isStreaming || applying) {
       const model = db.getUserModelBinding(email);
@@ -147,7 +149,7 @@ export function attachRuntimeBindings(ctx) {
       ctx.broadcastRuntimePending(email);
       return { ok: false, pending: true, error: "The runtime is busy; the profile will be applied when it is idle" };
     }
-    return ctx.runExclusiveRuntimeMutation(() => applyProfile(email));
+    return ctx.runExclusiveRuntimeMutation(() => applyProfile(email, groups));
   };
 
   ctx.applyPendingBindings = async () => {

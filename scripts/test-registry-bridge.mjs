@@ -254,9 +254,10 @@ test("market merge: bundled wins collision; header placeholders require config; 
   assert.equal(anon.mcpServers.find((s) => s.name === "gateway-style")?.requiresConfig, true);
   assert.equal(anon.mcpServers.find((s) => s.name === "static-url")?.requiresConfig, false);
 
-  // Bundled entries always visible; the registry skill is gated.
+  // Bundled entries always visible; the registry skill is gated but auth off
+  // means the machine owner, who sees everything.
   assert.ok(anon.mcpServers.some((s) => s.name === "static-url"));
-  assert.equal(anon.skills.some((s) => s.name === "pdf-processing"), false, "gated skill hidden when auth off (user null)");
+  assert.ok(anon.skills.some((s) => s.name === "pdf-processing"), "gated skill visible when auth off (machine owner)");
 
   const member = await extensionStore.getMarketCatalog({ email: "a@b.c", groups: ["team-a"] });
   assert.ok(member.skills.some((s) => s.name === "pdf-processing"), "member sees gated skill");
@@ -301,10 +302,9 @@ test("catalog: agents.json beats registry on collision; registry roles gate visi
   );
   await bridge.refreshRegistry();
   await catalogMod.refresh(null);
-  assert.equal(
+  assert.ok(
     catalogMod.getCatalogFor(null).agents.some((a) => a.id === "registry-agents-weather"),
-    false,
-    "gated agent hidden when auth off (no user groups)",
+    "gated agent visible when auth off (machine owner)",
   );
   assert.equal(
     catalogMod.getCatalogFor({ email: "x@y.z", groups: ["team-b"] }).agents.some((a) => a.id === "registry-agents-weather"),

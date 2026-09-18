@@ -10,6 +10,7 @@
 // with a shared secret the gateway injects; see `userFromHeaders`'s `trust`.
 
 import { timingSafeEqual } from "node:crypto";
+import { noteOwnerGroups } from "./owner-groups.js";
 
 // Paths exempt from the identity requirement, because the caller is an
 // external service that cannot supply the proxy header. Each exempt path MUST
@@ -114,4 +115,27 @@ export function registerAuth(ctx) {
     }
     return true;
   };
+
+  // MCP mutation gate, deployment-shaped (extension-runtime-management spec):
+  // the admin group in shared deployments; the owning user in a per-user
+  // hosted cell, whose cell-local configuration store is theirs alone;
+  // anyone when auth is off (machine owner, same as requireAdmin).
+  const cellUserEmail = ctx.CLOUD_MODE ? String(process.env.CELL_USER_EMAIL || "") : "";
+  ctx.cellUserEmail = cellUserEmail;
+  ctx.requireMcpManage = (req, res) => {
+    if (!ctx.authEnabled) return true;
+    if (req.user?.groups?.includes("admin")) return true;
+    if (cellUserEmail && req.user?.email === cellUserEmail) return true;
+    res.status(403).json({ error: "Admin group or cell ownership required" });
+    return false;
+  };
+
+  // Snapshot the cell owner's latest groups (write-on-change) so the next
+  // cell boot can role-filter the boot MCP patch.
+  if (cellUserEmail) {
+    ctx.app.use((req, _res, next) => {
+      if (req.user?.email === cellUserEmail) noteOwnerGroups(req.user);
+      next();
+    });
+  }
 }

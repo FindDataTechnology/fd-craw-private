@@ -360,7 +360,13 @@ function toMcpClientEntry(name, config) {
 // Sources (design D4 — host-side config sources unchanged):
 //   mcp.json            — operator config (base layer)
 //   SQLite MCP table    — user edits via REST; overrides on collision (Task 4.1)
-export async function writeMcpPatch({ mcpOverlay } = {}) {
+//
+// userGroups (nullable array) role-filters DB rows stamped with
+// requiredGroups: a gated row stays in the effective profile only while the
+// profile user holds a matching group, so an identity-provider revocation
+// lands on the next patch write with no record mutation. null (no
+// authenticated identity — auth off) filters nothing.
+export async function writeMcpPatch({ mcpOverlay, userGroups = null } = {}) {
   // 1. mcp.json (operator config, base layer).
   let mcpJsonServers = {};
   try {
@@ -374,8 +380,13 @@ export async function writeMcpPatch({ mcpOverlay } = {}) {
     if (db.isDbReady()) {
       const extensionStore = await import("./extension-store.js");
       for (const row of extensionStore.listMcpServers()) {
-        if (row.enabled === false) delete servers[row.name];
-        else servers[row.name] = row.config;
+        if (row.enabled === false) { delete servers[row.name]; continue; }
+        if (row.requiredGroups?.length && userGroups !== null &&
+            !userGroups.some((g) => row.requiredGroups.includes(g))) {
+          delete servers[row.name];
+          continue;
+        }
+        servers[row.name] = row.config;
       }
     }
   } catch (e) {
