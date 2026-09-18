@@ -113,10 +113,21 @@ fd-prod 平台容器 CWD 下的 `registry-groups.json`：
 
 （引用的既有技能暂不门控——减少演示时"看不到条目"的排障面。）应用后 rollout，验证：两种角色登录 Store 各自只见本角色包条目。
 
-### 3.5 技能与 agent 注册
+### 3.5 技能与 agent 注册（✅ 已完成，2026-09-19）
 
-- **技能**：把 `docs/vertical-packs/skills/<name>/SKILL.md` 注册进 registry（管理 UI 上传或 skill API），tags 对齐领域（如 `["法律","合同"]` / `["finance","cn-market"]`）。验证：`GET /api/skills?limit=500` 可见；对应角色 Store 可装。
-- **Agent**：云端 agents 目录（`AGENTS_CONFIG_URL`）加三条 chat 条目（见 §6），凭证走 `FD_TOKEN_API_KEY` secret，**目录文档里不得出现内联 key**。验证：`GET /api/catalog` 可见三条；选 agent 对话有流式回复（Trace 可见上游调用）。
+**托管**：四份 SKILL.md + agents.json 已发布到公开仓库 **`github.com/FindDataTechnology/fd-vertical-packs`**（本仓库 `docs/vertical-packs/` 仍为创作源，**改内容后需同步推送该仓库**）。选 GitHub 的依据：registry 现有 143 技能中 121 个托管于 raw.githubusercontent.com（可达性已被持续扫描证明），实测 registry 主机 0.9s 可达。
+
+- **技能**：四个入口技能已注册（`POST /api/skills` 全部 201，enabled/active，内容端点 `/api/skills/<name>/content` 返回完整正文）。注册命令模式：
+
+  ```bash
+  curl -X POST http://127.0.0.1:18080/api/skills \
+    -H "Authorization: Bearer <admin JWT>" -H "Content-Type: application/json" \
+    -d '{"name":"...","description":"...","skill_md_url":"https://raw.githubusercontent.com/FindDataTechnology/fd-vertical-packs/main/skills/<name>/SKILL.md","tags":["法律","合同审查"],"status":"active"}'
+  ```
+
+- **Agent**：云端目录文档即仓库内 `agents.json`（三条 chat entry，凭证仅 `apiKeyEnv: FD_TOKEN_API_KEY`）；fd-prod 已配 `AGENTS_CONFIG_URL`（fd-infra-deploy 147ffc6）+ `FD_TOKEN_API_KEY` secret，rollout 完成，catalog 合并验证通过。
+
+**⚠️ 模型选择（实测结论）**：agent 用 `deepseek-v4-flash-0731`。该公开网关对 `deepseek-v4-pro`/`deepseek-v4-flash` 要求 `x-opencode-session` 头（平台的 agent 调用不带此头会 400），而 `0731` 免头直通——正好也是平台自己的默认模型。**不要把 agent 模型改回 pro，除非平台侧增加该请求头。**
 
 ## 4. MCP 凭据（V0 → V1）
 
@@ -185,4 +196,6 @@ fd-prod 部署：`FD_TOKEN_API_KEY` 进 `platform-secrets`，`AGENTS_CONFIG_URL`
 
 - 案件包在 `fd-legal-search-mcp` 注册前是方法论演示（要件分析+攻防+策略），无真实裁判文书检索。
 - chatlaw / fingpt 卡片是生态展示（GitHub link），对话入口用包的 chat agent。
-- 168h token 到期后安装的 MCP 会 401——演示季内每日检查，或等 V1 自动化。
+- 168h token 到期后安装的 MCP 会 401——演示季内每日检查，或等 V1 自动化；law-bench 的 PAT 有效期 30 天（至 2026-10-18，admin 账号）。
+- 公开 LLM 网关偶发 502（实测约 1/5 瞬时抖动，重试即恢复；平台 agent 调用无自动重试）——演示时若首答失败，重发一次即可。
+- registry 的 egress 相关 API（Connected Accounts 自助存 PAT）被 safeline WAF 拦截（404），目前由 admin 直连 cheap1 代存（§3.3）。
