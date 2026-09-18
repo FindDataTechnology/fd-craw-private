@@ -16,7 +16,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { PanelLeft } from "lucide-react";
-import { useChatStore } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
 import { usePreviewStore } from "@/hooks/usePreviewStore";
 import { useAuthStore } from "@/hooks/useAuth";
 import { useWebSocket } from "@/hooks/useWebSocket";

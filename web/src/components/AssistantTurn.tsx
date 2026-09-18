@@ -8,8 +8,8 @@ import { memo, useState } from "react";
 // lucide throughout — no emoji as an icon system (DESIGN.md).
 import { useTranslation } from "react-i18next";
 import { Check, Copy, RefreshCw, Terminal, TriangleAlert } from "lucide-react";
-import { useChatStore } from "@/hooks/useChatStore";
-import type { Turn } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
+import type { Turn } from "@platform/core";
 import { Markdown } from "@/components/Markdown";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { ToolBlock } from "@/components/ToolBlock";

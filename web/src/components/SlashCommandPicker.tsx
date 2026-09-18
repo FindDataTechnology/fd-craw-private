@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useChatStore } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
 import { cn } from "@/lib/utils";
 
 export interface SlashCommand {

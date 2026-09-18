@@ -8,7 +8,7 @@ import { Pencil, Trash2, Lock, Unlock, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TestConnectionButton } from "./TestConnectionButton";
 import { ModelList } from "./ModelList";
-import type { LlmProvider } from "@/lib/llm-api";
+import type { LlmProvider } from "@platform/core";
 
 interface Props {
   provider: LlmProvider;

@@ -1,13 +1,14 @@
 // WebSocket lifecycle hook. One connection for the whole app.
 //
-// On open, the client asks the server for models, skills, and sessions.
-// Returns `send()` for outgoing messages; incoming messages flow into the
-// Zustand store via apply().
+// The transport (connect/backoff/reconnect) lives in the shared core's
+// WsClient; this hook binds it to React lifecycle and dispatches decoded
+// messages into the Zustand stores. On open, the client asks the server for
+// models, skills, and sessions.
 
 import { useEffect, useRef } from "react";
-import { useChatStore } from "@/hooks/useChatStore";
+import { WsClient, useChatStore, type ClientMessage, type ServerMessage } from "@platform/core";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
-import type { ClientMessage, ServerMessage } from "@/types/ws";
+import { browserSocketFactory } from "@/lib/browser-socket";
 
 // In dev (Vite on :5173), Vite doesn't proxy the root WS path — connect
 // directly to the backend. In prod, use same-origin.
@@ -26,7 +27,7 @@ export function wsSend(msg: ClientMessage) {
 }
 
 export function useWebSocket(enabled: boolean, identityKey = "") {
-  const wsRef = useRef<WebSocket | null>(null);
+  const clientRef = useRef<WsClient | null>(null);
   const sendRef = useRef<(msg: ClientMessage) => void>(() => {});
   const setStatus = useChatStore((s) => s.setStatus);
   const apply = useChatStore((s) => s.apply);
@@ -40,67 +41,34 @@ export function useWebSocket(enabled: boolean, identityKey = "") {
         cancelled = true;
       };
     }
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let attempt = 0;
-    const MAX_ATTEMPTS = 20;
 
-    // Exponential backoff (capped at 30s) + ±25% jitter. Stops after
-    // MAX_ATTEMPTS so a dead server isn't hammered forever; resets to 0 on a
-    // successful open and on the `online` event (network restored).
-    const scheduleReconnect = () => {
-      if (cancelled || !enabled || attempt >= MAX_ATTEMPTS) return;
-      const base = Math.min(30000, 1000 * 2 ** attempt);
-      const delay = base * (0.75 + Math.random() * 0.5);
-      attempt++;
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
-        connect();
-      }, delay);
-    };
-
-    const connect = () => {
-      if (cancelled || !enabled) return;
-      setStatus("connecting");
-      const ws = new WebSocket(wsUrl());
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        attempt = 0;
-        setStatus("connected");
-        ws.send(JSON.stringify({ type: "list_models" } satisfies ClientMessage));
-        ws.send(JSON.stringify({ type: "list_agents" } satisfies ClientMessage));
-        ws.send(JSON.stringify({ type: "list_skills" } satisfies ClientMessage));
-        ws.send(JSON.stringify({ type: "list_presets" } satisfies ClientMessage));
-        ws.send(JSON.stringify({ type: "list_permissions" } satisfies ClientMessage));
-        ws.send(JSON.stringify({ type: "list_sessions" } satisfies ClientMessage));
-        ws.send(JSON.stringify({ type: "list_workspaces" } satisfies ClientMessage));
-      };
-
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data) as ServerMessage;
-          apply(msg);
-          applyExtensions(msg);
-        } catch (err) {
-          console.error("[ws] bad JSON", err);
+    const client = new WsClient({
+      url: wsUrl,
+      factory: browserSocketFactory,
+      onStatus: setStatus,
+      onMessage: (msg) => {
+        apply(msg as ServerMessage);
+        applyExtensions(msg as ServerMessage);
+      },
+      // The protocol's initial state queries, replayed on every reconnect so
+      // a resumed socket re-syncs rosters and the session list.
+      onOpen: () => {
+        for (const type of [
+          "list_models",
+          "list_agents",
+          "list_skills",
+          "list_presets",
+          "list_permissions",
+          "list_sessions",
+          "list_workspaces",
+        ] as const) {
+          client.send(JSON.stringify({ type } satisfies ClientMessage));
         }
-      };
+      },
+    });
+    clientRef.current = client;
 
-      ws.onclose = () => {
-        setStatus("disconnected");
-        if (cancelled) return;
-        if (!reconnectTimer) scheduleReconnect();
-      };
-
-      ws.onerror = () => {
-        // onclose fires after.
-      };
-    };
-
-    sendRef.current = (msg) => {
-      const ws = wsRef.current;
-      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
-    };
+    sendRef.current = (msg) => client.send(JSON.stringify(msg));
     currentSend = sendRef.current;
 
     // Reconnect immediately when the network comes back (e.g. laptop wake),
@@ -108,23 +76,20 @@ export function useWebSocket(enabled: boolean, identityKey = "") {
     // path serves the banner's manual 重试 button.
     const reconnectNow = () => {
       if (cancelled || !enabled) return;
-      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      attempt = 0;
-      connect();
+      client.reconnectNow();
     };
     const onOnline = () => reconnectNow();
     const onManualReconnect = () => reconnectNow();
     window.addEventListener("online", onOnline);
     window.addEventListener("platform:reconnect", onManualReconnect);
 
-    connect();
+    client.connect();
 
     return () => {
       cancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("platform:reconnect", onManualReconnect);
-      wsRef.current?.close();
+      client.close();
     };
   }, [apply, applyExtensions, enabled, identityKey, setStatus]);
 

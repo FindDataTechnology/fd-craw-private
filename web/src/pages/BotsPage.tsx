@@ -34,7 +34,7 @@ import {
   deleteBot,
   type Bot,
   type BotType,
-} from "@/lib/bots-api";
+} from "@platform/core";
 
 type FormState =
   | { mode: "closed" }

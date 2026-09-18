@@ -21,9 +21,9 @@ import { Bot, ChevronDown, Folder, FolderOpen, Loader2, ShieldCheck, SlidersHori
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "@/hooks/useAuth";
-import { useChatStore } from "@/hooks/useChatStore";
-import { savePersonalModel } from "@/lib/bindings-api";
-import type { ClientMessage } from "@/types/ws";
+import { useChatStore } from "@platform/core";
+import { savePersonalModel } from "@platform/core";
+import type { ClientMessage } from "@platform/core";
 import { cn } from "@/lib/utils";
 
 interface Props {

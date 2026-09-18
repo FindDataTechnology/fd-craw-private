@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { useChatStore } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
 import { cn } from "@/lib/utils";
 
 interface Props {

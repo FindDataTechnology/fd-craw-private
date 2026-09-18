@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Menu } from "lucide-react";
-import { useChatStore } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
 import { Chat } from "@/components/Chat";
 import { ChatHeader } from "@/components/ChatHeader";
 import { ChatWelcome } from "@/components/ChatWelcome";
 import { Composer } from "@/components/Composer";
-import type { ClientMessage } from "@/types/ws";
+import type { ClientMessage } from "@platform/core";
 
 // Chat page: the empty state (ChatWelcome) and the in-session state
 // (ChatHeader + Chat + Composer) are mutually exclusive — they never render

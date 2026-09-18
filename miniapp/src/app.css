@@ -1,0 +1,622 @@
+/* Global styles for the mini-program client. Plain CSS on purpose:
+   weapp-tailwindcss would add a build-layer dependency for a two-page client. */
+
+page {
+  height: 100%;
+  background: #f3f4f6;
+  color: #111827;
+  font-size: 28px;
+  line-height: 1.55;
+}
+
+/* ── chat page ─────────────────────────────────────────────────────────── */
+
+.chat-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-sizing: border-box;
+}
+
+.conn-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.conn-retry {
+  padding: 4px 20px;
+  border-radius: 999px;
+  background: #92400e;
+  color: #fff;
+  font-size: 24px;
+}
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.picker-chip {
+  max-width: 220px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: #f3f4f6;
+}
+
+.picker-chip-text {
+  font-size: 24px;
+  color: #374151;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.picker-link {
+  margin-left: auto;
+  color: #2563eb;
+  font-size: 26px;
+  padding: 8px 6px;
+}
+
+.msg-list {
+  flex: 1;
+  overflow: hidden;
+  padding: 16px 0;
+}
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 160px;
+  gap: 12px;
+}
+
+.welcome-title {
+  font-size: 36px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.welcome-sub {
+  font-size: 26px;
+  color: #6b7280;
+}
+
+.turn-wrap {
+  padding: 0 24px;
+}
+
+.msg-bottom {
+  height: 24px;
+}
+
+/* ── turns ─────────────────────────────────────────────────────────────── */
+
+.turn {
+  margin-bottom: 20px;
+}
+
+.turn-user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.turn-user-text {
+  max-width: 560px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: #2563eb;
+  color: #fff;
+  word-break: break-word;
+}
+
+.turn-assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.turn-cursor {
+  color: #2563eb;
+}
+
+.turn-interrupted {
+  font-size: 22px;
+  color: #9ca3af;
+}
+
+.blk {
+  border-radius: 12px;
+}
+
+.blk-text-plain {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.blk-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+
+.blk-icon {
+  font-size: 26px;
+}
+
+.blk-title {
+  flex: 1;
+  font-size: 25px;
+  color: #374151;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.blk-state {
+  font-size: 22px;
+}
+
+.blk-state-running {
+  color: #2563eb;
+}
+
+.blk-state-done {
+  color: #059669;
+}
+
+.blk-state-error {
+  color: #dc2626;
+}
+
+.blk-toggle {
+  font-size: 22px;
+  color: #6b7280;
+}
+
+.blk-pre {
+  display: block;
+  margin-top: 8px;
+  padding: 14px 16px;
+  background: #111827;
+  color: #e5e7eb;
+  border-radius: 12px;
+  font-family: monospace;
+  font-size: 22px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.blk-thinking-text {
+  background: #f9fafb;
+  color: #4b5563;
+}
+
+.blk-error {
+  padding: 14px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+}
+
+.blk-error-text {
+  color: #b91c1c;
+  font-size: 25px;
+}
+
+/* ── markdown ──────────────────────────────────────────────────────────── */
+
+.md {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.md-h {
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.md-h1 {
+  font-size: 38px;
+}
+
+.md-h2 {
+  font-size: 34px;
+}
+
+.md-h3 {
+  font-size: 30px;
+}
+
+.md-h4 {
+  font-size: 28px;
+}
+
+.md-p {
+  word-break: break-word;
+}
+
+.md-strong {
+  font-weight: 700;
+}
+
+.md-em {
+  font-style: italic;
+}
+
+.md-link {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.md-code-inline {
+  padding: 2px 8px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 24px;
+}
+
+.md-code-block {
+  padding: 14px 16px;
+  background: #111827;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.md-code-lang {
+  display: block;
+  font-size: 20px;
+  color: #9ca3af;
+  margin-bottom: 6px;
+}
+
+.md-code-text {
+  color: #e5e7eb;
+  font-family: monospace;
+  font-size: 22px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.md-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.md-li {
+  display: flex;
+  gap: 10px;
+}
+
+.md-li-marker {
+  color: #6b7280;
+  min-width: 30px;
+}
+
+.md-li-text {
+  flex: 1;
+}
+
+.md-quote {
+  padding: 10px 16px;
+  border-left: 6px solid #d1d5db;
+  background: #f9fafb;
+  color: #4b5563;
+}
+
+.md-table {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.md-tr {
+  display: flex;
+}
+
+.md-tr-header {
+  background: #f9fafb;
+}
+
+.md-td {
+  flex: 1;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 24px;
+  word-break: break-word;
+}
+
+.md-th-text {
+  font-weight: 600;
+}
+
+.md-hr {
+  height: 1px;
+  background: #e5e7eb;
+  margin: 8px 0;
+}
+
+.md-chart {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 8px;
+}
+
+.md-chart-canvas {
+  width: 100%;
+  height: 220px;
+}
+
+/* ── composer ──────────────────────────────────────────────────────────── */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 20px 0;
+  background: #fff;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  font-size: 22px;
+}
+
+.chip-error {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.chip-name {
+  max-width: 320px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chip-x {
+  color: #6b7280;
+}
+
+.composer {
+  padding: 12px 20px 24px;
+  background: #fff;
+  border-top: 1px solid #e5e7eb;
+}
+
+.composer-input {
+  width: 100%;
+  min-height: 72px;
+  max-height: 240px;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  background: #f3f4f6;
+  border-radius: 12px;
+  font-size: 28px;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.composer-attach {
+  font-size: 40px;
+  padding: 4px 10px;
+}
+
+.composer-send,
+.composer-stop {
+  margin-left: auto;
+  padding: 10px 36px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 26px;
+}
+
+.composer-stop {
+  background: #dc2626;
+}
+
+.composer-send-disabled {
+  opacity: 0.5;
+}
+
+/* ── sessions page ─────────────────────────────────────────────────────── */
+
+.sessions-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.sessions-list,
+.sessions-detail {
+  flex: 1;
+  overflow: hidden;
+}
+
+.session-item {
+  padding: 22px 24px;
+  background: #fff;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.session-title {
+  display: block;
+  font-size: 28px;
+  color: #111827;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.session-when {
+  font-size: 22px;
+  color: #9ca3af;
+}
+
+.sessions-empty,
+.sessions-loading,
+.sessions-error {
+  display: flex;
+  justify-content: center;
+  padding: 60px 24px;
+  color: #6b7280;
+}
+
+.sessions-error {
+  color: #b91c1c;
+}
+
+.sessions-back {
+  padding: 16px 24px;
+  color: #2563eb;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.sessions-detail-title {
+  padding: 16px 24px 0;
+  font-size: 32px;
+  font-weight: 600;
+}
+
+/* ── login page ────────────────────────────────────────────────────────── */
+
+.login-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 120px 48px 0;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.login-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.login-title {
+  font-size: 44px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.login-sub {
+  font-size: 24px;
+  color: #6b7280;
+  line-height: 1.6;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.login-label {
+  font-size: 24px;
+  color: #374151;
+}
+
+.login-input {
+  padding: 20px 24px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 28px;
+}
+
+.login-placeholder {
+  color: #9ca3af;
+}
+
+.login-error {
+  font-size: 24px;
+  color: #dc2626;
+}
+
+.login-submit {
+  margin-top: 16px;
+  padding: 22px 0;
+  border-radius: 12px;
+  background: #2563eb;
+  display: flex;
+  justify-content: center;
+}
+
+.login-submit-disabled {
+  opacity: 0.5;
+}
+
+.login-submit-text {
+  color: #fff;
+  font-size: 30px;
+}
+
+.login-unbind {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 24px;
+  color: #6b7280;
+  text-decoration: underline;
+}
+
+.login-code-input {
+  text-align: center;
+  font-size: 44px;
+  letter-spacing: 16px;
+  font-weight: 600;
+}
+
+/* ── chat page server-address row ──────────────────────────────────────── */
+
+.server-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.server-label {
+  font-size: 24px;
+  color: #6b7280;
+}
+
+.server-input {
+  flex: 1;
+  padding: 10px 16px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  font-size: 24px;
+}

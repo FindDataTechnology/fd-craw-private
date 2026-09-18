@@ -1,3 +1,5 @@
+import { http, type HttpInit } from "./http";
+
 // Personal runtime-binding API (optional SSO identity only). Identity is
 // derived server-side from trusted proxy headers; the client never sends email.
 
@@ -7,9 +9,8 @@ export interface BindingResponse {
   error?: string;
 }
 
-async function request(path: string, init: RequestInit): Promise<BindingResponse> {
-  const res = await fetch(path, {
-    credentials: "same-origin",
+async function request(path: string, init: HttpInit): Promise<BindingResponse> {
+  const res = await http(path, {
     headers: { "Content-Type": "application/json" },
     ...init,
   });

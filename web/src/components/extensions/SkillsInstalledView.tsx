@@ -11,7 +11,7 @@ import { SkillCard } from "./SkillCard";
 import { SkillForm } from "./SkillForm";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
-import type { CustomSkill } from "@/lib/extensions-api";
+import type { CustomSkill } from "@platform/core";
 
 export function SkillsInstalledView() {
   const { t } = useTranslation();

@@ -26,6 +26,9 @@
     "web:build": "npm run check:locales && npm --prefix web run build",
     "web:build:e2e": "npm run check:locales && npm --prefix web run build:e2e",
     "web:dev": "npm --prefix web run dev",
+    "miniapp:install": "npm --prefix miniapp install",
+    "miniapp:build": "npm --prefix miniapp run build:weapp",
+    "miniapp:typecheck": "npm --prefix miniapp run typecheck",
     "postinstall": "node scripts/postinstall-web.js"
   },
   "dependencies": {

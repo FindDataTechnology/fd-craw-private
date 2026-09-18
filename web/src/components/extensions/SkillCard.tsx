@@ -2,7 +2,7 @@
 // Card component for displaying an installed skill.
 
 import { useTranslation } from "react-i18next";
-import type { Skill, CustomSkill } from "@/lib/extensions-api";
+import type { Skill, CustomSkill } from "@platform/core";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";

@@ -15,10 +15,10 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Database, Sparkles, Search, PenLine } from "lucide-react";
-import { useChatStore } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
 import { AgentPresetPicker } from "@/components/AgentPresetPicker";
 import { LocalFileButton } from "@/components/preview/LocalFileButton";
-import type { ClientMessage } from "@/types/ws";
+import type { ClientMessage } from "@platform/core";
 import type { LucideIcon } from "lucide-react";
 
 // Stable identity: key → i18n key pair + icon. The prompt text lives in the

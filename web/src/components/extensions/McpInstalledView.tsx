@@ -11,7 +11,7 @@ import { McpServerCard } from "./McpServerCard";
 import { McpServerForm } from "./McpServerForm";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
-import type { McpServer } from "@/lib/extensions-api";
+import type { McpServer } from "@platform/core";
 
 export function McpInstalledView() {
   const { t } = useTranslation();

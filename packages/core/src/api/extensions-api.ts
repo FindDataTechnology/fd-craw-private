@@ -1,3 +1,5 @@
+import { http } from "./http";
+
 // extensions-api.ts
 // API client for extensions management (MCP servers + custom skills)
 
@@ -72,7 +74,7 @@ export interface MarketCatalog {
 // ── MCP Servers ──────────────────────────────────────────────────────────────
 
 export async function fetchMcpServers(): Promise<McpServer[]> {
-  const res = await fetch(`${BASE_URL}/mcp`);
+  const res = await http(`${BASE_URL}/mcp`);
   if (!res.ok) throw new Error(`Failed to fetch MCP servers: ${res.statusText}`);
   const data = await res.json();
   return data.servers || [];
@@ -83,7 +85,7 @@ export async function addMcpServer(
   config: McpServer["config"],
   enabled = true
 ): Promise<McpServer> {
-  const res = await fetch(`${BASE_URL}/mcp`, {
+  const res = await http(`${BASE_URL}/mcp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, config, enabled }),
@@ -100,7 +102,7 @@ export async function updateMcpServer(
   config?: McpServer["config"],
   enabled?: boolean
 ): Promise<McpServer> {
-  const res = await fetch(`${BASE_URL}/mcp/${encodeURIComponent(name)}`, {
+  const res = await http(`${BASE_URL}/mcp/${encodeURIComponent(name)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ config, enabled }),
@@ -113,7 +115,7 @@ export async function updateMcpServer(
 }
 
 export async function removeMcpServer(name: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/mcp/${encodeURIComponent(name)}`, {
+  const res = await http(`${BASE_URL}/mcp/${encodeURIComponent(name)}`, {
     method: "DELETE",
   });
   if (!res.ok) {
@@ -123,7 +125,7 @@ export async function removeMcpServer(name: string): Promise<void> {
 }
 
 export async function toggleMcpServer(name: string, enabled: boolean): Promise<McpServer> {
-  const res = await fetch(`${BASE_URL}/mcp/${encodeURIComponent(name)}/enable`, {
+  const res = await http(`${BASE_URL}/mcp/${encodeURIComponent(name)}/enable`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled }),
@@ -138,7 +140,7 @@ export async function toggleMcpServer(name: string, enabled: boolean): Promise<M
 // ── Skills ───────────────────────────────────────────────────────────────────
 
 export async function fetchSkills(): Promise<Skill[]> {
-  const res = await fetch(`${BASE_URL}/skills`);
+  const res = await http(`${BASE_URL}/skills`);
   if (!res.ok) throw new Error(`Failed to fetch skills: ${res.statusText}`);
   const data = await res.json();
   return data.skills || [];
@@ -150,7 +152,7 @@ export async function addCustomSkill(
   content: string,
   enabled = true
 ): Promise<CustomSkill> {
-  const res = await fetch(`${BASE_URL}/skills`, {
+  const res = await http(`${BASE_URL}/skills`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, description, content, enabled }),
@@ -168,7 +170,7 @@ export async function updateCustomSkill(
   content?: string,
   enabled?: boolean
 ): Promise<CustomSkill> {
-  const res = await fetch(`${BASE_URL}/skills/${encodeURIComponent(name)}`, {
+  const res = await http(`${BASE_URL}/skills/${encodeURIComponent(name)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ description, content, enabled }),
@@ -181,7 +183,7 @@ export async function updateCustomSkill(
 }
 
 export async function removeCustomSkill(name: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/skills/${encodeURIComponent(name)}`, {
+  const res = await http(`${BASE_URL}/skills/${encodeURIComponent(name)}`, {
     method: "DELETE",
   });
   if (!res.ok) {
@@ -191,7 +193,7 @@ export async function removeCustomSkill(name: string): Promise<void> {
 }
 
 export async function toggleCustomSkill(name: string, enabled: boolean): Promise<CustomSkill> {
-  const res = await fetch(`${BASE_URL}/skills/${encodeURIComponent(name)}/enable`, {
+  const res = await http(`${BASE_URL}/skills/${encodeURIComponent(name)}/enable`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled }),
@@ -206,7 +208,7 @@ export async function toggleCustomSkill(name: string, enabled: boolean): Promise
 // ── Market Catalog ───────────────────────────────────────────────────────────
 
 export async function fetchMarketCatalog(): Promise<MarketCatalog> {
-  const res = await fetch(`${BASE_URL}/market`);
+  const res = await http(`${BASE_URL}/market`);
   if (!res.ok) throw new Error(`Failed to fetch market catalog: ${res.statusText}`);
   return res.json();
 }
@@ -214,7 +216,7 @@ export async function fetchMarketCatalog(): Promise<MarketCatalog> {
 // Registry-sourced skills install server-side: the backend fetches the
 // skill's SKILL.md with the service token and creates the custom skill.
 export async function installRegistrySkill(name: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/market/skills/${encodeURIComponent(name)}/install`, {
+  const res = await http(`${BASE_URL}/market/skills/${encodeURIComponent(name)}/install`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });

@@ -25,6 +25,34 @@ if (!existsSync(path.join(webDir, "package.json"))) {
   console.log("[postinstall] web/package.json not found, skipping");
   process.exit(0);
 }
+
+// packages/core (the shared protocol package consumed by web/ via file:) has
+// no deps of its own — its imports (zustand, react types) resolve through a
+// symlink onto web/node_modules so there is exactly ONE instance of each.
+// Idempotent: recreate only when missing or pointing elsewhere.
+import { symlinkSync, readlinkSync, rmSync } from "node:fs";
+const coreModules = path.join(root, "packages", "core", "node_modules");
+const coreTarget = path.join("..", "..", "web", "node_modules");
+let linked = false;
+try {
+  linked = readlinkSync(coreModules) === coreTarget;
+} catch {
+  /* missing or not a symlink */
+}
+if (!linked) {
+  try {
+    rmSync(coreModules, { recursive: true, force: true });
+  } catch {
+    /* nothing to remove */
+  }
+  try {
+    symlinkSync(coreTarget, coreModules, "dir");
+    console.log("[postinstall] linked packages/core/node_modules -> web/node_modules");
+  } catch (err) {
+    console.warn(`[postinstall] could not link packages/core/node_modules: ${err.message}`);
+  }
+}
+
 if (existsSync(dist)) {
   console.log("[postinstall] web/dist/index.html exists, skipping build");
   process.exit(0);

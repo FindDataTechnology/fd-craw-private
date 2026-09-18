@@ -516,7 +516,16 @@
       "email": "E-mail connecté",
       "openHint": "Cette instance est ouverte et ne nécessite pas de compte.",
       "signedOutHint": "Connectez-vous via le SSO de votre organisation pour utiliser cette instance.",
-      "optionalSsoHint": "Connectez-vous avec le SSO de votre organisation pour conserver votre modèle et vos préférences MCP sur ce runtime partagé."
+      "optionalSsoHint": "Connectez-vous avec le SSO de votre organisation pour conserver votre modèle et vos préférences MCP sur ce runtime partagé.",
+      "mp": {
+        "title": "Mini-programme WeChat",
+        "hint": "Saisissez ce code de liaison sur la page de connexion du mini-programme pour associer ce compte à votre WeChat (valable 5 minutes, à usage unique ; ensuite connexion automatique).",
+        "getCode": "Obtenir le code",
+        "refresh": "Actualiser",
+        "retry": "Réessayer",
+        "loading": "Récupération…",
+        "unavailable": "Ce déploiement n'exécute pas la passerelle multi-locataires ; la liaison du mini-programme n'est pas disponible."
+      }
     }
   },
   "bindings": {

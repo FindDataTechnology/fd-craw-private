@@ -12,7 +12,7 @@ import { Copy, Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { showToast } from "@/components/Toast";
 import { EChart } from "@/components/EChart";
-import { useChatStore } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
 import { usePreviewStore } from "@/hooks/usePreviewStore";
 import { baseName, fileUrl, linkRef } from "@/lib/file-preview";
 

@@ -16,14 +16,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Loader2, Paperclip, Square, TriangleAlert, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useChatStore } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
 import { SlashCommandPicker, type SlashCommand } from "@/components/SlashCommandPicker";
 import { ControlStrip } from "@/components/ControlStrip";
 import { HelpDialog } from "@/components/HelpDialog";
-import type { ClientMessage } from "@/types/ws";
+import type { ClientMessage } from "@platform/core";
 import { cn } from "@/lib/utils";
 import { showToast } from "@/components/Toast";
-import { uploadFile } from "@/lib/documents-api";
+import { uploadFile } from "@platform/core";
 import { usePreviewStore } from "@/hooks/usePreviewStore";
 import { fileUrl, type FileRef } from "@/lib/file-preview";
 

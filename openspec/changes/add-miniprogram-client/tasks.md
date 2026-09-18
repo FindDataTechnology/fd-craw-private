@@ -1,0 +1,159 @@
+# Tasks: add-miniprogram-client
+
+## 1. De-risk spikes (throwaway verification, run before any build-out)
+
+> **Status 2026-09-18:** headless halves are covered — the shared WsClient +
+> protocol are exercised against the real server by the web e2e suite (156
+> passing), the markdown parser has 10 unit tests, and the reconnect state
+> machine has 5. The spikes themselves remain open because their verification
+> is explicitly on-device (devtools), which this environment cannot run; the
+> built client now serves as the vehicle for them.
+
+- [ ] 1.1 Spike: WS protocol round-trip in WeChat devtools — scaffold a
+      minimal Taro project, connect `Taro.connectSocket` to the local
+      `server.js` (devtools "不校验合法域名" on), send `list_models` +
+      `prompt`, receive `models` + streamed `text` + `done`. Verify a full
+      turn renders. Record findings; keep the scaffold as the seed of task 5.
+- [ ] 1.2 Spike: streaming-markdown degradation UX — render streamed chunks
+      as plain text nodes and the completed message through the bundled
+      markdown renderer (parser correctness is unit-tested; this spike is
+      the on-device perf check); confirm a long (100+ chunk) turn stays
+      scrollable without visible jank on a phone-profiled devtools run.
+- [ ] 1.3 Spike: background/foreground socket lifecycle — background the
+      devtools preview (or simulate socket close), return on `onShow`,
+      verify the shared reconnect approach (immediate retry + replayed
+      `list_*` queries) restores a live conversation without user action.
+- [ ] 1.4 Spike: canvas charts — render one `echarts` fence via the bundled
+      canvas renderer; verify a bar/line/pie renders on-device and that a
+      broken option falls back to the code block without an error surface.
+
+## 2. Shared core package (web behavior unchanged)
+
+- [x] 2.1 Create `packages/core` (private, `file:`-consumable, pure TS, no
+      DOM/React at the transport layer); move `types/ws.ts`, the WS client
+      with backoff/reconnect (extracted from `useWebSocket.ts` behind an
+      injectable `SocketFactory`), `lib/*-api.ts` REST clients, and the
+      chat store logic from `web/src`; verify `npm install && npm run
+      typecheck` passes in `web/` with the package linked.
+- [x] 2.2 Rewire `web/` imports to `packages/core`; keep the React hooks
+      (`useWebSocket` etc.) in `web/` binding the shared transport to React
+      lifecycle; verify `npm run web:build` succeeds and the existing
+      Playwright e2e suite stays green (any behavior delta is a bug).
+- [x] 2.3 Add a core-level unit test for the reconnect state machine
+      (attempt cap, 30s ceiling, reset on open/manual retry) using a fake
+      `SocketFactory`; verify `npm test` (or `node --test`) passes.
+
+## 3. Attachment path (web-composer parity; supersedes the planned POST /api/files)
+
+- [x] 3.1 Verify `POST /api/documents` accepts a non-browser multipart upload
+      (field `file`) and returns the doc id + preview reference; `curl -F`
+      round-trip against a live server (markdown ingests to `status:"ready"`
+      with no LLM key; the preview ref resolves against the read-only files
+      route).
+- [x] 3.2 Drop the planned `POST /api/files` surface: attachments must be
+      document-ingested (`@doc:<id>`) to be readable by the assistant, so a
+      generic `uploads/` endpoint would have had no reader. Endpoint reverted,
+      `file-upload-api` delta deleted, proposal/design updated.
+
+## 4. Gateway mini-program auth
+
+- [x] 4.1 Implement `POST /api/mp/login` in `gateway/`: exchange `code` via
+      code2Session with `MP_APPID`/`MP_SECRET`, derive the stable synthetic
+      identity `wx_<sha256(openid)[0:16]>@mp.local`, issue a JWT signed
+      with `MP_TOKEN_SECRET` (TTL `MP_TOKEN_TTL_HOURS`, default 12); verify
+      with a mocked code2Session: valid code → token; invalid/replayed
+      code → auth error; unset env → not-configured error and no behavior
+      change on any browser route.
+- [x] 4.2 Extend `gateway/proxy.js` to accept `Authorization: Bearer <mp
+      jwt>` on HTTP and WS upgrades as a verified identity (equivalent to
+      a Logto session): map to the existing `sha256(email)` cell mapping,
+      strip client identity headers, inject verified ones +
+      `CELL_GATEWAY_SECRET`; verify a token-authenticated request reaches
+      the openid's cell, a forged/expired token 401s before any cell
+      contact, and a client-supplied identity header alongside a valid
+      token is discarded.
+- [x] 4.3 Verify identity stability end-to-end (mocked WeChat): two logins
+      of the same openid land on the same cell and see prior chat history;
+      distinct openids never share a cell; an `@mp.local` identity never
+      collides with a Logto email user.
+
+- [x] 4.4 Account binding via BIND CODES (supersedes the synthetic-identity
+      and then the ROPG plan — live probing proved Logto has no password
+      grant): `gateway/mp-bindings.js` (atomic JSON store + single-use
+      6-digit/5-min codes minted from the web session),
+      `GET /api/mp/bindcode` (HTML page for browsers / JSON),
+      `POST /api/mp/login-bindcode` (wx code + bind code → bind),
+      `404 binding_required` on the silent path, `DELETE /api/mp/bind`
+      logout; verified by `scripts/test-mp-auth.mjs` (18/18: mint, redeem,
+      single-use replay rejection, wrong/expired/malformed codes, silent
+      renewal, account-cell routing with groups, logout, unconfigured).
+- [x] 4.5 Mini-program login page (6-digit code input + server-address
+      setting) + silent/bound flows in the client (`pages/login`, `auth.ts`
+      loginWithBindCode/logout/login-required event, runtime
+      `binding_required` handling, chat-page navigation guard); local
+      rehearsal via `node scripts/dev-mp-gateway.mjs`; verified by typecheck
+      + weapp build (on-device pass pending with §5).
+
+## 5. Mini-program client (Taro)
+
+> **Status 2026-09-18:** code complete — every file below is written, the
+> project typechecks (`npm run typecheck`) and builds clean
+> (`npm run build:weapp`, 0.38 MB dist). Each task's stated verification is an
+> ON-DEVICE devtools behaviour check, which the build host cannot run (no
+> WeChat devtools installed) — checkboxes stay open until that pass happens.
+
+- [ ] 5.1 Scaffold `miniapp/` from the spike project (React + TS + Tailwind
+      4 + zustand, `file:../packages/core` dep, configurable API base +
+      token storage; plain CSS, no Tailwind); verify it boots in devtools
+      against local `AUTH_MODE=none` `server.js` and renders a connected
+      state.
+- [ ] 5.2 Implement the Chat page: composer (send, disabled while
+      streaming), streamed plain-text assistant view, completed-message
+      markdown via the bundled renderer, monospace un-highlighted code
+      blocks, error surfacing; verify a full `prompt` → stream → `done` turn and an
+      `error` mid-turn both leave a usable UI (manual devtools check
+      against the spike script).
+- [ ] 5.3 Implement session history (Sessions page: list via
+      `/api/chat-history/sessions`, read-only viewer via
+      `/api/chat-history/sessions/:id`, list scroll position preserved);
+      verify opening a past session renders its messages read-only.
+- [ ] 5.4 Implement model/agent/preset pickers from `list_models` /
+      `list_agents` / `list_presets` with the streaming guard (rejected
+      while streaming, previous selection stays current); verify switching
+      idle vs mid-stream against the same expectations as the web e2e.
+- [ ] 5.5 Implement foreground reconnect: `onShow` → dead-socket detection
+      → `reconnectNow()` from the shared core with replayed initial
+      queries; disconnected banner with manual retry; verify the
+      background/foreground scenario from spike 1.3 now works through the
+      real core path.
+- [ ] 5.6 Implement attachments: composer attach → `Taro.uploadFile` to
+      `POST /api/documents` → prompt appends `@doc:<id>` (the web composer's
+      exact contract); verify attach + send shows both text and attachment in
+      the rendered user turn, a non-extractable file still attaches when the
+      response carries a stored original, and a failed upload surfaces an
+      error without eating the prompt text.
+- [ ] 5.7 Implement the `echarts` canvas component (bundled dependency-free
+      renderer — no subpackage needed at this size) with code-block fallback
+      (from spike 1.4); verify all four registered series types render and a
+      malformed option degrades to the code block.
+- [ ] 5.8 Implement MP auth in the client: `wx.login` on 401 → silent
+      exchange → retry once; token persisted in MP storage; verify against
+      the gateway with mocked code2Session that an expired token recovers
+      without user interaction.
+
+## 6. Hardening & release prep
+
+- [x] 6.1 Package-size audit: verify the main package stays under 2MB
+      (bundled chart renderer, no shiki/echarts/mp-html); record final
+      sizes in the change notes. **Measured 2026-09-18:** `dist/` totals
+      0.38 MB (app.js 96K, vendors.js 12K, app.wxss 8K, both page bundles
+      < 10K) — 19% of the 2MB main-package budget.
+- [ ] 6.2 Ops runbook — DELIVERED 2026-09-18 as DEPLOY.md "WeChat mini program
+      client (Taro)" (MP env table, code2Session→Bearer flow, ICP/WSS legal
+      domain steps, devtools bypass, build + verify commands) plus the
+      `.env.example` MP block and the DEPLOY.md file map. Remaining: a
+      reviewer pass against a staging deployment (tracked with 6.3).
+- [ ] 6.3 End-to-end verification against a staging gateway: login → chat
+      turn → background/foreground → history → attachment upload; verify
+      every spec scenario in `miniprogram-client`, `miniprogram-auth`, and
+      `file-upload-api` deltas is exercised or explicitly accounted for.

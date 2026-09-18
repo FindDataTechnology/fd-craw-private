@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import type { LlmProvider } from "@/lib/llm-api";
+import type { LlmProvider } from "@platform/core";
 
 export interface ProviderFormValue {
   name: string;

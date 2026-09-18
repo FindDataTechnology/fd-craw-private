@@ -5,11 +5,20 @@ agents.json
 registry-groups.json
 knowledge-store/
 data/
-.env
-
 # React frontend workspace
 web/node_modules/
 web/dist/
+
+# Shared core: `packages/core/node_modules` is a symlink onto web/node_modules
+# (see scripts/postinstall-web.js) so the shared source resolves zustand/react
+# to exactly one instance. A symlink is not a directory to git, so the bare
+# `node_modules/` rule above does not cover it — ignore it explicitly or git
+# would track a dangling link.
+packages/core/node_modules
+
+# WeChat mini-program client (Taro)
+miniapp/node_modules/
+miniapp/dist/
 
 # Electron build artifacts
 dist/

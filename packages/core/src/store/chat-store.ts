@@ -1,4 +1,5 @@
-// Chat store — single source of truth for the React chat surface.
+// Chat store — single source of truth for the chat surface (web and
+// mini program alike; the React binding lives with each consumer).
 //
 // Holds the imperative chat state: WS status, models, skills, sessions,
 // streaming flag, the message list. One reducer function per incoming WS type
@@ -10,7 +11,6 @@
 // visual problem the vanilla app has.
 
 import { create } from "zustand";
-import { showToast } from "@/components/Toast";
 import type {
   AgentInfo,
   BindingModel,
@@ -23,9 +23,17 @@ import type {
   ServerMessage,
   SessionMeta,
   SkillInfo,
-} from "@/types/ws";
+} from "../types/ws";
 
 export type ConnStatus = "connecting" | "connected" | "disconnected";
+
+// Error surfacing is platform UI: the web wires a toast, the mini program a
+// dialog/toast of its own. The default sink keeps the store usable (log only)
+// when no consumer wires one.
+let chatErrorSink: (message: string) => void = (message) => console.error("[chat]", message);
+export function setChatErrorSink(fn: (message: string) => void) {
+  chatErrorSink = fn;
+}
 
 export type Block =
   | { kind: "text"; text: string }
@@ -392,11 +400,12 @@ export const useChatStore = create<State>((set) => ({
           // An error with no run in flight (e.g. "Agent is still
           // initializing" broadcast during cold boot, or a rejected
           // concurrent prompt) must not fabricate an empty assistant turn —
-          // surface it as a toast instead. Errors during a live run still
-          // attach to that turn (as a clone, so the turn re-renders).
+          // surface it through the platform error sink instead. Errors
+          // during a live run still attach to that turn (as a clone, so the
+          // turn re-renders).
           const tail = turns[turns.length - 1];
           if (!tail || tail.role !== "assistant" || !tail.streaming) {
-            showToast(m.message);
+            chatErrorSink(m.message);
             // A rejected config change (bad path, agent busy) never sends its
             // *_changed broadcast, so the pending control would hang forever.
             return { pendingConfig: null };
@@ -621,10 +630,9 @@ export const useChatStore = create<State>((set) => ({
     })),
 }));
 
-// Dev/test hook: expose the store on window so it can be driven without a real
-// WebSocket. Gated to dev builds, or to e2e builds (VITE_E2E_SEAM=1, used only
-// for the Playwright dist — never in shipped/release builds) so the Zustand
-// store is not globally readable/mutable in production.
-if (typeof window !== "undefined" && (import.meta.env.DEV || import.meta.env.VITE_E2E_SEAM === "1")) {
-  (window as unknown as { __chatStore?: typeof useChatStore }).__chatStore = useChatStore;
+// Dev/test seam: expose the store to the host environment's global (the web's
+// window.__chatStore, gated to dev/e2e builds by the caller). Kept behind an
+// injected exposer so this module stays environment-free.
+export function setStoreExposer(expose: ((store: typeof useChatStore) => void) | null) {
+  expose?.(useChatStore);
 }

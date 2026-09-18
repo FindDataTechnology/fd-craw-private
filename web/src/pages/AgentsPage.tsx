@@ -10,10 +10,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useChatStore } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import type { AgentInfo, AppInfo } from "@/types/ws";
+import type { AgentInfo, AppInfo } from "@platform/core";
 
 type Tab = "agents" | "apps";
 

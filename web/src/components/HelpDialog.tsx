@@ -8,7 +8,7 @@
 // visible even before the first prompt).
 
 import { useTranslation } from "react-i18next";
-import { useChatStore } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
 import {
   Dialog,
   DialogContent,

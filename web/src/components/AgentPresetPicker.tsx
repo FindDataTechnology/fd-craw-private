@@ -18,9 +18,9 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Loader2, TriangleAlert, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useChatStore } from "@/hooks/useChatStore";
-import type { ClientMessage } from "@/types/ws";
-import type { PresetInfo } from "@/types/ws";
+import { useChatStore } from "@platform/core";
+import type { ClientMessage } from "@platform/core";
+import type { PresetInfo } from "@platform/core";
 import { cn } from "@/lib/utils";
 
 // The four shipped preset ids. Their preset.yml metadata is zh-only, so the

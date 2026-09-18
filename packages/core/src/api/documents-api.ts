@@ -1,7 +1,16 @@
 // Client wrappers for the document + collection REST endpoints.
 // Mirrors the vanilla app.js behavior but typed and React-friendly.
 
-import type { FileRef } from "@/lib/file-preview";
+import { http, type HttpResponse } from "./http";
+
+// The reference the read-only serving route resolves ({root,rel} of a stored
+// file). Pure shape — defined here so the client is decoupled from the web
+// preview module.
+export type FileRoot = "workspace" | "uploads";
+export interface FileRef {
+  root: FileRoot;
+  rel: string;
+}
 
 export interface DocMeta {
   id: string;
@@ -23,7 +32,7 @@ export interface CollectionMeta {
   createdAt?: string;
 }
 
-async function jsonOrThrow<T>(res: Response): Promise<T> {
+async function jsonOrThrow<T>(res: HttpResponse): Promise<T> {
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try { const j = await res.json(); if (j?.error) msg = j.error; } catch { /* ignore */ }
@@ -33,26 +42,26 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 }
 
 export async function listDocuments(): Promise<DocMeta[]> {
-  const r = await fetch("/api/documents");
+  const r = await http("/api/documents");
   const j = await jsonOrThrow<{ documents: DocMeta[] }>(r);
   return j.documents ?? [];
 }
 
 export async function getDocumentContent(id: string): Promise<string> {
-  const r = await fetch(`/api/documents/${encodeURIComponent(id)}`);
+  const r = await http(`/api/documents/${encodeURIComponent(id)}`);
   const j = await jsonOrThrow<{ content: string }>(r);
   return j.content ?? "";
 }
 
 export async function deleteDocument(id: string): Promise<void> {
-  const r = await fetch(`/api/documents/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const r = await http(`/api/documents/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
 }
 
 export async function uploadFile(file: File, signal?: AbortSignal): Promise<DocMeta> {
   const fd = new FormData();
   fd.append("file", file);
-  const r = await fetch("/api/documents", { method: "POST", body: fd, signal });
+  const r = await http("/api/documents", { method: "POST", body: fd, signal });
   if (!r.ok) {
     // A failed extraction still stored the original, so carry its preview
     // reference on the thrown error — the chip stays previewable even when
@@ -71,7 +80,7 @@ export async function uploadFile(file: File, signal?: AbortSignal): Promise<DocM
 }
 
 export async function addText(content: string, name?: string): Promise<DocMeta> {
-  const r = await fetch("/api/documents", {
+  const r = await http("/api/documents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "text", content, name }),
@@ -80,7 +89,7 @@ export async function addText(content: string, name?: string): Promise<DocMeta> 
 }
 
 export async function addUrl(url: string, name?: string): Promise<DocMeta> {
-  const r = await fetch("/api/documents", {
+  const r = await http("/api/documents", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "url", url, name }),
@@ -91,13 +100,13 @@ export async function addUrl(url: string, name?: string): Promise<DocMeta> {
 // ── Collections ──
 
 export async function listCollections(): Promise<CollectionMeta[]> {
-  const r = await fetch("/api/collections");
+  const r = await http("/api/collections");
   const j = await jsonOrThrow<{ collections: CollectionMeta[] }>(r);
   return j.collections ?? [];
 }
 
 export async function createCollection(name: string, description?: string): Promise<CollectionMeta> {
-  const r = await fetch("/api/collections", {
+  const r = await http("/api/collections", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, description }),
@@ -107,18 +116,18 @@ export async function createCollection(name: string, description?: string): Prom
 }
 
 export async function deleteCollection(id: string): Promise<void> {
-  const r = await fetch(`/api/collections/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const r = await http(`/api/collections/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
 }
 
 export async function listCollectionMembers(id: string): Promise<DocMeta[]> {
-  const r = await fetch(`/api/collections/${encodeURIComponent(id)}/documents`);
+  const r = await http(`/api/collections/${encodeURIComponent(id)}/documents`);
   const j = await jsonOrThrow<{ documents: DocMeta[] }>(r);
   return j.documents ?? [];
 }
 
 export async function addDocumentToCollection(id: string, documentId: string): Promise<void> {
-  const r = await fetch(`/api/collections/${encodeURIComponent(id)}/documents`, {
+  const r = await http(`/api/collections/${encodeURIComponent(id)}/documents`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ documentId }),

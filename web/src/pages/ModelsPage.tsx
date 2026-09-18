@@ -29,7 +29,7 @@ import {
   deleteProvider,
   getDefault,
   type LlmProvider,
-} from "@/lib/llm-api";
+} from "@platform/core";
 
 type FormState =
   | { mode: "closed" }

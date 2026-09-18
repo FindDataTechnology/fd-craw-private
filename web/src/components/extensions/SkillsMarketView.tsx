@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
 import { SkillMarketCard } from "./SkillMarketCard";
 import { SkillForm } from "./SkillForm";
-import type { MarketSkill } from "@/lib/extensions-api";
+import type { MarketSkill } from "@platform/core";
 
 interface SkillsMarketViewProps {
   onInstalled?: () => void;

@@ -1,7 +1,7 @@
 import { ChevronRight, Eye, Loader2, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
-import { useChatStore, type Block } from "@/hooks/useChatStore";
+import { useChatStore, type Block } from "@platform/core";
 import { usePreviewStore } from "@/hooks/usePreviewStore";
 import { baseName, fileUrl, findFilePath, resolveRef } from "@/lib/file-preview";
 import { memo, useId } from "react";

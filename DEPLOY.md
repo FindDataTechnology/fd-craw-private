@@ -325,6 +325,78 @@ gateway `LOGTO_ENDPOINT` / `LOGTO_APP_ID` / `LOGTO_APP_SECRET`. Group names
 still arrive as cell identity (`X-Forwarded-Groups`), so `admin` remains the
 administrative group.
 
+### WeChat mini program client (Taro)
+
+`miniapp/` is a Taro (React) thin client — chat + session history — that speaks
+the same WS/REST contracts as the web app through the shared `packages/core`
+package. It authenticates through a second gateway identity path, WeChat
+login, instead of the Logto browser redirect.
+
+**Gateway env** (all three required to enable the path; unset = the login
+route reports "not configured" and every browser flow is unchanged):
+
+| Variable | Meaning |
+|---|---|
+| `MP_APPID` | the mini program's AppID |
+| `MP_SECRET` | the mini program's AppSecret (**server-side only**) |
+| `MP_TOKEN_SECRET` | JWT signing key for platform tokens (`openssl rand -base64 32`) |
+| `MP_TOKEN_TTL_HOURS` | token lifetime, default `12` (the client silently re-logins via `wx.login`, so a shorter value is fine) |
+
+Login is **account binding with bind codes** (Logto offers no password
+grant — OAuth 2.1 removed the flow — so credentials never enter the mini
+program):
+
+1. First launch on a device: the user signs into the WEB app in a browser
+   (the normal Logto flow) and opens **`/api/mp/bindcode`** — a small page
+   shows a 6-digit code (5-minute, single-use, minted from their
+   authenticated session).
+2. They type that code ONCE on the mini-program login page:
+   `POST /api/mp/login-bindcode {code, bindCode}` pairs the fresh
+   `wx.login()` code (the WeChat user) with the bind code (account
+   ownership) and binds the openid to the account
+   (`<CELL_DATA_ROOT>/mp-bindings.json`).
+3. Every later launch is silent: `wx.login()` → `POST /api/mp/login {code}`
+   → `code2Session` → binding lookup → a platform JWT carrying the ACCOUNT
+   email/groups, sent as `Authorization: Bearer` on REST and on the WS
+   upgrade. Because the identity is the account email verbatim, the mini
+   program and the browser resolve to the SAME per-user cell (shared
+   sessions/model config).
+4. `DELETE /api/mp/bind` (logout) removes the binding.
+
+`MP_TOKEN_SECRET` is deliberately separate from `CELL_GATEWAY_SECRET`.
+**Local rehearsal without the real MP AppSecret:**
+`node scripts/dev-mp-gateway.mjs` — the real gateway + real Logto from
+`.env`, with a mock code2Session that maps every wx.login code to one dev
+openid, so the whole bind → silent-relogin flow can be rehearsed in
+devtools.
+
+**Release prerequisites (ops — start these early):**
+
+1. **A registered mini program AppID** (个人主体 is fine for chat; web-view
+   would require an enterprise entity — this client does not use web-view).
+2. **HTTPS/WSS + an ICP-registered domain.** Release requires the domain in
+   the WeChat admin console under 开发 → 开发管理 → 开发设置 → 服务器域名, in
+   BOTH lists:
+   - `request 合法域名` → `https://<PAAS_BASE_URL>`
+   - `socket 合法域名` → `wss://<PAAS_BASE_URL>`
+   An IP, a port-numbered host, or an unregistered domain cannot be added.
+   Devtools bypasses the check (详情 → 本地设置 → 不校验合法域名), which is how
+   the client is developed against a local server. The client's default base
+   URL is `http://localhost:3000` — `localhost`, not `127.0.0.1`, because the
+   dev server binds IPv6 localhost only; for 真机调试 (real-phone preview)
+   set the base URL to the dev machine's LAN IP.
+
+**Building the client:** `cd miniapp && npm install && npm run build:weapp`,
+then open `miniapp/` in WeChat devtools (`miniprogramRoot: dist/`, test appid
+— no devtools-side npm build needed). The API base URL lives in mini-program
+storage (`platform.baseUrl`); the default is `http://localhost:3000`.
+
+**Verification without devtools:** `node --test scripts/test-mp-auth.mjs`
+(boots a real gateway against mocked WeChat/Logto upstreams and a stub cell —
+login exchange, Bearer routing, header stripping, WS upgrade auth, identity
+stability) and `node --test scripts/test-ws-reconnect.mjs` (the shared
+reconnect state machine).
+
 ### Sizing and lifecycle
 
 Each resident cell is a Node process plus a dsh child plus that user's page
@@ -399,11 +471,21 @@ argocd/
 
 gateway/                            # multi-tenant front door (not used by the single-process deploy)
   index.js                          # Logto auth, routing, WS upgrade, /healthz + /api/gateway/status
+  mp-auth.js                        # mini-program identity: code2Session + platform JWT (Bearer)
   spawner.js                        # cell lifecycle: spawn, health, idle reap, shutdown
   proxy.js                          # HTTP + WebSocket forwarding; injects the verified identity
+packages/core/                      # shared protocol core (WS client + chat store + REST clients)
+                                    #   consumed by web/ and miniapp/ via file: — no build step
+miniapp/                            # WeChat mini-program client (Taro + React)
+  config/index.ts                   # webpack chain: @platform/core + zustand aliases
+  src/lib/                          # runtime (auth/http/socket), markdown parser, canvas charts
+  src/pages/chat|sessions/          # chat + read-only session history
 scripts/
   test-cell-containment.mjs         # a cell writes only under its data roots
   test-cell-isolation.mjs           # two cells: no cross-cell state, events, or errors
   test-cell-gateway.mjs             # gateway auth, routing, sticky WS, restart, idle reap
   test-cell-bindings.mjs            # saved bindings are what a cell boots on
+  test-mp-auth.mjs                  # mini-program login/Bearer/WS auth against a real gateway
+  mp-stub-cell.mjs                  # stub cell used by test-mp-auth (not a test)
+  test-ws-reconnect.mjs             # shared WsClient reconnect state machine
 ```

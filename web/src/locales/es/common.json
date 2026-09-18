@@ -516,7 +516,16 @@
       "email": "Correo de la sesión",
       "openHint": "Esta instancia es abierta y no requiere una cuenta.",
       "signedOutHint": "Inicia sesión mediante el SSO de tu organización para usar esta instancia.",
-      "optionalSsoHint": "Inicia sesión con el SSO de tu organización para conservar tu modelo y tus preferencias de MCP en este entorno compartido."
+      "optionalSsoHint": "Inicia sesión con el SSO de tu organización para conservar tu modelo y tus preferencias de MCP en este entorno compartido.",
+      "mp": {
+        "title": "Mini programa de WeChat",
+        "hint": "Introduce este código de vinculación en la página de inicio de sesión del mini programa para asociar esta cuenta con tu WeChat (válido 5 minutos, un solo uso; después el inicio es automático).",
+        "getCode": "Obtener código",
+        "refresh": "Actualizar",
+        "retry": "Reintentar",
+        "loading": "Obteniendo…",
+        "unavailable": "Este despliegue no ejecuta la pasarela multiinquilino; la vinculación del mini programa no está disponible."
+      }
     }
   },
   "bindings": {

@@ -35,8 +35,8 @@ import {
   Waypoints,
   X,
 } from "lucide-react";
-import { useChatStore } from "@/hooks/useChatStore";
-import type { ClientMessage, SessionMeta } from "@/types/ws";
+import { useChatStore } from "@platform/core";
+import type { ClientMessage, SessionMeta } from "@platform/core";
 import { cn } from "@/lib/utils";
 import { ChatSessionMenu } from "@/components/ChatSessionMenu";
 import { settingsPath } from "@/components/settings/sections";

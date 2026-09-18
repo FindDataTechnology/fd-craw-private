@@ -7,8 +7,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { setDefault } from "@/lib/llm-api";
-import { useChatStore } from "@/hooks/useChatStore";
+import { setDefault } from "@platform/core";
+import { useChatStore } from "@platform/core";
 import { wsSend } from "@/hooks/useWebSocket";
 
 interface Props {

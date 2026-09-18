@@ -8,7 +8,7 @@
 
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import type { McpServer, MarketMcpServer } from "@/lib/extensions-api";
+import type { McpServer, MarketMcpServer } from "@platform/core";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

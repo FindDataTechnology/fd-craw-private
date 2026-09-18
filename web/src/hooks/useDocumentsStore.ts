@@ -3,9 +3,9 @@
 // No query state lives here — Q&A is the chat window's job (attachments +
 // the agent's library tools).
 import { create } from "zustand";
-import * as api from "@/lib/documents-api";
-import type { DocMeta, CollectionMeta } from "@/lib/documents-api";
-import type { ServerMessage } from "@/types/ws";
+import * as api from "@platform/core";
+import type { DocMeta, CollectionMeta } from "@platform/core";
+import type { ServerMessage } from "@platform/core";
 
 interface DocumentsState {
   documents: DocMeta[];

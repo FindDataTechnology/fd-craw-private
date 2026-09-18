@@ -1,13 +1,13 @@
 // Extensions state (MCP servers + custom skills + market catalog).
 // Fetches REST on mount; subscribes to the `extensions_changed` WS event.
 import { create } from "zustand";
-import * as api from "@/lib/extensions-api";
+import * as api from "@platform/core";
 import type {
   McpServer,
   Skill,
   MarketCatalog,
-} from "@/lib/extensions-api";
-import type { ServerMessage } from "@/types/ws";
+} from "@platform/core";
+import type { ServerMessage } from "@platform/core";
 
 interface ExtensionsState {
   mcpServers: McpServer[];

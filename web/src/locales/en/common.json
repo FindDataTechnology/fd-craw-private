@@ -529,7 +529,16 @@
       "email": "Signed-in email",
       "openHint": "This instance is open and does not require an account.",
       "optionalSsoHint": "Sign in with your organization’s SSO to keep your own model and MCP preferences on this shared runtime.",
-      "signedOutHint": "Sign in through your organization’s SSO to use this instance."
+      "signedOutHint": "Sign in through your organization’s SSO to use this instance.",
+      "mp": {
+        "title": "WeChat mini program",
+        "hint": "Enter this bind code on the mini-program login page to pair this account with your WeChat (valid 5 minutes, single use; afterwards sign-in is automatic).",
+        "getCode": "Get bind code",
+        "refresh": "Refresh",
+        "retry": "Retry",
+        "loading": "Fetching…",
+        "unavailable": "This deployment does not run the multi-tenant gateway; mini-program binding is unavailable."
+      }
     }
   },
   "preview": {

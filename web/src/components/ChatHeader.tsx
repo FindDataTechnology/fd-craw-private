@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pencil, X, Check, MoreHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useChatStore } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
 import { ChatSessionMenu } from "@/components/ChatSessionMenu";
 import { LocalFileButton } from "@/components/preview/LocalFileButton";
 import { presetDisplayName } from "@/components/AgentPresetPicker";

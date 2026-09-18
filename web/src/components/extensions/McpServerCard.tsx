@@ -3,10 +3,10 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { McpServer } from "@/lib/extensions-api";
+import type { McpServer } from "@platform/core";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
-import { useChatStore } from "@/hooks/useChatStore";
-import { setPersonalMcp } from "@/lib/bindings-api";
+import { useChatStore } from "@platform/core";
+import { setPersonalMcp } from "@platform/core";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Pencil, Trash2, Zap } from "lucide-react";

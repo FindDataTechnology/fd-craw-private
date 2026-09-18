@@ -1,3 +1,5 @@
+import { http, type HttpResponse } from "./http";
+
 // Client wrappers for the /api/bots endpoints (social-bot-channels capability).
 //
 // Credential VALUES never cross this boundary: the server returns only the list
@@ -48,7 +50,7 @@ export interface BotQr {
   error?: string;
 }
 
-async function jsonOrThrow<T>(res: Response): Promise<T> {
+async function jsonOrThrow<T>(res: HttpResponse): Promise<T> {
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try { const j = await res.json(); if (j?.error) msg = j.error; } catch { /* ignore */ }
@@ -58,14 +60,14 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 }
 
 const send = (url: string, method: string, body?: unknown) =>
-  fetch(url, {
+  http(url, {
     method,
     headers: { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
 export async function listBots(): Promise<{ bots: Bot[]; types: BotType[] }> {
-  return jsonOrThrow(await fetch("/api/bots"));
+  return jsonOrThrow(await http("/api/bots"));
 }
 
 export async function createBot(input: {
@@ -91,5 +93,5 @@ export async function deleteBot(id: string): Promise<void> {
 // cross, the response carries the resolved URL + the rendered SVG. Upstream
 // failures arrive as a 200 fallback state (see BotQr), not an HTTP error.
 export async function getBotQr(id: string): Promise<BotQr> {
-  return jsonOrThrow(await fetch(`/api/bots/${encodeURIComponent(id)}/qr`));
+  return jsonOrThrow(await http(`/api/bots/${encodeURIComponent(id)}/qr`));
 }

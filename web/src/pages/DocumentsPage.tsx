@@ -16,12 +16,12 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useDocumentsStore } from "@/hooks/useDocumentsStore";
-import { useChatStore } from "@/hooks/useChatStore";
-import * as api from "@/lib/documents-api";
-import type { DocMeta, CollectionMeta } from "@/lib/documents-api";
+import { useChatStore } from "@platform/core";
+import * as api from "@platform/core";
+import type { DocMeta, CollectionMeta } from "@platform/core";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import type { ClientMessage } from "@/types/ws";
+import type { ClientMessage } from "@platform/core";
 
 const STATUS_COLORS: Record<string, string> = {
   ready: "bg-success/15 text-success",

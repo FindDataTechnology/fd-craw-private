@@ -4,10 +4,10 @@
 // user prompt from the LAST assistant turn.
 import { useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useChatStore } from "@/hooks/useChatStore";
+import { useChatStore } from "@platform/core";
 import { UserTurn } from "@/components/UserTurn";
 import { AssistantTurn } from "@/components/AssistantTurn";
-import type { ClientMessage } from "@/types/ws";
+import type { ClientMessage } from "@platform/core";
 
 interface Props {
   send: (m: ClientMessage) => void;

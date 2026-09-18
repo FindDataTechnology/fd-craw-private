@@ -2,7 +2,7 @@
 // Card component for displaying a market skill.
 
 import { useTranslation } from "react-i18next";
-import type { MarketSkill } from "@/lib/extensions-api";
+import type { MarketSkill } from "@platform/core";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 

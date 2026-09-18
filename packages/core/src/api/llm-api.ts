@@ -1,3 +1,5 @@
+import { http, type HttpResponse } from "./http";
+
 // Client for the /api/llm/* endpoints (Models page). Types mirror the
 // server records in llm-providers.js. The API key never appears here — the
 // server exposes only `hasKey: boolean`.
@@ -28,7 +30,7 @@ export interface LlmDefault {
   activeModelId: string | null;
 }
 
-async function jsonOrThrow(res: Response) {
+async function jsonOrThrow(res: HttpResponse) {
   if (!res.ok) {
     let message = res.statusText;
     try {
@@ -43,7 +45,7 @@ async function jsonOrThrow(res: Response) {
 }
 
 export async function listProviders(): Promise<LlmProvider[]> {
-  const r = await fetch("/api/llm/providers");
+  const r = await http("/api/llm/providers");
   const body = await jsonOrThrow(r);
   return body.providers ?? [];
 }
@@ -54,7 +56,7 @@ export async function createProvider(input: {
   apiKey: string;
   reasoningEfforts?: string;
 }): Promise<LlmProvider> {
-  const r = await fetch("/api/llm/providers", {
+  const r = await http("/api/llm/providers", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -67,7 +69,7 @@ export async function updateProvider(
   id: string,
   input: { name?: string; baseUrl?: string; apiKey?: string; reasoningEfforts?: string },
 ): Promise<LlmProvider> {
-  const r = await fetch(`/api/llm/providers/${encodeURIComponent(id)}`, {
+  const r = await http(`/api/llm/providers/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -77,26 +79,26 @@ export async function updateProvider(
 }
 
 export async function deleteProvider(id: string): Promise<void> {
-  const r = await fetch(`/api/llm/providers/${encodeURIComponent(id)}`, {
+  const r = await http(`/api/llm/providers/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
   await jsonOrThrow(r);
 }
 
 export async function testProvider(id: string): Promise<LastTest & { ok: boolean }> {
-  const r = await fetch(`/api/llm/providers/${encodeURIComponent(id)}/test`, {
+  const r = await http(`/api/llm/providers/${encodeURIComponent(id)}/test`, {
     method: "POST",
   });
   return jsonOrThrow(r);
 }
 
 export async function getDefault(): Promise<LlmDefault> {
-  const r = await fetch("/api/llm/default");
+  const r = await http("/api/llm/default");
   return jsonOrThrow(r);
 }
 
 export async function setDefault(modelId: string, providerId: string): Promise<LlmDefault> {
-  const r = await fetch("/api/llm/default", {
+  const r = await http("/api/llm/default", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ modelId, providerId }),

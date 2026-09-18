@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
-import { listTraceTurns, getTraceTurn, type TraceTurnSummary, type TraceEvent } from "@/lib/trace-api";
+import { listTraceTurns, getTraceTurn, type TraceTurnSummary, type TraceEvent } from "@platform/core";
 
 function fmtTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });

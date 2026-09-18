@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
 import { McpMarketCard } from "./McpMarketCard";
 import { McpServerForm } from "./McpServerForm";
-import type { MarketMcpServer } from "@/lib/extensions-api";
+import type { MarketMcpServer } from "@platform/core";
 
 interface McpMarketViewProps {
   onInstalled?: () => void;

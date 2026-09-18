@@ -12,7 +12,7 @@ import { Copy, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { showToast } from "@/components/Toast";
-import { getBotQr, updateBot, type Bot, type BotQr } from "@/lib/bots-api";
+import { getBotQr, updateBot, type Bot, type BotQr } from "@platform/core";
 
 const dataUri = (svg: string) => `data:image/svg+xml,${encodeURIComponent(svg)}`;
 

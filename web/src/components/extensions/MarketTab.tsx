@@ -9,7 +9,7 @@ import { SkillMarketCard } from "./SkillMarketCard";
 import { McpServerForm } from "./McpServerForm";
 import { SkillForm } from "./SkillForm";
 import { Icon } from "@/components/ui/icon";
-import type { MarketMcpServer, MarketSkill } from "@/lib/extensions-api";
+import type { MarketMcpServer, MarketSkill } from "@platform/core";
 
 interface MarketTabProps {
   onInstalled?: () => void;

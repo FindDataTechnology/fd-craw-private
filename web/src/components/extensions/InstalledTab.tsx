@@ -10,7 +10,7 @@ import { McpServerForm } from "./McpServerForm";
 import { SkillForm } from "./SkillForm";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
-import type { McpServer, CustomSkill } from "@/lib/extensions-api";
+import type { McpServer, CustomSkill } from "@platform/core";
 
 export function InstalledTab() {
   const { t } = useTranslation();

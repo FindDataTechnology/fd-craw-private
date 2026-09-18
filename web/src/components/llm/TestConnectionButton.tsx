@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Loader2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { testProvider, type LastTest } from "@/lib/llm-api";
+import { testProvider, type LastTest } from "@platform/core";
 import { cn } from "@/lib/utils";
 
 interface Props {

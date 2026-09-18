@@ -2,7 +2,7 @@
 // Card component for displaying a market MCP server.
 
 import { useTranslation } from "react-i18next";
-import type { MarketMcpServer } from "@/lib/extensions-api";
+import type { MarketMcpServer } from "@platform/core";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 
