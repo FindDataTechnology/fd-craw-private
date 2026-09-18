@@ -1,5 +1,13 @@
 # ── Platform single-container Deployment (cheap-cluster live layout) ──────────
 #
+# ⚠️ DRIFT WARNING (2026-09-18): the LIVE platform now runs in the `fd-prod`
+# namespace (Harbor image …:sha-<short>, env via envFrom → ConfigMap
+# `platform-config` + Secret `platform-secrets`). This `default`-namespace
+# manifest describes the earlier hostNetwork layout and is scaled to zero in
+# the cluster; it is kept as the documented single-container design. For
+# operating the LIVE deployment (incl. the registry market wiring) see
+# DEPLOY.md → "Registry market token (live layout: fd-prod namespace)".
+#
 # This manifest mirrors the LIVE deployment on the cheap k3s cluster (as of
 # 2026-09-07). Key differences from the earlier PVC/harbor design:
 #
@@ -79,6 +87,23 @@ spec:
                 secretKeyRef:
                   name: platform-secrets
                   key: llm-api-key
+                  optional: true
+            # Registry market source (registry-bridge): without REGISTRY_URL the
+            # bridge logs "registry source disabled" and the Store serves only
+            # the bundled catalog. The value also derives install endpoints
+            # ({REGISTRY_URL}/{path}/mcp), so keep it in sync with the registry.
+            - name: REGISTRY_URL
+              value: https://mcp.finddatatech.cloud
+            # Create / update once (admin-issued token from the registry UI):
+            #   kubectl -n default patch secret platform-secrets \
+            #     -p '{"stringData":{"market-registry-token":"<token>"}}'
+            # Optional: without the key the pod still boots and the bridge
+            # degrades to last-good (empty) — Store keeps bundled entries only.
+            - name: MARKET_REGISTRY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: market-registry-token
                   optional: true
           volumeMounts:
             - name: data

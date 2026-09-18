@@ -157,6 +157,83 @@ kubectl -n platform-private create secret generic platform-secrets \
 # ArgoCD self-heal keeps the secret; the Deployment reads it via optional secretKeyRef.
 ```
 
+### Registry market token (live layout: `fd-prod` namespace)
+
+The Store merges registry entries from `https://mcp.finddatatech.cloud`
+(registry-bridge). The bridge needs `REGISTRY_URL` + `MARKET_REGISTRY_TOKEN`;
+without them it logs `registry source disabled` at boot and the market serves
+only the bundled catalog. The registry API requires a Bearer token (401
+otherwise), so the token is mandatory for registry entries to appear.
+
+> **Where the platform actually runs** (verified 2026-09-18): namespace
+> **`fd-prod`**, image from Harbor (`…/platform:sha-<short>`), env injected via
+> `envFrom` → ConfigMap `platform-config` + Secret `platform-secrets`. The
+> `default`-namespace `platform` deployment in this repo's manifest is a
+> scaled-to-zero leftover of the pre-Harbor layout — patching it changes
+> nothing user-visible.
+
+1. **Issue a token** — sign in to `https://mcp.finddatatech.cloud` with an
+   admin account (寻数科技账号登录), then "Get JWT Token" in the sidebar.
+   Token lifetime (updated 2026-09-18): the registry host now runs
+   `MCP_TOKEN_DEFAULT_TTL_HOURS=168` / `MCP_TOKEN_MAX_TTL_HOURS=168`
+   (`/opt/mcp-gateway-registry/.env` on china-cheap-1; backup
+   `.env.bak-ttl-*` alongside), so both the UI button and the mint API
+   (`POST /api/tokens/generate` with `X-CSRF-Token` from
+   `GET /api/auth/csrf-token`, `expires_in_hours: 168`) yield **7-day**
+   tokens. Renew weekly (current one expires 2026-09-25 13:09 CST).
+   Minting from a script: an authenticated browser session is required
+   (admin login); the API route is otherwise identical.
+   ⚠️ The registry's IAM > M2M Accounts (long-lived clients) remains broken:
+   the IAM manager factory does not support `AUTH_PROVIDER=logto` (falls
+   back to a Keycloak client that cannot connect → group list 502, and the
+   M2M create form requires picking from that list), and the M2M client
+   list 500s on its DocumentDB config. Fixing that is registry-repo work
+   (local fork: FindDataTechnology + law-ai-official mirrors on Gitee/GitHub).
+2. **Store it** (secret keys become env vars verbatim via `envFrom`):
+
+   ```bash
+   kubectl --context cheap -n fd-prod patch secret platform-secrets \
+     -p '{"stringData":{"MARKET_REGISTRY_TOKEN":"<token>"}}'
+   ```
+
+3. **Set the URL** in the ConfigMap (plain value, not a secret):
+
+   ```bash
+   kubectl --context cheap -n fd-prod patch configmap platform-config \
+     --type merge -p '{"data":{"REGISTRY_URL":"https://mcp.finddatatech.cloud"}}'
+   ```
+
+4. **Restart and verify** (bridge is silent on success; it only logs when
+   disabled or on fetch failure):
+
+   ```bash
+   kubectl --context cheap -n fd-prod rollout restart deploy/platform
+   kubectl --context cheap -n fd-prod rollout status deploy/platform
+   kubectl --context cheap -n fd-prod exec deploy/platform -- \
+     sh -c 'echo $REGISTRY_URL; echo ${MARKET_REGISTRY_TOKEN:+token-set}'
+   ```
+
+   Then check the market over an authenticated session
+   (`GET /api/extensions/market`): bundled entries stay, and registry entries
+   appear — MCP `fd-cn-report`, `fd-daas-mcp`, `fd-open-data-mcp`, `law-bench`,
+   `airegistry-tools`; skills `contract-review`, `financial-statement-analysis`,
+   `legal-research-cn` and the rest of the registry skill catalog; agents
+   `registry-chatlaw`, `registry-fingpt` in `/api/catalog`.
+
+Rollback: remove the ConfigMap key and the Secret key, restart — back to
+bundled-only catalog, no leftover state (bridge snapshots are in-memory).
+
+**Ops access to the registry host** (updated 2026-09-18): china-cheap-1 is
+`100.64.0.11` on the finddata Tailscale mesh (self-hosted control plane at
+124.220.7.175; the paas workstation's profile `finddata` = chengs-mac
+100.64.0.2). The workstation's key is in `/root/.ssh/authorized_keys`
+(added 2026-09-18) and `~/.ssh/config` defines `Host cheap1` — so
+`ssh cheap1` reaches it directly. The registry stack is docker compose at
+`/opt/mcp-gateway-registry` (`docker-compose.prebuilt.yml`; recreate with
+`--no-deps` — dependency init images reference docker.io and cannot pull
+from the nodes). Fallback if mesh SSH is unavailable: privileged bridge pod
+on cheap-4 (see git history of this file for the recipe).
+
 ---
 
 ## NodePort

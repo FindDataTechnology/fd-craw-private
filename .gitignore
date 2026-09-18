@@ -5,6 +5,16 @@ agents.json
 registry-groups.json
 knowledge-store/
 data/
+# Env files: the live .env holds Logto/registry/LLM credentials; variants
+# (.bak, .local, dated backups…) are operator copies of the same secrets.
+# Keep the committed .env.example template.
+.env
+.env.*
+!.env.example
+*.env.bak*
+*.bak
+*.bak-*
+
 # React frontend workspace
 web/node_modules/
 web/dist/
