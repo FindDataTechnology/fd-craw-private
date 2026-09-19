@@ -378,6 +378,8 @@
         "url": "URL",
         "headers": "ヘッダー（JSON）"
       },
+      "applying": "適用中…",
+      "runtimeBusy": "ランタイムがビジー中。現在のターン終了後に自動適用されます",
       "errors": {
         "nameRequired": "名前は必須です",
         "commandRequired": "stdioにはコマンドが必要です",

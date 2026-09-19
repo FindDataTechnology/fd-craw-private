@@ -378,6 +378,8 @@
         "url": "URL",
         "headers": "Headers (JSON)"
       },
+      "applying": "Applying…",
+      "runtimeBusy": "Runtime busy — applies when the current turn ends",
       "errors": {
         "nameRequired": "Name is required",
         "commandRequired": "Command is required for stdio",

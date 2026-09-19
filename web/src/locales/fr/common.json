@@ -378,6 +378,8 @@
         "url": "URL",
         "headers": "En-têtes (JSON)"
       },
+      "applying": "Application…",
+      "runtimeBusy": "Runtime occupé — application à la fin du tour en cours",
       "errors": {
         "nameRequired": "Le nom est requis",
         "commandRequired": "La commande est requise pour stdio",

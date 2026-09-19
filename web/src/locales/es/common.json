@@ -378,6 +378,8 @@
         "url": "URL",
         "headers": "Encabezados (JSON)"
       },
+      "applying": "Aplicando…",
+      "runtimeBusy": "Runtime ocupado: se aplicará al terminar el turno actual",
       "errors": {
         "nameRequired": "El nombre es requerido",
         "commandRequired": "El comando es requerido para stdio",

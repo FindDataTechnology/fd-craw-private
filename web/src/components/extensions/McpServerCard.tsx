@@ -9,7 +9,7 @@ import { useChatStore } from "@platform/core";
 import { setPersonalMcp } from "@platform/core";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Pencil, Trash2, Zap } from "lucide-react";
+import { Loader2, Pencil, Trash2, Zap } from "lucide-react";
 
 interface McpServerCardProps {
   server: McpServer;
@@ -23,23 +23,41 @@ export function McpServerCard({ server, onEdit }: McpServerCardProps) {
   // personal controls, so the global card is unchanged for them.
   const mcpBindings = useChatStore((s) => s.userBindings?.mcp);
   const [personalError, setPersonalError] = useState<string | null>(null);
+  const [personalBusy, setPersonalBusy] = useState(false);
+  const [personalPending, setPersonalPending] = useState(false);
+  const [globalBusy, setGlobalBusy] = useState(false);
+  const [globalError, setGlobalError] = useState<string | null>(null);
   const binding = mcpBindings?.find((b) => b.name === server.name);
 
   const handleToggle = async () => {
+    setGlobalBusy(true);
+    setGlobalError(null);
     try {
       await toggleMcpServer(server.name, !server.enabled);
     } catch (err) {
-      console.error("Failed to toggle MCP server:", err);
+      setGlobalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGlobalBusy(false);
     }
   };
 
   const handlePersonalToggle = async () => {
     if (!binding) return;
     setPersonalError(null);
+    setPersonalPending(false);
+    setPersonalBusy(true);
     try {
-      await setPersonalMcp(server.name, binding.personalEnabled === false);
+      // The route persists the row first and pushes user_bindings, so the
+      // switch flips immediately; the resolved value only reports whether
+      // the runtime applied now (ok) or is deferred behind a busy turn
+      // (pending — it auto-applies when the turn ends).
+      const result = await setPersonalMcp(server.name, binding.personalEnabled === false);
+      if (result.pending) setPersonalPending(true);
+      else if (result.error) setPersonalError(result.error);
     } catch (err) {
       setPersonalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPersonalBusy(false);
     }
   };
 
@@ -90,10 +108,21 @@ export function McpServerCard({ server, onEdit }: McpServerCardProps) {
               <Switch
                 data-testid="mcp-personal-toggle"
                 checked={binding.personalEnabled !== false}
-                disabled={binding.locked}
+                disabled={binding.locked || personalBusy}
                 onCheckedChange={handlePersonalToggle}
               />
               <span className="text-xs text-muted-foreground">{t("bindings.personalMcp")}</span>
+              {personalBusy && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid="mcp-personal-applying">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t("extensions.mcp.applying")}
+                </span>
+              )}
+              {personalPending && !personalBusy && (
+                <span className="text-xs text-warning" data-testid="mcp-personal-pending">
+                  {t("extensions.mcp.runtimeBusy")}
+                </span>
+              )}
               {binding.locked && (
                 <span className="text-xs text-muted-foreground" data-testid="mcp-personal-locked">
                   · {t("bindings.lockedMcp")}
@@ -101,14 +130,19 @@ export function McpServerCard({ server, onEdit }: McpServerCardProps) {
               )}
             </div>
           )}
-          {personalError && (
+          {(personalError || globalError) && (
             <p className="mt-1 text-xs text-destructive" data-testid="mcp-personal-error">
-              {personalError}
+              {personalError || globalError}
             </p>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Switch data-testid="mcp-toggle" checked={server.enabled} onCheckedChange={handleToggle} />
+          <div className="flex items-center gap-1">
+            <Switch data-testid="mcp-toggle" checked={server.enabled} disabled={globalBusy} onCheckedChange={handleToggle} />
+            {globalBusy && (
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" data-testid="mcp-toggle-applying" />
+            )}
+          </div>
           <Button data-testid="mcp-edit-btn" variant="ghost" size="icon" onClick={() => onEdit(server)}>
             <Pencil className="h-4 w-4" />
           </Button>

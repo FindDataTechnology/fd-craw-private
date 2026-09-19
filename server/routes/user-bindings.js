@@ -37,6 +37,9 @@ export function registerUserBindingRoutes(ctx) {
     if (!target) return res.status(400).json({ error: "Unknown provider or model" });
     try {
       db.setUserModelBinding(user.email, target.provider, target.id);
+      // Flip the caller's toggles/pickers off the persisted row immediately;
+      // the runtime apply below only reports ok/pending.
+      ctx.pushUserBindingsTo?.(user.email);
       const result = await ctx.applyUserBindings(user.email, user.groups ?? null);
       res.json({ ok: result.ok, pending: result.pending, ...(result.error ? { error: result.error } : {}), binding: db.getUserModelBinding(user.email) });
     } catch (err) {
@@ -63,6 +66,10 @@ export function registerUserBindingRoutes(ctx) {
     }
     try {
       db.setUserMcpBinding(user.email, name, enabled);
+      // Push the persisted row to the caller's sockets right away — the
+      // switch reflects it in milliseconds while the runtime hot-swap
+      // (settle delay / queued behind a turn) finishes in the background.
+      ctx.pushUserBindingsTo?.(user.email);
       const result = await ctx.applyUserBindings(user.email, user.groups ?? null);
       res.json({ ok: result.ok, pending: result.pending, ...(result.error ? { error: result.error } : {}), binding: { name, enabled } });
     } catch (err) {

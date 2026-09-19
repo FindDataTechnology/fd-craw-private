@@ -59,6 +59,21 @@ export function attachRuntimeBindings(ctx) {
     return ctx.send(ws, { type: "user_bindings", ...bindingSnapshot(ctx, email) });
   };
 
+  // The settings toggles render `userBindings` (sent at WS connect). Without
+  // this push a personal-binding change only reached the client through the
+  // coarser `runtime_binding` channel, which that store slice ignores — the
+  // "Only for me" switch would sit at its pre-click value until a reconnect.
+  // Snapshot reads the persisted DB rows, so this reflects the change even
+  // when the runtime apply is still queued behind an active turn.
+  ctx.pushUserBindingsTo = (email) => {
+    if (!email) return;
+    for (const ws of ctx.clients) {
+      if (ws.readyState === ws.OPEN && ws.identity?.email === email) {
+        ctx.sendUserBindings?.(ws, email);
+      }
+    }
+  };
+
   ctx.broadcastRuntimeBinding = () => {
     ctx.broadcast({
       type: "runtime_binding",
