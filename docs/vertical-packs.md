@@ -34,7 +34,12 @@
 
 平台的组（市场可见性 + requiredGroups）和 registry 的组（网关 MCP 调用授权）是**两个 claim 源**：
 
-- **平台侧**（必须走 Logto 管理台，暂无 API 通道）：`logto-auth.js` 把 Logto 的 `organizations` + `organization_roles`（角色名最后段）映射为平台 groups。操作：Logto 管理台建 Organization + Organization Role `legal`、`analysts`，演示用户入 org 并赋角色。
+- **平台侧**（✅ 已配置，2026-09-19）：`logto-auth.js` 把 Logto ID token 的 `organizations`（组织 ID 列表）+ `organization_roles` 映射为平台 groups。由于平台只请求 `urn:logto:scope:organizations`（没有 organization_roles scope），**生效的是组织 ID**。已建两个组织（Logto 管理台 → Organizations）：
+  - `legal` → 组织 ID **`hpe07qejcwk7`**（法律-合同/案件包）
+  - `analysts` → 组织 ID **`sl63fy08ruh9`**（数据-股票/中国经济包）
+  - 演示成员：`aloadtree@gmail.com` 已加入两个组织（验证：登录后市场正确显示 law-bench/fd-*/四个入口技能，152 技能可见）。
+  - `registry-groups.json` 与云端 agents.json 的组列表都**同时含可读名和组织 ID**（交集语义，命中其一即可）——将来平台补请求 `urn:logto:scope:organization_roles` 并用角色名时无需改映射。
+  - 新增演示用户：Logto 管理台把用户加入对应组织即可（无需改任何配置）。
 - **registry 侧**（已配置好，2026-09-19）：auth-server 已启用 `IDP_USER_GROUP_FALLBACK_ENABLED_PROVIDERS=pingfederate,logto`——Logto 全局 roles 为空的用户会从 `idp_user_groups` 集合取组。管理员可通过 API 给用户加组（无需 Logto 权限）：
 
   ```bash
@@ -43,8 +48,6 @@
     -d '{"username":"<registry用户名>","groups":["legal"],"description":"vertical-pack demo"}'
   ```
   已建示例记录：`aloadtree → [legal, analysts]`。注意：用户若在 Logto 有全局角色（groups claim 非空），fallback 不生效——演示账号保持无全局角色即可。
-
-验证：测试登录后平台 `/api` 请求的身份 claims 含 `groups: [...,"legal"...]`。
 
 ### 3.2 Registry scope 授权（registry 侧）
 
