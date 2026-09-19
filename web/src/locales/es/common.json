@@ -363,6 +363,7 @@
     },
     "mcp": {
       "title": "MCP",
+      "subtitle": "Añade o edita un servidor MCP al que el runtime del agente puede llamar.",
       "addButton": "Agregar MCP",
       "empty": "No hay MCP configurado. Agrega uno para extender tu agente.",
       "addTitle": "Agregar MCP",
@@ -387,6 +388,7 @@
     },
     "skills": {
       "title": "Habilidades",
+      "subtitle": "Crea o edita una habilidad que añade un comportamiento reutilizable del agente.",
       "addButton": "Crear habilidad",
       "empty": "No hay habilidades personalizadas. Crea una para agregar comportamientos de agente reutilizables.",
       "addTitle": "Crear habilidad",

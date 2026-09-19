@@ -363,6 +363,7 @@
     },
     "mcp": {
       "title": "MCP",
+      "subtitle": "Add or edit an MCP server the agent runtime can call.",
       "addButton": "Add MCP",
       "empty": "No MCP configured. Add one to extend your agent.",
       "addTitle": "Add MCP",
@@ -387,6 +388,7 @@
     },
     "skills": {
       "title": "Skills",
+      "subtitle": "Create or edit a skill that adds a reusable agent behavior.",
       "addButton": "Create Skill",
       "empty": "No custom skills yet. Create one to add reusable agent behaviors.",
       "addTitle": "Create Skill",

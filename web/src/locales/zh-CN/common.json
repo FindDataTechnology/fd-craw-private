@@ -363,6 +363,7 @@
     },
     "mcp": {
       "title": "MCP",
+      "subtitle": "添加或编辑供智能体运行时调用的 MCP 服务器。",
       "addButton": "添加 MCP",
       "empty": "暂无 MCP。添加一个以扩展你的智能体。",
       "addTitle": "添加 MCP",
@@ -387,6 +388,7 @@
     },
     "skills": {
       "title": "技能",
+      "subtitle": "创建或编辑技能，为智能体添加可复用的行为。",
       "addButton": "创建技能",
       "empty": "暂无自定义技能。创建一个以添加可重用的智能体行为。",
       "addTitle": "创建技能",

@@ -363,6 +363,7 @@
     },
     "mcp": {
       "title": "MCP",
+      "subtitle": "Ajoutez ou modifiez un serveur MCP que le runtime de l'agent peut appeler.",
       "addButton": "Ajouter MCP",
       "empty": "Aucun MCP configuré. Ajoutez-en un pour étendre votre agent.",
       "addTitle": "Ajouter MCP",
@@ -387,6 +388,7 @@
     },
     "skills": {
       "title": "Compétences",
+      "subtitle": "Créez ou modifiez une compétence qui ajoute un comportement réutilisable de l'agent.",
       "addButton": "Créer une compétence",
       "empty": "Aucune compétence personnalisée. Créez-en une pour ajouter des comportements d'agent réutilisables.",
       "addTitle": "Créer une compétence",
