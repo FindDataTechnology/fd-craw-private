@@ -11,7 +11,7 @@
 | | 法律-合同 | 法律-案件 | 数据-股票 | 数据-中国经济 |
 |---|---|---|---|---|
 | 入口技能 | `legal-contract-workflow` | `legal-case-workflow` | `stock-research-workflow` | `china-macro-brief-workflow` |
-| MCP | `law-bench` | `fd-legal-search-mcp`（上线前为纯技能包） | `fd-open-data-mcp` + `fd-cn-report` | `fd-open-data-mcp` + `fd-cn-report` |
+| MCP | `law-bench` | `fd-find-data-business-mcp`（法条检索）+ `law-bench` | `fd-open-data-mcp` + `fd-cn-report` | `fd-open-data-mcp` + `fd-cn-report` |
 | Agent | 合同审查官 | 案件分析师 | 行业分析师 | 行业分析师 |
 | 角色 | `legal` | `legal` | `analysts` | `analysts` |
 | 引用的既有技能 | `contract-review`、`contract-copilot` | `preliminary-legal-analysis`、`statute-case-retrieval`、`case-discussion-outline`、`litigation-visualization` | `akshare-stock`、`stock-analysis`、`financial-statement-analysis`、`earnings-preview`/`earnings-recap`、`dcf-model`、`comps-analysis`、`company-valuation`、`sector-overview` | `sector-overview`、`statsmodels`、`statistical-analysis` |
@@ -132,6 +132,16 @@ fd-prod 平台容器 CWD 下的 `registry-groups.json`：
 
 **⚠️ 模型选择（实测结论）**：agent 用 `deepseek-v4-flash-0731`。该公开网关对 `deepseek-v4-pro`/`deepseek-v4-flash` 要求 `x-opencode-session` 头（平台的 agent 调用不带此头会 400），而 `0731` 免头直通——正好也是平台自己的默认模型。**不要把 agent 模型改回 pro，除非平台侧增加该请求头。**
 
+### 3.6 fd-find-data-business-mcp（法条检索，✅ 2026-09-19 已接入）
+
+FindData 商业数据 MCP（zihan 机 `100.64.0.4:30803`，Tailscale 可达），9 工具：`law_search`/`law_read`（中国法律法规）、`yearbook_search_indicators`/`yearbook_read`（统计年鉴）、`read`/`read_range`/`list_concepts`/`ai_search`/`graph_search`（FindData 指标）。接入要点（复现时参考）：
+
+- **鉴权**：该服务器只接受 Logto JWT（`FDBIZ_ISSUER=auth.finddatatech.cloud`，aud=`https://api.finddatatech.cloud/mcp`，ES384）。gateway 的 obo_exchange 不支持 Logto，走 **egress pat**：用 registry 的 M2M client（`LOGTO_M2M_CLIENT_ID/SECRET`）client_credentials 换该 audience 的 JWT，存为 per-user PAT（注册时 `auth_scheme=bearer` → 注入头 `Authorization: Bearer`，与后端校验完全匹配）。
+- **PAT 续期**：Logto token 约 1h 有效。cheap1 上 `/opt/mcp-gateway-registry/refresh-fdbiz-pat.sh`（cron 每小时 :14/:44）自动换新并 PUT 到 egress-pat；依赖 `.admin-jwt` 文件（168h 有效，**每周需在 registry UI 重签并更新该文件**，与 MARKET_REGISTRY_TOKEN 同节奏）。
+- **SSRF 允许清单**：`SSRF_ALLOWED_CIDRS=100.64.0.8/32,100.64.0.4/32`（zihan 已加，.env 已备份）。
+- **端到端验证**：公网网关 `law_search(title_query=劳动合同)` 返回真实法规（劳动合同法/实施条例/上海条例 + 效力状态）。
+- **边界**：类案（裁判文书）检索无数据源；该服务器的法规库不含司法案例。
+
 ## 4. MCP 凭据（V0 → V1）
 
 **V0（现状，演示日执行）**：
@@ -156,7 +166,7 @@ law-bench 为 `group-restricted`：客户账号 mint 的 JWT 必须含 `legal` �
 > 我代理劳动者。案情：……（入职 3 年，月工资 2 万，被以"严重违反规章制度"解除，规章未经民主程序制定，未支付未休年假工资）
 > 请做案件研判：争议焦点、法条依据、诉讼策略。
 
-预期交付：争点清单（要件缺口：制度效力）→ 法条清单（劳动合同法相关条文，标注有效性）→ 攻防表 → 策略（2N 赔偿主张 + 年假时效风险提示）。`fd-legal-search-mcp` 上线后增加真实类案列表；上线前报告注明"类案检索未启用"。
+预期交付：争点清单（要件缺口：制度效力）→ 法条清单（`law_search`/`law_read` 实查劳动合同法及实施条例，标注效力状态）→ 攻防表 → 策略（2N 赔偿主张 + 年假时效风险提示）。类案检索暂无数据源，报告注明"类案检索未启用"。
 
 **数据-股票**：
 > 帮我研究一下贵州茅台（600519.SH）当前的投资价值。
@@ -197,7 +207,7 @@ fd-prod 部署：`FD_TOKEN_API_KEY` 进 `platform-secrets`，`AGENTS_CONFIG_URL`
 
 ## 8. 已知边界（如实告知客户）
 
-- 案件包在 `fd-legal-search-mcp` 注册前是方法论演示（要件分析+攻防+策略），无真实裁判文书检索。
+- 案件包的**法条检索已实**（`fd-find-data-business-mcp` 的 `law_search`/`law_read`，真实法规库）；**类案（裁判文书）检索仍无数据源**，演示时如实说明。
 - chatlaw / fingpt 卡片是生态展示（GitHub link），对话入口用包的 chat agent。
 - 168h token 到期后安装的 MCP 会 401——演示季内每日检查，或等 V1 自动化；law-bench 的 PAT 有效期 30 天（至 2026-10-18，admin 账号）。
 - 公开 LLM 网关偶发 502（实测约 1/5 瞬时抖动，重试即恢复；平台 agent 调用无自动重试）——演示时若首答失败，重发一次即可。

@@ -22,8 +22,8 @@
 
 ## 4. Case-pack data backend (data infra repo)
 
-- [ ] 4.1 Build `fd-legal-search-mcp`: `search_statutes` / `search_cases` / `get_statute` / `get_case` over crawl corpora, streamable-HTTP MCP, provenance (source + identifier) on every result, explicit empty results. Verify: tool contract test — a known query returns the expected statute article; unknown query returns empty, never fabricated.
-- [ ] 4.2 Deploy + register into the registry, scope to `legal`; update `legal-case-workflow` wording from conditional to live. Verify: `legal`-group token passes `POST /fd-legal-search-mcp/mcp` initialize; entry skill's retrieval stage succeeds end-to-end.
+- [x] 4.1 Build `fd-legal-search-mcp`: `search_statutes` / `search_cases` / `get_statute` / `get_case` over crawl corpora, streamable-HTTP MCP, provenance (source + identifier) on every result, explicit empty results. Verify: tool contract test — a known query returns the expected statute article; unknown query returns empty, never fabricated. *(✅ 方案变更（2026-09-19，用户指定）：不新建 server，接入已部署的 **`fd-find-data-business-mcp`**（zihan 100.64.0.4，FindData 商业数据 MCP，9 工具）。其 `law_search`（title_query/category 模糊检索，返回 id/标题/类别/效力状态/发布日期）+ `law_read`（按 id 读全文）= search_statutes/get_statute 的等价物，provenance 完整。**类案检索（search_cases）仍无数据源**，入口技能如实降级——记为已知边界。)*
+- [x] 4.2 Deploy + register into the registry, scope to `legal`; update `legal-case-workflow` wording from conditional to live. Verify: `legal`-group token passes `POST /fd-find-data-business-mcp/mcp` initialize; entry skill's retrieval stage succeeds end-to-end. *(✅ 完成并超预期：注册（201）+ egress pat 模式（该服务器仅接受 Logto JWT，aud=https://api.finddatatech.cloud/mcp；用网关 M2M client 换取该 audience 的 ES384 JWT 存为 PAT，注入头由 auth_scheme=bearer 派生为 Authorization: Bearer，完全匹配）+ legal scope + registry-groups 门控。**端到端实测**：公网网关 initialize 200，`law_search("劳动合同")` 返回真实法规（劳动合同法/实施条例/上海条例，含效力状态）。PAT 60min 有效期，cheap1 cron（每小时 :14/:44）自动续期。SSRF 允许清单已加 100.64.0.4/32)*
 
 ## 5. Demo playbook + end-to-end
 
