@@ -266,6 +266,20 @@ restore on fix.
 from the nodes). Fallback if mesh SSH is unavailable: privileged bridge pod
 on cheap-4 (see git history of this file for the recipe).
 
+**Registry nginx logto hotfix** (2026-09-19): the image's HTTP-only nginx
+template (`/app/docker/nginx_rev_proxy_http_only.conf`) lacks the
+`/oauth2/login/logto` + `/oauth2/callback/logto` proxy blocks that the
+HTTP-and-HTTPS template has — with no TLS certs in the container the
+entrypoint picks HTTP-only, so Logto login silently served the SPA shell
+(blank "no login page" at `/oauth2/login/logto`). Fixed by patching those
+blocks into a host-side copy at
+`/opt/mcp-gateway-registry/nginx_rev_proxy_http_only.conf` and mounting it
+read-only over the in-image template (see the `Hotfix 2026-09-19` volume in
+`docker-compose.prebuilt.yml`); conf regenerations and container recreates
+now keep them. Drop the mount after the upstream template gains the blocks.
+Known residual after any conf regeneration: bare `/health` (use container
+healthchecks; `/api/health` is also template-gated).
+
 ---
 
 ## NodePort
