@@ -244,9 +244,10 @@ kubectl -n platform-private create secret generic platform-secrets \
 ### Name the assistant (optional, per deployment)
 
 One value renames every user-facing occurrence of the assistant — sidebar title,
-turn header, composer placeholder, browser tab title — through
-`GET /api/config` (no rebuild; the web resolves it before its first paint and
-falls back to the localized defaults when unset):
+turn header, composer placeholder, the built-in agent's row in the agent
+picker, browser tab title — through `GET /api/config` (no rebuild; the web
+resolves it before its first paint and falls back to the localized defaults
+when unset):
 
 ```bash
 # Local / docker: .env
