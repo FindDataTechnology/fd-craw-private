@@ -285,7 +285,11 @@ Verify a deployment after any chat change:
 ```bash
 node scripts/verify-live-chat-fixes.mjs          # Playwright probe; creds from .env
 # and pod-side: the newest sessions' preset, persona line and MCP tool count
-kubectl -n fd-prod exec deploy/platform -- node /app/scripts/inspect-live-session.mjs
+# (an image built after this doc ships the script at /app/scripts/, so the copy
+#  below is only needed for an older pod)
+POD=$(kubectl -n fd-prod get pods -o name | grep platform | head -1)
+kubectl -n fd-prod cp scripts/inspect-live-session.mjs "${POD#pod/}:/tmp/check.mjs"
+kubectl -n fd-prod exec deploy/platform -- node /tmp/check.mjs
 ```
 
 Selecting a pack agent is a **preset switch** (the dsh child restarts, ~10 s; the
