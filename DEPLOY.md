@@ -29,19 +29,23 @@ GitHub push ──► docker-deploy.yml ──► build image ──► push to 
 
 ## Prerequisites (one-time)
 
-### 1. Harbor project + robot account (for CI push)
+### 1. Harbor project + robot account (for the image push)
 
-The `paas_private` Harbor project must exist first — Harbor returns **401 Unauthorized** for unknown projects, which masquerades as an auth failure (this was the actual root cause of the first `ImagePullBackOff`). Create it via the UI (`http://23.144.68.246:30880` → New Project) or the admin API. *(Created during this setup.)*
+The registry actually used in production is the **internal** Harbor
+`100.64.0.8:30880` (the America Harbor `23.144.68.246:30880` this section originally
+described is unreachable from GitHub runners *and* from the China-side build hosts, so it
+is no longer part of any working path). The `paas_private` project exists there, and push
+comes from Jenkins with the project-scoped robot `robot$paas_private+ci-push-platform`
+(credential id `harbor-platform` in Jenkins — push + pull, no expiry). Nothing needs to be
+created per build; to re-create the robot: Harbor UI → `paas_private` → Robot Accounts → New
+(scoped to `paas_private`, push).
 
-Then create a robot account in `paas_private` with **push** permission for CI:
-
-```bash
-# Harbor UI: http://23.144.68.246:30880 → paas_private → Robot Accounts → New
-# Name: github-actions, Permissions: push to paas_private
-# → note the username (robot$paas_private+github-actions) + generated secret
-```
-
-> The `harbor-pull` secrets already in the cluster use the Harbor `admin` account, so reusing those same credentials as `HARBOR_USER`/`HARBOR_PASS` for CI push is the path of least resistance (the smoke test during setup pushed with them). A dedicated robot account scoped to `paas_private` push is cleaner if you prefer least-privilege.
+> The `harbor-pull` secrets already in the cluster use the Harbor `admin` account — fine for
+> pulls. A project-scoped push robot (what Jenkins uses) is the least-privilege way to push.
+>
+> Historical note: a `robot$paas_private+github-actions` robot was created for the
+> GitHub Actions leg. That workflow no longer runs (see the header of
+> `.github/workflows/docker-deploy.yml`); the robot is unused.
 
 ### 2. `harbor-pull` imagePullSecret (in-cluster pulls)
 
@@ -58,24 +62,35 @@ kubectl -n platform-private create secret docker-registry harbor-pull \
 
 The Deployment already references it via `imagePullSecrets` (commit `149f449`).
 
-### 3. GitHub Secrets
+### 3. GitHub Secrets — **no longer used**
 
-Repo → Settings → Secrets and variables → Actions:
+This table described the GitHub Actions push leg
+(`robot$paas_private+github-actions` → America Harbor). That workflow cannot work from a
+GitHub runner any more and has been reduced to manual dispatch; the image is built by
+Jenkins instead (see "Cluster deployment"). Nothing needs to be configured here for a
+deploy — the secrets, if still present, are leftovers:
 
-| Secret | Value |
+| Secret | Value (historical) |
 |---|---|
-| `HARBOR_HOST` | `23.144.68.246:30880` (external Harbor address for CI) |
+| `HARBOR_HOST` | `23.144.68.246:30880` — unreachable from runners |
 | `HARBOR_PROJECT` | `paas_private` |
 | `HARBOR_USER` | `robot$paas_private+github-actions` |
 | `HARBOR_PASS` | `<robot account secret>` |
 
-### 4. ArgoCD registers the app (once)
+### 4. ArgoCD app (already registered)
+
+`fd-prod` is reconciled by the app `all-services-prod` against the **external GitOps repo**
+`fd-infra-deploy` (`all-services/prod/*.yaml`) — not against this repo's `k8s/`, which is
+the older pre-k3s layout. The application object already exists; to inspect or refresh it:
 
 ```bash
-kubectl apply -f argocd/application.yaml -n argocd
+kubectl --context cheap -n argocd get application all-services-prod
+kubectl --context cheap -n argocd annotate application all-services-prod \
+  argocd.argoproj.io/refresh=normal --overwrite
 ```
 
-ArgoCD then watches `k8s/` and auto-syncs. Thereafter **never edit the live resources directly** — change `k8s/*` in the repo and let ArgoCD reconcile.
+Thereafter **never edit the live resources directly** — change the manifest in
+`fd-infra-deploy` and let ArgoCD reconcile.
 
 ---
 
@@ -114,30 +129,84 @@ If the container exits instead, the supervisor dumps `server.js`'s log tail righ
 
 ## Cluster deployment (k3s via ArgoCD)
 
-### First deploy (before CI has run)
+The live cluster follows a **separate GitOps repo** —
+`git@gitee.com:FindDataTechnology/fd-infra-deploy.git`, `all-services/prod/platform.yaml` —
+through the ArgoCD app `all-services-prod` (auto-sync + selfHeal). That file's `image:`
+line is the only thing that decides which build runs, so a deploy is always two steps:
+build + push the image, then commit its tag there. The `k8s/` and `argocd/` directories in
+*this* repo are the pre-k3s Bootstrap layout and are no longer what `fd-prod` reconciles
+(section 3/4 below is kept for that older host only).
 
-The manifest ships with `image: harbor.local/paas_private/platform:latest`. Either:
+### 1. Build + push the image — Jenkins (canonical)
 
-**(a)** Trigger CI to build + push `:latest`:
+The `platform` job on the in-cluster Jenkins (`http://103.236.89.212:31000`, NodePort
+`31000` in namespace `jenkins`) runs this repo's `Jenkinsfile`:
+
+- **Source**: Gitee `fd-craw-private`, branch **`deploy/prod-snapshot`** — that branch is
+  what gets built, so fast-forward it to the revision you want before triggering.
+- **Build**: cheap-3's docker daemon (the pod mounts the host socket), with
+  `BASE_IMAGE=100.64.0.8:30880/library/node:25-bookworm-slim` (cheap-3 cannot reach
+  Docker Hub), tagged `100.64.0.8:30880/paas_private/platform:sha-<7>` **and** `:latest`.
+- **Smoke test before push**: the image is booted with `AUTH_MODE=none` and probed on
+  `/api/config`; a container that dies after binding its port fails the build (that is how
+  two past images were caught).
+- **Push**: internal Harbor, as the project-scoped robot
+  `robot$paas_private+ci-push-platform` (credential id `harbor-platform`).
+- **It does not touch the GitOps manifest**, deliberately: the tag bump stays a reviewable
+  commit (same rule as law-bench).
+
+Credentials and the job's SCM live in Jenkins; nothing to set up per build. A cold build is
+~40 min (no BuildKit cache export), and `disableConcurrentBuilds()` makes a second trigger
+queue behind the first.
+
+Trigger it — a push to `deploy/prod-snapshot` normally fires the Gitee webhook, and the
+job's own webhook endpoint works directly (token is the literal string `platform`):
+
 ```bash
-gh workflow run docker-deploy.yml -f skip_commit_back=true   # push only, no commit-back
+curl -X POST "http://103.236.89.212:31000/generic-webhook-trigger/invoke?token=platform"
+curl -s "http://103.236.89.212:31000/job/platform/api/json?tree=lastBuild[number,building,result]"
+curl -s "http://103.236.89.212:31000/job/platform/lastBuild/consoleText" | tail -40
 ```
 
-**(b)** Or build + push manually from a machine with Docker + Harbor access:
+The build log's `Pushed 100.64.0.8:30880/paas_private/platform:sha-<7>` line names the tag
+to deploy next.
+
+### 2. Deploy it — hand commit in the GitOps repo
+
 ```bash
-make build
-docker tag platform:dev 23.144.68.246:30880/paas_private/platform:latest
-docker push 23.144.68.246:30880/paas_private/platform:latest
+cd fd-infra-deploy
+# all-services/prod/platform.yaml: image: 100.64.0.8:30880/paas_private/platform:sha-<7>
+git commit -am "deploy(platform): roll to sha-<7>" && git push
+# skip ArgoCD's ~3 min poll, then wait for the rollout
+kubectl --context cheap -n argocd annotate application all-services-prod \
+  argocd.argoproj.io/refresh=normal --overwrite
+kubectl --context cheap -n fd-prod rollout status deploy/platform
 ```
 
-Then let ArgoCD sync (it will within ~30s of the app being registered, or force it):
+Prove afterwards that the *code* — not just the tag — is what is serving: the pod's bundle
+carries the new UI and its server the new routes.
+
 ```bash
-make argocd-sync
+kubectl --context cheap -n fd-prod get deploy platform \
+  -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+kubectl --context cheap -n fd-prod exec deploy/platform -- \
+  sh -c 'grep -rl <new-testid> /app/web/dist/assets | head -3; ls /app/server/routes/'
+curl -s -o /dev/null -w '%{http_code}\n' https://craw.finddatatech.cloud/api/ready
 ```
 
-### Steady-state deploys (after CI is wired)
+### Fallback: build without Jenkins
 
-Every push to `main` (that touches source) triggers CI → builds `sha-<short>` + `latest` → pushes both → commits `sha-<short>` into `k8s/deployment.yaml` → ArgoCD auto-sync rolls out. **You do nothing.**
+Only when Jenkins is unavailable. cheap-1 already has a buildx builder for lawcraw
+(`--builder lawcraw-builder`, with `100.64.0.8:30880` declared insecure), so the same
+image can be produced there — note `DOCKER_CONFIG` must be a **copy** of `/root/.docker`
+(buildx keeps its builder definitions there, and the copy leaves the lawcraw robot's own
+credentials untouched), and the Harbor password comes from a file, never argv:
+
+```bash
+PW_FILE=/tmp/paas-harbor-pw bash /tmp/paas-build.sh sha-<7>   # on china-cheap-1
+```
+
+It pushes the same `sha-<7>` + `latest` tags, so step 2 above is unchanged.
 
 ### Inspect the deployment
 
