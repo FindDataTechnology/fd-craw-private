@@ -44,6 +44,16 @@ RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debia
 
 WORKDIR /app
 
+# Bound every build-time Node process. The China build host (Jenkins on cheap-3)
+# is a 4GB machine that ALSO runs the production pod: a build that spikes past its
+# free memory makes the kernel OOM-kill kubelet and the node's registry/proxy —
+# node NotReady, site 502 — which happened twice on 2026-09-21. A build that needs
+# more than this cap fails HERE, which is recoverable, instead of taking the
+# deployment down with it. (The web build peaks well under 1GB; measured.)
+ENV NODE_OPTIONS=--max-old-space-size=1024 \
+    npm_config_jobs=1 \
+    UV_THREADPOOL_SIZE=2
+
 # Install root + web deps first (cacheable layer). --ignore-scripts skips the
 # package.json postinstall hook (node scripts/postinstall-web.js && …postinstall-bundle.js):
 # at this layer only package*.json is copied, so scripts/ doesn't exist yet and the hook

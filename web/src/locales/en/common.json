@@ -524,7 +524,7 @@
     }
   },
   "assistant": {
-    "name": "Platform Assistant",
+    "name": "{{brand}} Assistant",
     "brand": "Platform"
   },
   "login": {

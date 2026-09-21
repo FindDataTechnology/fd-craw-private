@@ -49,13 +49,12 @@ export async function loadAppConfig(timeoutMs = 1500): Promise<AppConfig> {
 // The two strings every name-bearing surface interpolates: `brand` names the
 // deployment (sidebar, login card, document title), `assistant` names the agent
 // that answers (turn header, composer placeholder). One configured name fills
-// both; without one each falls back to its own localized default, which is why
-// they are separate strings.
+// both, and each locale keeps its own shape around it — a configured "FD" reads
+// "FD" in the sidebar and "FD 助手" / "FD Assistant" above a turn, exactly as
+// the default "Platform" / "Platform 助手" pair does.
 export function useBranding(): { brand: string; assistant: string } {
   const { assistantName } = useAppConfig();
   const { t } = useTranslation();
-  return {
-    brand: assistantName || t("assistant.brand"),
-    assistant: assistantName || t("assistant.name"),
-  };
+  const brand = assistantName || t("assistant.brand");
+  return { brand, assistant: t("assistant.name", { brand }) };
 }

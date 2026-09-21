@@ -524,7 +524,7 @@
     }
   },
   "assistant": {
-    "name": "Asistente de Platform",
+    "name": "Asistente de {{brand}}",
     "brand": "Platform"
   },
   "login": {
