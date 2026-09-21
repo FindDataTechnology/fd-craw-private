@@ -21,6 +21,7 @@ let cloudEntries = null; // last-good cloud document (null until first success)
 let lastSignature = null;
 let timer = null;
 let broadcastFn = null;
+let changeFn = null;
 
 // Validation: unknown type / duplicate id / missing required fields ⇒ drop the
 // entry with a warning, serve the rest (spec: agent-catalog, invalid entries).
@@ -174,6 +175,14 @@ export function getAgentEntry(id) {
   return e;
 }
 
+// Every chat-mode remote agent, unfiltered by requester. The deployment turns
+// each one into a local persona preset (dsh-profile.writeCatalogAgentPresets),
+// so identity here is a persona's authority — a role-gated entry must still have
+// its preset ready for the groups allowed to select it.
+export function getChatAgentEntries() {
+  return merged().agents.filter((a) => a.type === "agent-remote" && a.mode === "chat");
+}
+
 export function getAppEntry(id) {
   return merged().apps.find((a) => a.id === id) || null;
 }
@@ -197,28 +206,26 @@ export function getExternalServices() {
 // changed. Returns the refreshed, redacted catalog for the requesting user.
 export async function refresh(user = null) {
   await Promise.all([loadLocal(), loadCloud()]);
-  const cat = merged();
-  const sig = JSON.stringify({ agents: cat.agents.map(serialize), apps: cat.apps.map(serialize) });
-  if (sig !== lastSignature) {
-    lastSignature = sig;
-    broadcastFn?.({ type: "catalog_changed" });
-  }
+  notifyIfChanged();
   return getCatalogFor(user);
 }
 
 // Re-broadcast when the merged catalog changed (shared by refresh + the
-// async initial cloud merge).
+// async initial cloud merge). `changeFn` lets the server re-derive what depends
+// on the catalog — the vertical-pack persona presets — from the new entries.
 function notifyIfChanged() {
   const cat = merged();
   const sig = JSON.stringify({ agents: cat.agents.map(serialize), apps: cat.apps.map(serialize) });
   if (sig !== lastSignature) {
     lastSignature = sig;
     broadcastFn?.({ type: "catalog_changed" });
+    try { changeFn?.(); } catch (e) { console.warn(`[catalog] change handler failed: ${e.message}`); }
   }
 }
 
-export async function initCatalog({ broadcast }) {
+export async function initCatalog({ broadcast, onChange }) {
   broadcastFn = broadcast;
+  changeFn = onChange ?? null;
   // Local catalog first: boot readiness must not wait on the cloud fetch (a
   // slow/unreachable AGENTS_CONFIG_URL costs up to its 10s timeout). The
   // cloud merges asynchronously and broadcasts catalog_changed on arrival;

@@ -47,7 +47,7 @@
     "loadFailed": "カタログの読み込みに失敗しました: {{error}}"
   },
   "sidebar": {
-    "brand": "Platform",
+    "brand": "{{brand}}",
     "chats": "チャット",
     "new": "+ 新規",
     "noChats": "チャットはまだありません。「+ 新規」をクリックしてください。",
@@ -108,7 +108,7 @@
     "disconnected": "切断済み"
   },
   "composer": {
-    "placeholder": "Platform アシスタントに何でも質問…（/ でコマンド、Enter で送信、Shift+Enter で改行）",
+    "placeholder": "{{assistant}}に何でも質問…（/ でコマンド、Enter で送信、Shift+Enter で改行）",
     "placeholderDisabled": "接続中…",
     "send": "送信",
     "dropHint": "ドロップしてドキュメントを添付",
@@ -238,7 +238,7 @@
     "retry": "再試行"
   },
   "turn": {
-    "assistantName": "Platform アシスタント",
+    "assistantName": "{{assistant}}",
     "thinkingStreaming": "考え中…",
     "thinking": "思考",
     "statusRunning": "実行中…",
@@ -523,9 +523,13 @@
       "wechat-oa": "WeChat 公式アカウント"
     }
   },
+  "assistant": {
+    "name": "Platform アシスタント",
+    "brand": "Platform"
+  },
   "login": {
     "title": "ログイン",
-    "description": "このデプロイでは組織のシングルサインオンを使用します。Platform を利用するにはログインしてください。",
+    "description": "このデプロイでは組織のシングルサインオンを使用します。{{brand}} を利用するにはログインしてください。",
     "action": "SSO でログイン",
     "logout": "ログアウト",
     "loadFailed": "認証状態を読み込めません: {{error}}",

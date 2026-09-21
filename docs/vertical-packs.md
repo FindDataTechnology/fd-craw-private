@@ -188,21 +188,33 @@ law-bench 为 `group-restricted`：客户账号 mint 的 JWT 必须含 `legal` �
   "agents": [
     { "id": "pack-contract-reviewer", "type": "agent-remote", "mode": "chat",
       "name": "合同审查官", "description": "法律-合同包对话入口，配合 legal-contract-workflow 技能使用",
-      "icon": "scale", "baseUrl": "https://token.finddatatech.cloud/v1", "model": "deepseek-v4-pro",
+      "icon": "scale", "baseUrl": "https://token.finddatatech.cloud/v1", "model": "deepseek-v4-flash-0731",
       "apiKeyEnv": "FD_TOKEN_API_KEY", "tags": ["法律", "合同"], "roles": ["legal"] },
     { "id": "pack-case-analyst", "type": "agent-remote", "mode": "chat",
       "name": "案件分析师", "description": "法律-案件包对话入口，配合 legal-case-workflow 技能使用",
-      "icon": "gavel", "baseUrl": "https://token.finddatatech.cloud/v1", "model": "deepseek-v4-pro",
+      "icon": "gavel", "baseUrl": "https://token.finddatatech.cloud/v1", "model": "deepseek-v4-flash-0731",
       "apiKeyEnv": "FD_TOKEN_API_KEY", "tags": ["法律", "诉讼"], "roles": ["legal"] },
     { "id": "pack-industry-analyst", "type": "agent-remote", "mode": "chat",
       "name": "行业分析师", "description": "数据-股票/中国经济包对话入口，配合 stock-research / china-macro-brief 技能使用",
-      "icon": "line-chart", "baseUrl": "https://token.finddatatech.cloud/v1", "model": "deepseek-v4-pro",
+      "icon": "line-chart", "baseUrl": "https://token.finddatatech.cloud/v1", "model": "deepseek-v4-flash-0731",
       "apiKeyEnv": "FD_TOKEN_API_KEY", "tags": ["金融", "宏观"], "roles": ["analysts"] }
   ]
 }
 ```
 
 fd-prod 部署：`FD_TOKEN_API_KEY` 进 `platform-secrets`，`AGENTS_CONFIG_URL` 指 §6 文档 URL 进 `platform-config`，rollout。
+
+### 6.1 这些 agent 怎么运行（2026-09-21 修复后）
+
+平台把每个 `chat` 模式的目录条目编译成一个**本地 agent preset**（persona），而不是转发到它的 `chat/completions` 端点：
+
+- 启动时（以及目录每次变化时）从 dsh 自带的 `standard` 组合复制一份，只替换 persona 行 → `$DSH_HOME/.agent-presets/<entry-id>/{preset.yml,agent.cordis.yml}`；带标记文件，条目下线即回收，不覆盖手写 preset。
+- 选中该 agent = 切换 preset（与切换模型/工作区同一条重启路径，UI 有 spinner），**下一轮对话就在本地运行时**：persona + 平台的 163 个 MCP 工具 + 技能 + 会话记忆全都在。会话头部（`标准模式` 那个位置）显示 agent 名。
+- persona 文案优先取条目的 `persona` 字段；没写就由 `name` / `description` / `tags` 生成（含"不要编造数据/结论""标注来源"的约束）。要改角色语气，直接在 agents.json 加 `persona` 即可，无需改平台。
+- 如果某个条目**本来就是远端 agent 服务**（不是 persona 包装），在条目上写 `"local": false`：平台不为它生成 preset，对话按原来的 OpenAI 兼容转发路径走（该路径现在也会带上会话历史与身份说明）。
+
+为什么改：远端转发是一条"裸 LLM"路径——单条消息、没有 system prompt、没有工具。实测选到包 agent 后助手会回答"我没有任何 MCP 工具"，并编造一份 14 个 server 的清单，包的技能与 MCP 全都用不上；客户演示会直接翻车。详见 change `add-vertical-sample-packs` §6。
+
 
 ## 7. 回滚
 
@@ -214,4 +226,6 @@ fd-prod 部署：`FD_TOKEN_API_KEY` 进 `platform-secrets`，`AGENTS_CONFIG_URL`
 - chatlaw / fingpt 卡片是生态展示（GitHub link），对话入口用包的 chat agent。
 - 凭据 TTL 168h：到期后已安装的 MCP 会 401，平台随即把凭据标为 stale 并在 Store 提示"重新连接"（点一次 `Continue with Logto` 即恢复，无需重装）。law-bench 的 egress PAT 有效期 30 天（至 2026-10-18，admin 账号），与用户凭据互不影响。
 - 公开 LLM 网关偶发 502（实测约 1/5 瞬时抖动，重试即恢复；平台 agent 调用无自动重试）——演示时若首答失败，重发一次即可。
+- 包 agent 现在跑在**本地运行时**（§6.1）：persona 的模型就是平台当前选中的模型（端点条目的 `model` 字段只在回退转发时生效）；切换 agent 会重启 dsh 子进程（约 5-10 秒），且 persona 对**下一个**会话生效，当前会话继续用原有 persona（UI 头部标签显示的是会话真实 preset）。
+- 每个 agent 的 persona preset 由目录条目生成，标记文件在 `$DSH_HOME/.agent-presets/<id>/`；要手写不同语气，优先在 agents.json 里加 `persona` 字段。
 - registry 的 egress 相关 API（Connected Accounts 自助存 PAT）被 safeline WAF 拦截（404），目前由 admin 直连 cheap1 代存（§3.3）。

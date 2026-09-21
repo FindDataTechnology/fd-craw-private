@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { Check, Copy, RefreshCw, Terminal, TriangleAlert } from "lucide-react";
 import { useChatStore } from "@platform/core";
 import type { Turn } from "@platform/core";
+import { useBranding } from "@/hooks/useAppConfig";
 import { Markdown } from "@/components/Markdown";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { ToolBlock } from "@/components/ToolBlock";
@@ -26,6 +27,7 @@ function AssistantTurnBase({
   onRegenerate?: () => void;
 }) {
   const { t } = useTranslation();
+  const { assistant } = useBranding();
   const toggleBlock = useChatStore((s) => s.toggleBlock);
   const [copied, setCopied] = useState(false);
 
@@ -57,7 +59,7 @@ function AssistantTurnBase({
         <span aria-hidden="true" className="grid h-6 w-6 place-items-center rounded-full bg-primary/20">
           <span className="h-2 w-2 rounded-full bg-primary" />
         </span>
-        <span>{t("turn.assistantName")}</span>
+        <span>{t("turn.assistantName", { assistant })}</span>
         {/* Turn actions: revealed on hover, keyboard-accessible always. */}
         <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           {answerText && (

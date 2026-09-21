@@ -241,6 +241,21 @@ kubectl -n platform-private create secret generic platform-secrets \
 # ArgoCD self-heal keeps the secret; the Deployment reads it via optional secretKeyRef.
 ```
 
+### Name the assistant (optional, per deployment)
+
+One value renames every user-facing occurrence of the assistant — sidebar title,
+turn header, composer placeholder, browser tab title — through
+`GET /api/config` (no rebuild; the web resolves it before its first paint and
+falls back to the localized defaults when unset):
+
+```bash
+# Local / docker: .env
+ASSISTANT_NAME=Your Name Here
+# In-cluster: the platform-config ConfigMap (fd-infra-deploy, e.g. ASSISTANT_NAME),
+# then roll the pod.
+kubectl -n fd-prod rollout restart deploy/platform
+```
+
 ### Registry market token (live layout: `fd-prod` namespace)
 
 The Store merges registry entries from `https://mcp.finddatatech.cloud`

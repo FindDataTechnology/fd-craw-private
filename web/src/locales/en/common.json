@@ -47,7 +47,7 @@
     "loadFailed": "Failed to load catalog: {{error}}"
   },
   "sidebar": {
-    "brand": "Platform",
+    "brand": "{{brand}}",
     "chats": "Chats",
     "new": "+ New",
     "noChats": "No chats yet. Click \"+ New\".",
@@ -108,7 +108,7 @@
     "disconnected": "Disconnected"
   },
   "composer": {
-    "placeholder": "Ask Platform Assistant anything… (type / for commands, Enter to send, Shift+Enter for newline)",
+    "placeholder": "Ask {{assistant}} anything… (type / for commands, Enter to send, Shift+Enter for newline)",
     "placeholderDisabled": "Connecting…",
     "send": "Send",
     "dropHint": "Release to attach the document",
@@ -238,7 +238,7 @@
     "retry": "Retry"
   },
   "turn": {
-    "assistantName": "Platform Assistant",
+    "assistantName": "{{assistant}}",
     "thinkingStreaming": "Thinking…",
     "thinking": "Thinking",
     "statusRunning": "running…",
@@ -523,9 +523,13 @@
       "wechat-oa": "WeChat Official Account"
     }
   },
+  "assistant": {
+    "name": "Platform Assistant",
+    "brand": "Platform"
+  },
   "login": {
     "title": "Sign in",
-    "description": "This deployment uses your organization’s single sign-on. Sign in to continue to Platform.",
+    "description": "This deployment uses your organization’s single sign-on. Sign in to continue to {{brand}}.",
     "action": "Sign in with SSO",
     "logout": "Sign out",
     "loadFailed": "Unable to load authentication state: {{error}}",

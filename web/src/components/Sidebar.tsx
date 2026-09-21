@@ -39,6 +39,7 @@ import { useChatStore } from "@platform/core";
 import type { ClientMessage, SessionMeta } from "@platform/core";
 import { cn } from "@/lib/utils";
 import { ChatSessionMenu } from "@/components/ChatSessionMenu";
+import { useBranding } from "@/hooks/useAppConfig";
 import { settingsPath } from "@/components/settings/sections";
 
 interface Props {
@@ -74,6 +75,8 @@ const CAN_PICK_NATIVE =
 
 export function Sidebar({ send, onNavigate, onCollapse }: Props) {
   const { t } = useTranslation();
+  // The deployment's own name (ASSISTANT_NAME) wins over the localized default.
+  const { brand } = useBranding();
   const status = useChatStore((s) => s.status);
   const sessions = useChatStore((s) => s.sessions);
   const currentSessionId = useChatStore((s) => s.currentSessionId);
@@ -258,7 +261,7 @@ export function Sidebar({ send, onNavigate, onCollapse }: Props) {
   return (
     <nav className="flex h-screen flex-col border-r border-border bg-card" data-testid="sidebar">
       <div className="flex items-center justify-between gap-2 border-b border-border p-4">
-        <div className="text-base font-semibold">{t("sidebar.brand")}</div>
+        <div className="text-base font-semibold">{t("sidebar.brand", { brand })}</div>
         {onCollapse && (
           <button
             type="button"

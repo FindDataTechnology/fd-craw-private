@@ -16,7 +16,9 @@
 // those restarts the child process. That cost is deliberately visible: the
 // changed control shows a spinner and the send button disables until the
 // server's confirming broadcast lands (see `pendingConfig` in the store).
-// Agent is the exception — it switches synchronously, no restart, no spinner.
+// Agent follows the same rule when the deployment serves that agent locally
+// (a vertical pack is a persona preset, so its switch restarts the runtime);
+// only a remote-fork agent switches without a restart.
 //
 // Nothing here holds optimistic local state. A control renders what the store
 // says the runtime IS, not what was requested — so a dropdown briefly shows
@@ -653,6 +655,12 @@ export function ControlStrip({ send, onOpenCommands, onAttach, trailing }: Props
                       onClick={() => {
                         close();
                         if (a.id === currentAgent) return;
+                        // An agent the deployment serves locally (a vertical
+                        // pack) applies its persona through the preset switch,
+                        // which restarts the runtime — so this control waits for
+                        // `agent_changed` like the model/workspace ones do. A
+                        // remote-fork agent answers immediately.
+                        setPendingConfig("agent");
                         send({ type: "set_agent", id: a.id });
                       }}
                     />

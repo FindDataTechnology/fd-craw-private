@@ -47,7 +47,7 @@
     "loadFailed": "Échec du chargement du catalogue : {{error}}"
   },
   "sidebar": {
-    "brand": "Platform",
+    "brand": "{{brand}}",
     "chats": "Discussions",
     "new": "+ Nouveau",
     "noChats": "Aucune discussion. Cliquez sur « + Nouveau ».",
@@ -108,7 +108,7 @@
     "disconnected": "Déconnecté"
   },
   "composer": {
-    "placeholder": "Demandez n'importe quoi à l'assistant Platform… (tapez / pour les commandes, Entrée pour envoyer, Maj+Entrée pour un saut de ligne)",
+    "placeholder": "Demandez n'importe quoi à l'{{assistant}}… (tapez / pour les commandes, Entrée pour envoyer, Maj+Entrée pour un saut de ligne)",
     "placeholderDisabled": "Connexion…",
     "send": "Envoyer",
     "dropHint": "Relâchez pour joindre le document",
@@ -238,7 +238,7 @@
     "retry": "Réessayer"
   },
   "turn": {
-    "assistantName": "Assistant Platform",
+    "assistantName": "{{assistant}}",
     "thinkingStreaming": "Réflexion…",
     "thinking": "Réflexion",
     "statusRunning": "en cours…",
@@ -523,9 +523,13 @@
       "wechat-oa": "Compte officiel WeChat"
     }
   },
+  "assistant": {
+    "name": "Assistant Platform",
+    "brand": "Platform"
+  },
   "login": {
     "title": "Connexion",
-    "description": "Ce déploiement utilise le connexion unique de votre organisation. Connectez-vous pour accéder à Platform.",
+    "description": "Ce déploiement utilise le connexion unique de votre organisation. Connectez-vous pour accéder à {{brand}}.",
     "action": "Se connecter avec le SSO",
     "logout": "Déconnexion",
     "loadFailed": "Impossible de charger l’état d’authentification : {{error}}",

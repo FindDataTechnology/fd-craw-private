@@ -7,6 +7,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import WebSocket from "ws";
 
+
 // Forward-auth + agent/app catalog e2e. Two targets:
 //  - the shared webServer (AUTH_MODE unset): default behavior unchanged and
 //    the connect broker refuses without forward auth.
@@ -110,6 +111,9 @@ test.describe("AUTH_MODE=forward_auth", () => {
         // cloud wins by id — overrides the built-in local entry's name
         { id: "local", type: "agent-local", name: "Cloud Local Override" },
         { id: "remote-chat", type: "agent-remote", mode: "chat", baseUrl: `${FIXTURE}/v1`, model: "mock-model", apiKeyEnv: "REMOTE_AGENT_KEY" },
+        // `local: false` = the operator declaring a real remote service: no
+        // persona preset, the turn forks to its endpoint instead.
+        { id: "remote-fork", type: "agent-remote", mode: "chat", local: false, baseUrl: `${FIXTURE}/v1`, model: "mock-model", apiKeyEnv: "REMOTE_AGENT_KEY" },
         { id: "admin-agent", type: "agent-remote", mode: "chat", baseUrl: `${FIXTURE}/v1`, model: "mock-model", roles: ["admin"] },
         { id: "link-agent", type: "agent-remote", mode: "link", url: "https://example.com/agent" },
         // invalid (chat mode without baseUrl) — must be dropped
@@ -201,6 +205,28 @@ test.describe("AUTH_MODE=forward_auth", () => {
     }
     if (Date.now() - start >= 90_000) {
       throw new Error(`forward-auth server not ready: ${lastErr?.message}\n${bootLog.slice(-2000)}`);
+    }
+    // /api/auth/me answers from the listen-first boot, before the async work
+    // finishes: the cloud catalog merges, then the deployment composes one local
+    // persona preset per chat-mode entry and restarts the idle runtime so its
+    // roster carries them. Wait for the spec's own data (catalog entries AND the
+    // preset they generate) so no test runs against a half-booted server — a
+    // fresh worker can spawn this child and reach the tests within a second.
+    try {
+      const probe = await openWs(ADMIN);
+      try {
+        await waitFor(async () => {
+          probe.msgs.length = 0;
+          probe.ws.send(JSON.stringify({ type: "list_presets" }));
+          await new Promise((r) => setTimeout(r, 250));
+          const roster = probe.msgs.findLast((m) => m.type === "presets")?.presets ?? [];
+          return roster.some((p) => p.id === "remote-chat");
+        }, 60_000);
+      } finally {
+        probe.ws.close();
+      }
+    } catch (e) {
+      throw new Error(`forward-auth persona presets not ready: ${e.message}\n${bootLog.slice(-2000)}`);
     }
   });
 
@@ -365,11 +391,39 @@ test.describe("AUTH_MODE=forward_auth", () => {
     expect(cat.agents.map((a) => a.id)).toContain("added-agent");
   });
 
-  test("remote agent chat streams from the mock OpenAI-compat server", async () => {
+  test("a catalog chat agent is served locally with a persona preset, not forked", async () => {
+    mock.lastChat = null;
     const user = await openWs(USER);
     await waitFor(() => user.msgs.some((m) => m.type === "agents"));
+
+    // Selecting it is a preset switch: the entry's own id becomes the session's
+    // agent mode (the deployment generated a persona preset for it), which is
+    // what keeps the turn on the local runtime — its tools, MCP servers and
+    // history — instead of a bare remote model.
     user.ws.send(JSON.stringify({ type: "set_agent", id: "remote-chat" }));
     await waitFor(() => user.msgs.some((m) => m.type === "agent_changed" && m.id === "remote-chat"));
+    await waitFor(() => user.msgs.some((m) => m.type === "current_preset" && m.id === "remote-chat"));
+
+    user.ws.send(JSON.stringify({ type: "prompt", text: "hi" }));
+    // Local turns need a provider; the assertion that matters here is the
+    // ROUTING, so accept either outcome (a reply, or the local provider's
+    // error in a keyless CI run) — both prove the fork did not happen.
+    await waitFor(() =>
+      user.msgs.some((m) => m.type === "done") || user.msgs.some((m) => m.type === "error"),
+      30_000,
+    );
+    expect(mock.lastChat).toBeNull(); // the entry's endpoint was never called
+    user.ws.close();
+  });
+
+  test("a `local: false` chat agent forks to its OpenAI-compatible endpoint with the conversation", async () => {
+    mock.lastChat = null;
+    const user = await openWs(USER);
+    await waitFor(() => user.msgs.some((m) => m.type === "agents"));
+    // The opt-out entry has no persona preset, so this switch is not a preset
+    // change and streams from the mock instead.
+    user.ws.send(JSON.stringify({ type: "set_agent", id: "remote-fork" }));
+    await waitFor(() => user.msgs.some((m) => m.type === "agent_changed" && m.id === "remote-fork"));
     user.ws.send(JSON.stringify({ type: "prompt", text: "hi" }));
     await waitFor(() => user.msgs.some((m) => m.type === "done"));
 
@@ -379,6 +433,18 @@ test.describe("AUTH_MODE=forward_auth", () => {
     expect(mock.lastChat.auth).toBe("Bearer test-remote-key");
     expect(mock.lastChat.body.model).toBe("mock-model");
     expect(mock.lastChat.body.messages[0].content).toBe("hi");
+
+    // A second prompt carries the mirrored conversation: a fork has no
+    // server-side session, so without this replay every turn starts from
+    // nothing (the reported "the agent has no memory" bug).
+    user.msgs.length = 0;
+    user.ws.send(JSON.stringify({ type: "prompt", text: "and again" }));
+    await waitFor(() => user.msgs.some((m) => m.type === "done"));
+    // The tail is this session's exchange; earlier mirrored turns (from the
+    // tests before this one) ride along too, which is the point.
+    const sent = mock.lastChat.body.messages.map((m) => `${m.role}:${m.content}`);
+    expect(sent.slice(-3)).toEqual(["user:hi", "assistant:Hello remote world", "user:and again"]);
+    expect(sent.length).toBeGreaterThan(3);
     user.ws.close();
   });
 

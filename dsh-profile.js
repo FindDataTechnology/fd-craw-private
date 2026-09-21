@@ -20,7 +20,7 @@
 // Writes atomically (temp+rename) and returns the declared model list so server.js
 // can source its model selector without a dsh listModels RPC (dsh has none stock;
 // the generator's declared list IS the dsh list — dsh loads exactly this file).
-import { readFileSync, mkdirSync, chmodSync, existsSync, statSync, copyFileSync, symlinkSync } from "node:fs";
+import { readFileSync, mkdirSync, chmodSync, existsSync, statSync, copyFileSync, symlinkSync, readdirSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
@@ -516,7 +516,7 @@ export function writeSkillsPatch(skillsDirs = [resolve("skills")]) {
 const PRESETS_PATCH_PATH = join(DSH_HOME, "profiles", PROFILE_NAME, "presets.patch.yml");
 const BRIDGE_SOURCE = join(dirname(fileURLToPath(import.meta.url)), "dsh-profile-template", "platform-preset-bridge.js");
 const PRESET_BRIDGE_FILE = "platform-preset-bridge.js";
-const DEFAULT_AGENT_PRESET = "standard";
+export const DEFAULT_AGENT_PRESET = "standard";
 
 // Locate the installed @deepseek-ai/dsh package and return its shipped preset
 // root (config/agent-presets), or null. The repo runtime cannot see the dsh
@@ -575,6 +575,185 @@ export async function writePresetsPatch() {
     `[dsh-profile] wrote preset bridge + roster patch (default: ${DEFAULT_AGENT_PRESET}, shipped root: ${presetRoot}) → ${PRESETS_PATCH_PATH}`,
   );
   return PRESETS_PATCH_PATH;
+}
+
+// ── Catalog agent presets (vertical-pack personas) ───────────────────────────
+// A catalog `agent-remote` entry in chat mode names a vertical agent (合同审查官,
+// 行业分析师, …). Served as a remote chat fork it is a bare LLM: it gets one
+// user message, no system prompt, no tools — no memory, no MCP servers, no
+// skills, so the pack it fronts cannot actually do its job. Serving it LOCALLY
+// instead keeps the whole local runtime (tools, skills, MCP servers, session
+// history) and only swaps the persona: one generated agent preset per entry,
+// composed from the SHIPPED `standard` composition (so it tracks the installed
+// dsh version and keeps every tool row) with the persona row's text replaced.
+//
+// Files land in the preset roster's user root ($DSH_HOME/.agent-presets/<id>)
+// so dsh-agent-presets lists them beside the shipped four (trust: user) and the
+// existing preset switch path applies them — see server/agent-session.js.
+// Written at boot and again whenever the merged catalog changes; the host
+// restarts the child on a change so `presets/list` re-reads the roster.
+const CATALOG_PRESET_ROOT = join(DSH_HOME, ".agent-presets");
+// Marks a directory as generated (and therefore prunable/writable) by us: a
+// hand-authored user preset that happens to share an id is left alone.
+const CATALOG_PRESET_MARKER = ".platform-catalog-preset.json";
+// The four compositions dsh ships. A catalog entry may not shadow one, and the
+// boot-time preset guard treats these as always-known.
+const SHIPPED_PRESET_IDS = ["standard", "code", "minimal", "cordis"];
+
+function isSafePresetId(id) {
+  return typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id);
+}
+
+// The persona text for one catalog entry: the entry's own `persona` when the
+// catalog author supplies one, else a composed brief from its display fields.
+// Bracket the role and the honesty rules — a pack agent that invents data is
+// worse than one that says the tool found nothing.
+export function catalogEntryPersona(entry) {
+  const explicit = typeof entry?.persona === "string" ? entry.persona.trim() : "";
+  const lines = [];
+  if (explicit) {
+    lines.push(explicit);
+  } else {
+    const tags = Array.isArray(entry?.tags) && entry.tags.length ? `（${entry.tags.join("·")}）` : "";
+    const what = (entry?.description || "").trim();
+    lines.push(`你是「${entry?.name || entry?.id}」${tags}${what ? `——${what}` : ""}。`);
+    lines.push(
+      "用户带着这一领域的真实问题来找你。需要数据、文件或动作时，直接调用你手中的工具（技能、MCP 服务、检索、命令行）去获取，不要凭记忆编造数字、条款或结论；工具没覆盖到的地方，如实说明「未启用/无数据源」。",
+    );
+    lines.push("回答用中文（除非用户使用其他语言）：结论先行，结构清晰，给出可执行的下一步；引用数据时标注来源。");
+  }
+  lines.push("You are powered by the {{model}} model; your working directory is {{cwd}}.");
+  return lines.join("\n");
+}
+
+// Swap the `persona` row's `config.text` in a shipped agent-plane composition
+// for `persona`. Text-level (not a YAML round-trip): the composition carries
+// `!!js` tags and comments that js-yaml would not reproduce. The row's block
+// scalar is replaced by a double-quoted scalar — JSON string escaping is valid
+// YAML double-quoted style, so embedded newlines stay on one line.
+export function composeAgentPreset(template, persona) {
+  const rowAt = template.indexOf("- id: persona\n");
+  if (rowAt < 0) throw new Error("shipped composition has no `persona` row");
+  const textAt = template.indexOf("    text:", rowAt);
+  const nextRowAt = template.indexOf("\n- ", rowAt + 1);
+  if (textAt < 0 || (nextRowAt !== -1 && textAt > nextRowAt)) {
+    throw new Error("shipped composition's `persona` row has no config.text");
+  }
+  const bodyStart = template.indexOf("\n", textAt) + 1;
+  let bodyEnd = bodyStart;
+  for (;;) {
+    const nl = template.indexOf("\n", bodyEnd);
+    if (nl < 0) break;
+    const line = template.slice(bodyEnd, nl);
+    if (!/^\s{6,}\S/.test(line)) break;
+    bodyEnd = nl + 1;
+  }
+  const quoted = JSON.stringify(persona.trim());
+  return `${template.slice(0, textAt)}    text: ${quoted}\n${template.slice(bodyEnd)}`;
+}
+
+// The installed composition a generated preset is built from; null when the
+// shipped preset root is unresolvable (bare deployment → no pack personas).
+function shippedStandardComposition() {
+  const root = resolveShippedPresetRoot();
+  if (!root) return null;
+  const file = join(root, "standard", "agent.cordis.yml");
+  return existsSync(file) ? readFileSync(file, "utf8") : null;
+}
+
+// Preset ids the deployment can boot with: the shipped four plus every valid
+// preset directory in the user root (generated pack presets included). Used to
+// validate the persisted preset choice BEFORE the child spawns — an unknown id
+// there would fail every new session's mount.
+export function knownPresetIds() {
+  const ids = new Set();
+  const shipped = resolveShippedPresetRoot();
+  for (const id of SHIPPED_PRESET_IDS) {
+    if (shipped && existsSync(join(shipped, id, "agent.cordis.yml"))) ids.add(id);
+  }
+  try {
+    for (const dirent of readdirSync(CATALOG_PRESET_ROOT, { withFileTypes: true })) {
+      if (dirent.isDirectory() && existsSync(join(CATALOG_PRESET_ROOT, dirent.name, "agent.cordis.yml"))) {
+        ids.add(dirent.name);
+      }
+    }
+  } catch { /* no user preset root — shipped only */ }
+  return ids;
+}
+
+// Does this catalog entry id have a generated local-preset composition? True ⇒
+// the id is served by the LOCAL agent (tools + history + persona) rather than
+// forked to its remote endpoint.
+export function hasCatalogAgentPreset(id) {
+  if (!isSafePresetId(id)) return false;
+  return existsSync(join(CATALOG_PRESET_ROOT, id, "agent.cordis.yml"));
+}
+
+// Generate/refresh/prune one preset dir per chat-mode catalog agent. Returns
+// { changed, ids }: `changed` drives the host's roster refresh (a child restart
+// is what makes `presets/list` see a new preset). Idempotent — files are only
+// rewritten when their content differs, so a catalog poll costs nothing.
+export function writeCatalogAgentPresets(entries = []) {
+  const template = shippedStandardComposition();
+  const wanted = new Map();
+  for (const entry of entries) {
+    if (entry?.type !== "agent-remote" || entry.mode !== "chat" || !entry.id) continue;
+    // `local: false` is the operator saying "this entry IS a remote service" —
+    // it keeps the OpenAI-compatible fork and gets no persona preset.
+    if (entry.local === false) continue;
+    if (!isSafePresetId(entry.id) || SHIPPED_PRESET_IDS.includes(entry.id)) {
+      console.warn(`[dsh-profile] catalog agent '${entry.id}' cannot become a preset (unsafe or reserved id); it stays a remote chat`);
+      continue;
+    }
+    wanted.set(entry.id, entry);
+  }
+  if (!template) {
+    if (wanted.size) console.warn("[dsh-profile] shipped `standard` composition unavailable; skipping catalog agent presets");
+    return { changed: false, ids: [] };
+  }
+
+  let changed = false;
+  // Prune generated presets whose entry left the catalog (never touch dirs we
+  // did not generate: no marker ⇒ someone's own preset).
+  let existing = [];
+  try {
+    existing = readdirSync(CATALOG_PRESET_ROOT, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && existsSync(join(CATALOG_PRESET_ROOT, d.name, CATALOG_PRESET_MARKER)))
+      .map((d) => d.name);
+  } catch { /* no root yet */ }
+  for (const id of existing) {
+    if (wanted.has(id)) continue;
+    rmSync(join(CATALOG_PRESET_ROOT, id), { recursive: true, force: true });
+    console.log(`[dsh-profile] pruned catalog agent preset '${id}' (no longer in the catalog)`);
+    changed = true;
+  }
+
+  const ids = [];
+  wanted.forEach((entry, id) => {
+    const dir = join(CATALOG_PRESET_ROOT, id);
+    const name = entry.name || id;
+    const description = (entry.description || `Catalog agent ${name}`).trim();
+    const meta = { entryId: id, name, description, order: 50 + ids.length };
+    const files = {
+      "preset.yml": yaml.dump({ name, description, order: meta.order }),
+      "agent.cordis.yml": composeAgentPreset(template, catalogEntryPersona(entry)),
+      [CATALOG_PRESET_MARKER]: `${JSON.stringify({ ...meta, generator: "paas-catalog" }, null, 2)}\n`,
+    };
+    mkdirSync(dir, { recursive: true });
+    for (const [file, content] of Object.entries(files)) {
+      const target = join(dir, file);
+      let current = null;
+      try { current = readFileSync(target, "utf8"); } catch { /* absent */ }
+      if (current === content) continue;
+      atomicWriteTextSync(target, content);
+      changed = true;
+    }
+    ids.push(id);
+  });
+  if (changed) {
+    console.log(`[dsh-profile] wrote ${ids.length} catalog agent preset(s): ${ids.join(", ") || "(none)"} → ${CATALOG_PRESET_ROOT}`);
+  }
+  return { changed, ids };
 }
 
 // ── Permission preset bridge patch (add-permission-mode-selector) ─────────────
@@ -664,4 +843,17 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const permissionsPatch = await writePermissionsPatch();
   console.log(`--- permissions patch (${permissionsPatch}) ---`);
   console.log(readFileSync(permissionsPatch, "utf8"));
+  // Catalog agent preset self-check: compose one from the shipped `standard`
+  // composition and prove the persona swap landed (this is what a vertical-pack
+  // chat agent runs on — see writeCatalogAgentPresets).
+  const sample = shippedStandardComposition();
+  if (sample) {
+    const composed = composeAgentPreset(sample, catalogEntryPersona({ id: "pack-demo", name: "合同审查官", description: "法律-合同包对话入口", tags: ["法律", "合同"] }));
+    console.assert(composed.includes("合同审查官"), "composed preset lost its persona");
+    console.assert(composed.includes("dsh-tool-fs") && composed.includes("dsh-tool-skill"), "composed preset lost tool rows");
+    console.assert(composed.includes("!!js process.platform"), "composed preset lost the platform tags");
+    console.log("OK catalog agent preset composes (persona swapped, tool rows intact)");
+  } else {
+    console.log("catalog agent preset skipped (shipped composition unresolvable)");
+  }
 }

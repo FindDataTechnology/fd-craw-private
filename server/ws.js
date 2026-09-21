@@ -195,9 +195,12 @@ ctx.wss.on("connection", (ws, req) => {
             ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
             break;
           }
-          const entry =
-            ctx.currentAgentId !== "local" ? catalog.getAgentEntry(ctx.currentAgentId) : null;
-          if (ctx.currentAgentId !== "local" && !entry) {
+          // A chat-mode catalog agent forks to its OpenAI-compatible endpoint only
+          // while the deployment has no local persona preset for it; with a preset
+          // (vertical packs) the same agent runs on the local runtime so it keeps
+          // its tools, MCP servers and session history.
+          const entry = ctx.remoteChatEntryFor(ctx.currentAgentId);
+          if (ctx.currentAgentId !== "local" && !entry && !catalog.getAgentEntry(ctx.currentAgentId)) {
             ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${ctx.currentAgentId}` }));
             break;
           }

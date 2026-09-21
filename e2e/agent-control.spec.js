@@ -8,10 +8,11 @@ import { pinLocaleEn } from "./helpers.js";
 // the e2e seam — the same approach thinking-level.spec.js uses for models — so
 // the control's contract is exercised without depending on a catalog.
 //
-// The contract differs from every other control in the strip in one way worth
-// stating: switching the agent does NOT restart the dsh child (switchAgentTo
-// broadcasts synchronously), so there is no pending spinner and the composer is
-// never blocked. Asserting that is the point of half of this file.
+// The contract worth stating: a catalog agent the deployment serves locally (a
+// vertical pack is a persona preset) applies through the same restart path as a
+// model switch, so the control marks the switch pending and the composer blocks
+// until `agent_changed` lands. This file asserts the client contract only —
+// `set_agent` is swallowed before it reaches the runtime.
 
 const LOCAL = { id: "local", name: "Local" };
 const REMOTE = { id: "remote-a", name: "Remote A" };
@@ -102,7 +103,7 @@ test.describe("Agent control — composer strip", () => {
     await expect(page.getByRole("menuitemradio", { checked: true })).toContainText("Remote A");
   });
 
-  test("selecting an agent emits set_agent and does not block the composer", async ({ page }) => {
+  test("selecting an agent emits set_agent and blocks the composer until agent_changed", async ({ page }) => {
     await seed(page, [LOCAL, REMOTE], "local");
 
     // Type first: `canSend` also requires non-empty text, so an empty composer
@@ -118,11 +119,11 @@ test.describe("Agent control — composer strip", () => {
       .poll(() => page.evaluate(() => window.__sent.filter((m) => m.type === "set_agent")))
       .toEqual([{ type: "set_agent", id: "remote-a" }]);
 
-    // No restart, so: no spinner, and send stays enabled. Switching the MODEL
-    // here would set pendingConfig and disable it — that is the difference. The
-    // overflow trigger is the control that would show a restart spinner (it
-    // carries the workspace switch's), so it is the honest place to assert on.
-    await expect(page.getByTestId("strip-more")).not.toHaveAttribute("data-pending", "true");
+    // The switch is a restart-carrying preset change, so the composer blocks
+    // until the server's `agent_changed` lands — the same discipline the model
+    // and workspace controls follow.
+    await expect(page.getByTestId("composer-send")).toBeDisabled();
+    await page.evaluate(() => window.__chatStore.getState().apply({ type: "agent_changed", id: "remote-a" }));
     await expect(page.getByTestId("composer-send")).toBeEnabled();
   });
 
@@ -133,12 +134,15 @@ test.describe("Agent control — composer strip", () => {
 
     // set_agent was swallowed, so no agent_changed came back — the control must
     // still show the OLD agent rather than optimistically showing the new one.
-    // Selecting closes the popover, so reopen it to read the label.
-    await page.getByTestId("strip-more").click();
-    await expect(page.getByTestId("strip-agent")).toContainText("Local");
+    // The switch is pending (it waits for the broadcast), which also disables the
+    // overflow trigger, so read the store rather than reopening the popover.
+    await expect
+      .poll(() => page.evaluate(() => window.__chatStore.getState().currentAgent))
+      .toBe("local");
 
     // Once the store reflects the server's broadcast, the label follows.
-    await seed(page, [LOCAL, REMOTE], "remote-a");
+    await page.evaluate(() => window.__chatStore.getState().apply({ type: "agent_changed", id: "remote-a" }));
+    await page.getByTestId("strip-more").click();
     await expect(page.getByTestId("strip-agent")).toContainText("Remote A");
   });
 

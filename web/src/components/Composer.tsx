@@ -21,6 +21,7 @@ import { SlashCommandPicker, type SlashCommand } from "@/components/SlashCommand
 import { ControlStrip } from "@/components/ControlStrip";
 import { PlanDock } from "@/components/PlanPanel";
 import { HelpDialog } from "@/components/HelpDialog";
+import { useBranding } from "@/hooks/useAppConfig";
 import type { ClientMessage } from "@platform/core";
 import { cn } from "@/lib/utils";
 import { showToast } from "@/components/Toast";
@@ -63,6 +64,7 @@ const CMD_META = [
 
 export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
   const { t } = useTranslation();
+  const { assistant } = useBranding();
   const status = useChatStore((s) => s.status);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const stopStreaming = useChatStore((s) => s.stopStreaming);
@@ -439,7 +441,7 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
           onKeyDown={onKeyDown}
           rows={1}
           data-testid="composer-input"
-          placeholder={t("composer.placeholder")}
+          placeholder={t("composer.placeholder", { assistant })}
           className={cn(
             "min-h-[24px] w-full resize-none bg-transparent text-sm text-foreground outline-none",
             "placeholder:text-muted-foreground",

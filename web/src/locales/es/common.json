@@ -47,7 +47,7 @@
     "loadFailed": "Error al cargar el catálogo: {{error}}"
   },
   "sidebar": {
-    "brand": "Platform",
+    "brand": "{{brand}}",
     "chats": "Chats",
     "new": "+ Nuevo",
     "noChats": "Aún no hay chats. Haz clic en \"+ Nuevo\".",
@@ -108,7 +108,7 @@
     "disconnected": "Desconectado"
   },
   "composer": {
-    "placeholder": "Pregúntale al Asistente de Platform lo que sea… (escribe / para comandos, Enter para enviar, Shift+Enter para salto de línea)",
+    "placeholder": "Pregúntale al {{assistant}} lo que sea… (escribe / para comandos, Enter para enviar, Shift+Enter para salto de línea)",
     "placeholderDisabled": "Conectando…",
     "send": "Enviar",
     "dropHint": "Suelta para adjuntar el documento",
@@ -238,7 +238,7 @@
     "retry": "Reintentar"
   },
   "turn": {
-    "assistantName": "Asistente de Platform",
+    "assistantName": "{{assistant}}",
     "thinkingStreaming": "Pensando…",
     "thinking": "Pensando",
     "statusRunning": "ejecutando…",
@@ -523,9 +523,13 @@
       "wechat-oa": "Cuenta Oficial de WeChat"
     }
   },
+  "assistant": {
+    "name": "Asistente de Platform",
+    "brand": "Platform"
+  },
   "login": {
     "title": "Iniciar sesión",
-    "description": "Este despliegue usa el inicio de sesión único de tu organización. Inicia sesión para continuar en Platform.",
+    "description": "Este despliegue usa el inicio de sesión único de tu organización. Inicia sesión para continuar en {{brand}}.",
     "action": "Iniciar sesión con SSO",
     "logout": "Cerrar sesión",
     "loadFailed": "No se pudo cargar el estado de autenticación: {{error}}",

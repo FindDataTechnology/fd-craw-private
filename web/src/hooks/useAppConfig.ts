@@ -1,0 +1,61 @@
+// Deployment config the web renders from: what the server/agent can do, and
+// what this deployment is called. Fetched once at boot (see main.tsx) so the
+// first paint already shows the configured name instead of flashing the
+// localized default, and cached for every later read.
+import { useSyncExternalStore } from "react";
+import { useTranslation } from "react-i18next";
+
+export interface AppConfig {
+  documentsEnabled: boolean;
+  // Deployment name for the assistant (server `ASSISTANT_NAME`); null = use the
+  // localized defaults.
+  assistantName: string | null;
+}
+
+let config: AppConfig = { documentsEnabled: true, assistantName: null };
+const listeners = new Set<() => void>();
+
+function emit(next: AppConfig) {
+  config = next;
+  for (const l of listeners) l();
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function useAppConfig(): AppConfig {
+  return useSyncExternalStore(subscribe, () => config, () => config);
+}
+
+// Boot fetch. Never rejects and never blocks for long: an unreachable server (or
+// a slow one) leaves the defaults in place, because a missing name must not cost
+// the app its first paint.
+export async function loadAppConfig(timeoutMs = 1500): Promise<AppConfig> {
+  try {
+    const res = await fetch("/api/config", { signal: AbortSignal.timeout(timeoutMs) });
+    const body = await res.json();
+    emit({
+      documentsEnabled: body?.documentsEnabled ?? true,
+      assistantName: typeof body?.assistantName === "string" && body.assistantName ? body.assistantName : null,
+    });
+  } catch {
+    /* keep defaults */
+  }
+  return config;
+}
+
+// The two strings every name-bearing surface interpolates: `brand` names the
+// deployment (sidebar, login card, document title), `assistant` names the agent
+// that answers (turn header, composer placeholder). One configured name fills
+// both; without one each falls back to its own localized default, which is why
+// they are separate strings.
+export function useBranding(): { brand: string; assistant: string } {
+  const { assistantName } = useAppConfig();
+  const { t } = useTranslation();
+  return {
+    brand: assistantName || t("assistant.brand"),
+    assistant: assistantName || t("assistant.name"),
+  };
+}

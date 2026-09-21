@@ -92,10 +92,14 @@ export function registerMiscRoutes(ctx) {
     res.status(ctx.ready.dsh ? 200 : 503).json({ ready: ctx.ready.dsh });
   });
 
-  // ── Server config (documents state) ───────────────────────────────────────
+  // ── Server config (documents state, deployment branding) ──────────────────
   app.get("/api/config", (_req, res) => {
     res.json({
       documentsEnabled: db.isDbReady(),
+      // The deployment's name for the assistant, shown in the sidebar, the turn
+      // header and the composer placeholder. Unset (or blank) ⇒ null, and the
+      // web keeps its own localized defaults.
+      assistantName: (process.env.ASSISTANT_NAME || "").trim() || null,
     });
   });
 

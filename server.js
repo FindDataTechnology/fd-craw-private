@@ -204,7 +204,7 @@ function seedStartupMcpConfigs(mcpJsonServers) {
 // now it only emits `done` on turn completion (the 1.5 round-trip placeholder).
 async function initDshAgent() {
   const { DshBridge } = await import("./dsh-bridge.js");
-  const { writeLlmProfile, writeMcpPatch, writeSkillsPatch, writePresetsPatch, writePermissionsPatch, ensureCredentialsStore, ensureDshHome, buildScrubbedEnv } = await import("./dsh-profile.js");
+  const { writeLlmProfile, writeMcpPatch, writeSkillsPatch, writePresetsPatch, writePermissionsPatch, ensureCredentialsStore, ensureDshHome, buildScrubbedEnv, knownPresetIds, DEFAULT_AGENT_PRESET } = await import("./dsh-profile.js");
 
   // Scaffold $DSH_HOME if it is fresh — a hosted cell's per-user home always
   // is, and dsh refuses to boot a profile that was never materialized.
@@ -294,8 +294,25 @@ async function initDshAgent() {
   // the child degrades to an empty roster (picker hidden, chat unaffected).
   const permissionsPatchPath = await writePermissionsPatch();
   // The selected agent mode is a persisted user preference (agent.preset);
-  // `standard` until a DB row exists.
-  ctx.currentPreset = ctx.db.getPreference("agent.preset") || "standard";
+  // `standard` until a DB row exists. Validate it BEFORE the child spawns: dsh
+  // resolves a session's preset at creation (and a vertical-pack agent IS one of
+  // these presets), so a stale id — a pack that left the catalog, a preset
+  // someone deleted — would fail every new session. A correction is persisted so
+  // the picker agrees with the runtime.
+  const persistedPreset = ctx.db.getPreference("agent.preset") || DEFAULT_AGENT_PRESET;
+  const knownPresets = knownPresetIds();
+  ctx.currentPreset = knownPresets.has(persistedPreset)
+    ? persistedPreset
+    : knownPresets.has(DEFAULT_AGENT_PRESET)
+      ? DEFAULT_AGENT_PRESET
+      : [...knownPresets][0] || DEFAULT_AGENT_PRESET;
+  if (ctx.currentPreset !== persistedPreset) {
+    ctx.db.setPreference("agent.preset", ctx.currentPreset);
+    console.warn(`[dsh] persisted agent preset '${persistedPreset}' is not available; using '${ctx.currentPreset}'`);
+  }
+  // A pack agent selection is a preset choice, so the switcher's agent label
+  // follows the preset across restarts instead of resetting to `local`.
+  ctx.currentAgentId = ctx.catalogAgentForPreset?.(ctx.currentPreset) ?? "local";
 
   // Default model: in a cell the user's saved binding wins (it IS this
   // runtime's configuration); otherwise the persisted Models-page pointer,
@@ -480,7 +497,13 @@ bots.initBots(ctx);
 initRegistryBridge({ broadcast: ctx.broadcast });
 await Promise.all([
   migrate.runLegacyMigrations(),
-  catalog.initCatalog({ broadcast: ctx.broadcast }),
+  catalog.initCatalog({
+    broadcast: ctx.broadcast,
+    // The catalog's chat agents are served locally through generated persona
+    // presets; a changed catalog regenerates them and restarts the idle child so
+    // its roster lists the packs that arrived (or dropped) with it.
+    onChange: () => { void ctx.syncCatalogAgentPresets?.(); },
+  }),
   cron.initCron({
     broadcast: ctx.broadcast,
     sessionPrompt: async (prompt) => {

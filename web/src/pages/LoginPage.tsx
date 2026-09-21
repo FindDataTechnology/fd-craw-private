@@ -2,9 +2,11 @@ import { LogIn, ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuthStore, withReturnTo } from "@/hooks/useAuth";
+import { useBranding } from "@/hooks/useAppConfig";
 
 export function LoginPage() {
   const { t } = useTranslation();
+  const { brand } = useBranding();
   const auth = useAuthStore();
   const [searchParams] = useSearchParams();
   const authError = searchParams.get("auth_error");
@@ -18,7 +20,7 @@ export function LoginPage() {
           <h1 className="text-xl font-semibold text-foreground">{t("login.title")}</h1>
         </div>
         <p className="text-sm leading-6 text-muted-foreground">
-          {auth.mode === "none" ? t("settings.account.optionalSsoHint") : t("login.description")}
+          {auth.mode === "none" ? t("settings.account.optionalSsoHint") : t("login.description", { brand })}
         </p>
         {authError && (
           <p className="mt-4 rounded-md border border-destructive bg-destructive/10 p-3 text-xs text-destructive" role="alert">

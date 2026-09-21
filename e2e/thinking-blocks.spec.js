@@ -22,12 +22,37 @@ test.describe("thinking blocks", () => {
     await gotoChat(page);
   });
 
-  test("thinking blocks are expanded by default when created via thinking events", async ({
-    page,
-  }) => {
+  test("thinking blocks collapse when the turn completes", async ({ page }) => {
     await injectThinking(page, "test reasoning content");
     const block = page.getByTestId("thinking-block");
     await expect(block).toBeVisible();
+    // Reasoning streams open (the only sign of life before the first token) and
+    // folds as the answer lands, so the transcript reads as answers.
+    await expect(block).toHaveAttribute("data-open", "false");
+  });
+
+  test("a thinking block the reader opened stays open when the turn completes", async ({ page }) => {
+    // Deltas are batched (50ms) and fold into a block on a non-delta event, so
+    // the reader's toggle has to happen after the first flush lands — hence two
+    // evaluates rather than one.
+    await page.evaluate(() => {
+      const s = window.__chatStore.getState();
+      s.apply({ type: "agent_start" });
+      s.apply({ type: "thinking", delta: "reasoning the reader is reading" });
+    });
+    const block = page.getByTestId("thinking-block");
+    await expect(block).toHaveAttribute("data-open", "true");
+
+    // The reader collapses and reopens it mid-stream; completion must not fold
+    // a block they are reading.
+    await page.evaluate(() => {
+      const s = window.__chatStore;
+      const asst = s.getState().turns.find((t) => t.role === "assistant");
+      s.getState().toggleBlock(asst.id, 0);
+      s.getState().toggleBlock(asst.id, 0);
+      s.getState().apply({ type: "thinking", delta: " …still reading" });
+      s.getState().apply({ type: "done" });
+    });
     await expect(block).toHaveAttribute("data-open", "true");
   });
 
@@ -86,20 +111,21 @@ test.describe("thinking blocks", () => {
   test("Ctrl+O toggles thinking block expansion state", async ({ page }) => {
     await injectThinking(page, "test reasoning content");
     const block = page.getByTestId("thinking-block");
-    await expect(block).toHaveAttribute("data-open", "true");
+    // Completed turn: folded.
+    await expect(block).toHaveAttribute("data-open", "false");
 
     // Focus the chat log so the app-level keydown listener fires reliably.
     await page.getByTestId("chat-log").click();
 
     await page.keyboard.press("Control+O");
-    await expect(block).toHaveAttribute("data-open", "false");
+    await expect(block).toHaveAttribute("data-open", "true");
 
     await page.keyboard.press("Control+O");
-    await expect(block).toHaveAttribute("data-open", "true");
+    await expect(block).toHaveAttribute("data-open", "false");
   });
 
   test("Ctrl+O toggles multiple thinking blocks at once", async ({ page }) => {
-    // Three thinking blocks. Alternate initial open state to prove group toggle.
+    // Three completed turns, each with one (folded) thinking block.
     await page.evaluate(() => {
       const s = window.__chatStore;
       s.getState().apply({ type: "agent_start" });
@@ -111,16 +137,16 @@ test.describe("thinking blocks", () => {
       s.getState().apply({ type: "agent_start" });
       s.getState().apply({ type: "thinking", delta: "three" });
       s.getState().apply({ type: "done" });
-      // Flip the middle one closed by finding & toggling it.
+      // Flip the middle one open by finding & toggling it.
       const asstTurns = s.getState().turns.filter((t) => t.role === "assistant");
       if (asstTurns[1]) s.getState().toggleBlock(asstTurns[1].id, 0);
     });
 
     const blocks = page.getByTestId("thinking-block");
     await expect(blocks).toHaveCount(3);
-    await expect(blocks.nth(0)).toHaveAttribute("data-open", "true");
-    await expect(blocks.nth(1)).toHaveAttribute("data-open", "false");
-    await expect(blocks.nth(2)).toHaveAttribute("data-open", "true");
+    await expect(blocks.nth(0)).toHaveAttribute("data-open", "false");
+    await expect(blocks.nth(1)).toHaveAttribute("data-open", "true");
+    await expect(blocks.nth(2)).toHaveAttribute("data-open", "false");
 
     await page.getByTestId("chat-log").click();
 
@@ -138,7 +164,7 @@ test.describe("thinking blocks", () => {
   });
 
   test("tool blocks are not affected by Ctrl+O shortcut", async ({ page }) => {
-    // Inject both a thinking block (open) and a tool block (open initially).
+    // Inject both a thinking block (folded on completion) and a tool block.
     await page.evaluate(() => {
       const s = window.__chatStore;
       s.getState().apply({ type: "agent_start" });
@@ -146,10 +172,12 @@ test.describe("thinking blocks", () => {
       s.getState().apply({ type: "tool_start", toolCallId: "t1", name: "bash", args: {} });
       s.getState().apply({ type: "tool_end", toolCallId: "t1", name: "bash", result: "ok" });
       s.getState().apply({ type: "done" });
-      // Open the tool block (thinking is already open by default; tool is closed).
+      // Open both: the tool block (closed by default) and the folded thinking.
       const asst = s.getState().turns.find((t) => t.role === "assistant");
       const idxTool = asst.blocks.findIndex((b) => b.kind === "tool");
+      const idxThinking = asst.blocks.findIndex((b) => b.kind === "thinking");
       s.getState().toggleBlock(asst.id, idxTool);
+      s.getState().toggleBlock(asst.id, idxThinking);
     });
 
     const toolBlock = page.getByTestId("tool-block");

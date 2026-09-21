@@ -5,6 +5,7 @@
 
 import * as chatHistory from "../chat-history.js";
 import * as catalog from "../catalog.js";
+import * as dshProfile from "../dsh-profile.js";
 import path from "node:path";
 import fs, { constants as fsConstants } from "node:fs/promises";
 
@@ -221,6 +222,10 @@ async function switchModelTo(id) {
 
 // ── Catalog agent switching (mirrors the model-selection messages) ───────────
 
+// How many mirrored turns a remote fork replays. Enough to hold a working
+// conversation without spending the entry's context window on history.
+const REMOTE_FORK_HISTORY_MAX = Number(process.env.REMOTE_FORK_HISTORY_MAX || 24);
+
 // Agents the agent switcher offers: the local dsh session plus visible
 // chat-mode remote agents (link agents are external pages, not chat targets).
 function switchableAgents(user) {
@@ -229,9 +234,38 @@ function switchableAgents(user) {
     .agents.filter((a) => a.type === "agent-local" || (a.type === "agent-remote" && a.mode === "chat"));
 }
 
+// The remote chat fork applies to a chat-mode entry ONLY while the deployment
+// has no local persona preset for it. Every entry with a generated preset (see
+// dsh-profile.writeCatalogAgentPresets) runs on the LOCAL agent instead: the
+// preset carries its persona, and the turn keeps the local runtime's tools
+// (MCP servers, skills) and its session history. An entry may opt out of that
+// with `local: false` — the operator declaring it a real remote service.
+// Returns the entry to fork to, or null to stay local.
+function remoteChatEntryFor(id) {
+  if (!id || id === "local") return null;
+  const entry = catalog.getAgentEntry(id);
+  if (!entry || entry.type !== "agent-remote" || entry.mode !== "chat") return null;
+  if (entry.local === false) return entry;
+  return dshProfile.hasCatalogAgentPreset(id) ? null : entry;
+}
+
+// Which catalog agent is an agent preset's persona? Inverse of the switch below,
+// used at boot to report the agent that the persisted preset choice belongs to.
+function catalogAgentForPreset(presetId) {
+  if (!presetId) return "local";
+  const entry = catalog.getChatAgentEntries().find((e) => e.id === presetId);
+  return entry && dshProfile.hasCatalogAgentPreset(entry.id) ? entry.id : "local";
+}
+
 // Switch the active catalog agent by id. Same contract as switchModelTo:
 // rejected while streaming, errors go to the requesting client only.
-function switchAgentTo(id, ws) {
+//
+// An agent with a local persona preset is a PRESET switch, not a routing
+// change: dsh composes a session's persona from its preset at creation, so
+// applying one restarts the child (the shared path for model/workspace/preset
+// switches) and takes effect on the next session. `local` restores the
+// deployment's persisted preset, dropping a pack persona.
+async function switchAgentToInner(id, ws) {
   if (ctx.isStreaming) {
     ws.send(JSON.stringify({ type: "error", message: "Cannot switch agent while the agent is responding" }));
     return false;
@@ -241,10 +275,83 @@ function switchAgentTo(id, ws) {
     ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${id}` }));
     return false;
   }
+  const localPreset = id === "local" ? ctx.db.getPreference("agent.preset") || "standard" : id;
+  const isLocalAgent = id === "local" || dshProfile.hasCatalogAgentPreset(id);
+  if (isLocalAgent) {
+    // The persisted preference is the user's own preset pick; a switch BACK to
+    // `local` returns to it, and a pack agent becomes it while selected.
+    if (localPreset !== ctx.currentPreset) {
+      const r = await switchPresetToInner(localPreset);
+      if (!r.ok) {
+        if (r.error) ws.send(JSON.stringify({ type: "error", message: r.error }));
+        return false;
+      }
+    }
+  }
   if (id === ctx.currentAgentId) return true;
   ctx.currentAgentId = id;
   ctx.broadcast({ type: "agent_changed", id });
   return true;
+}
+
+function switchAgentTo(id, ws) {
+  if (ctx.runExclusiveRuntimeMutation) {
+    return ctx.runExclusiveRuntimeMutation(() => switchAgentToInner(id, ws));
+  }
+  return switchAgentToInner(id, ws);
+}
+
+// Regenerate the per-entry persona presets from the merged catalog and, when
+// they changed, restart the idle child so its `presets/list` roster includes
+// them. Called on every catalog change (the minute poll plus the initial cloud
+// merge); a no-op when nothing changed, so the poll costs nothing.
+async function syncCatalogAgentPresets() {
+  let result;
+  try {
+    result = dshProfile.writeCatalogAgentPresets(catalog.getChatAgentEntries());
+  } catch (err) {
+    console.warn(`[dsh] catalog agent preset sync failed: ${err.message}`);
+    return { changed: false };
+  }
+  // A pack that left the catalog leaves a stale selection behind; report the
+  // fallback before the restart so clients never show a departed agent.
+  if (ctx.currentAgentId !== "local" && !dshProfile.hasCatalogAgentPreset(ctx.currentAgentId)) {
+    ctx.currentAgentId = catalogAgentForPreset(ctx.currentPreset);
+    ctx.broadcast({ type: "agent_changed", id: ctx.currentAgentId });
+  }
+  if (result.changed && ctx.dshBridge?.isReady?.() && !ctx.isStreaming) {
+    const restart = () => ctx.dshBridge.restart({});
+    try {
+      // Serialized with model/workspace/preset switches: a restart here must not
+      // overlap one of those (both re-spawn the same child).
+      if (ctx.runExclusiveRuntimeMutation) await ctx.runExclusiveRuntimeMutation(restart);
+      else await restart();
+      await getAgentPresets();
+      console.log(`[dsh] runtime restarted for ${result.ids.length} catalog agent preset(s)`);
+    } catch (err) {
+      console.warn(`[dsh] catalog agent preset restart failed: ${err.message}`);
+    }
+  }
+  return result;
+}
+
+// The conversation so far, shaped for an OpenAI-compatible request. The remote
+// fork keeps no server-side session state, so without this every turn arrives as
+// a first message: the agent cannot follow up on anything it just said. Reads the
+// host's SQLite mirror (the store of record for chat history), which already
+// contains the prompt being answered by the time the stream starts.
+function remoteForkMessages() {
+  try {
+    const rows = ctx.db?.getChatMessages?.(chatHistory.currentSessionId()) || [];
+    const turns = rows
+      .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+      .slice(-REMOTE_FORK_HISTORY_MAX)
+      .map((m) => ({ role: m.role, content: m.content }));
+    if (turns.length) return turns;
+  } catch (err) {
+    console.warn(`[remote-agent] history unavailable: ${err.message}`);
+  }
+  return null;
 }
 
 // Fork a prompt to a remote OpenAI-compat endpoint: POST <baseUrl>/chat/completions
@@ -252,6 +359,8 @@ function switchAgentTo(id, ws) {
 // frontend renders remote agents exactly like the local one. v1 ceiling: remote
 // turns are broadcast-only (no chat-history persistence) and one at a time — a
 // prompt while a remote turn is streaming is rejected instead of steered.
+// Only reached for chat-mode entries the deployment has no local persona preset
+// for (ctx.remoteChatEntryFor); an entry that has one runs on the local agent.
 async function streamRemoteChat(entry, text) {
   ctx.isStreaming = true; // set synchronously (same contract as the local prompt path)
   ctx.broadcast({ type: "agent_start" });
@@ -259,6 +368,14 @@ async function streamRemoteChat(entry, text) {
   // ceiling where remote turns were broadcast-only and a browser close/reopen
   // left a dangling user message with no reply.
   chatHistory.recordMessage(chatHistory.currentSessionId(), "user", text);
+  // A fork has no system prompt of its own; give it the catalog entry's identity
+  // so it answers as the named agent rather than as a bare model.
+  const messages = [
+    ...(entry.description
+      ? [{ role: "system", content: `你是「${entry.name || entry.id}」——${entry.description}。回答用中文（除非用户使用其他语言），结论先行；没有工具可用时如实说明，不要编造数据或结论。` }]
+      : []),
+    ...(remoteForkMessages() || [{ role: "user", content: text }]),
+  ];
   let assistantText = "";
   try {
     const headers = { "Content-Type": "application/json" };
@@ -266,7 +383,7 @@ async function streamRemoteChat(entry, text) {
     const r = await fetch(`${entry.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ model: entry.model, messages: [{ role: "user", content: text }], stream: true }),
+      body: JSON.stringify({ model: entry.model, messages, stream: true }),
       signal: AbortSignal.timeout(300_000),
     });
     if (!r.ok) throw new Error(`${entry.id} HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -554,6 +671,9 @@ function listWorkspaces() {
   ctx.effortsForModel = effortsForModel;
   ctx.switchableAgents = switchableAgents;
   ctx.switchAgentTo = switchAgentTo;
+  ctx.remoteChatEntryFor = remoteChatEntryFor;
+  ctx.catalogAgentForPreset = catalogAgentForPreset;
+  ctx.syncCatalogAgentPresets = syncCatalogAgentPresets;
   ctx.streamRemoteChat = streamRemoteChat;
   ctx.handleModelCommand = handleModelCommand;
   ctx.startNewSession = startNewSession;

@@ -47,7 +47,7 @@
     "loadFailed": "加载目录失败：{{error}}"
   },
   "sidebar": {
-    "brand": "Platform",
+    "brand": "{{brand}}",
     "chats": "对话",
     "new": "+ 新建",
     "noChats": "暂无对话。点击「+ 新建」。",
@@ -108,7 +108,7 @@
     "disconnected": "已断开"
   },
   "composer": {
-    "placeholder": "向 Platform 助手提问…（输入 / 查看命令，回车发送，Shift+回车换行）",
+    "placeholder": "向 {{assistant}}提问…（输入 / 查看命令，回车发送，Shift+回车换行）",
     "placeholderDisabled": "连接中…",
     "send": "发送",
     "dropHint": "松开以附加文档",
@@ -238,7 +238,7 @@
     "retry": "重试"
   },
   "turn": {
-    "assistantName": "Platform 助手",
+    "assistantName": "{{assistant}}",
     "thinkingStreaming": "思考中…",
     "thinking": "思考",
     "statusRunning": "运行中…",
@@ -523,9 +523,13 @@
       "wechat-oa": "微信公众号"
     }
   },
+  "assistant": {
+    "name": "Platform 助手",
+    "brand": "Platform"
+  },
   "login": {
     "title": "登录",
-    "description": "此部署使用组织单点登录。请登录以继续使用 Platform。",
+    "description": "此部署使用组织单点登录。请登录以继续使用 {{brand}}。",
     "action": "使用 SSO 登录",
     "logout": "退出登录",
     "loadFailed": "无法加载认证状态：{{error}}",

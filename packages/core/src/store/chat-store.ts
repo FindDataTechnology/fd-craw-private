@@ -41,7 +41,7 @@ export function setChatErrorSink(fn: (message: string) => void) {
 
 export type Block =
   | { kind: "text"; text: string }
-  | { kind: "thinking"; text: string; open: boolean }
+  | { kind: "thinking"; text: string; open: boolean; autoOpen?: boolean }
   | {
       kind: "tool";
       id: string;
@@ -95,8 +95,9 @@ interface State {
   // Which composer control is awaiting the server's confirming broadcast.
   // dsh bakes model/effort/cwd/preset into the `initialize` handshake, so each
   // of these changes tears down and respawns the child — the send button stays
-  // disabled until it lands.
-  pendingConfig: "model" | "effort" | "workspace" | "preset" | null;
+  // disabled until it lands. `agent` is the same switch for an agent the
+  // deployment serves locally (a vertical pack is a persona preset).
+  pendingConfig: "model" | "effort" | "workspace" | "preset" | "agent" | null;
   sessions: SessionMeta[];
   currentSessionId: string | null;
   turns: Turn[];
@@ -122,8 +123,10 @@ interface State {
   setStatus: (s: ConnStatus) => void;
   apply: (m: ServerMessage) => void;
   // Marks a config control as awaiting its server broadcast. Cleared by the
-  // matching *_changed event, or by an error (the change was rejected).
-  setPendingConfig: (c: "model" | "effort" | "workspace" | "preset" | null) => void;
+  // matching *_changed event, or by an error (the change was rejected). `agent`
+  // covers a switch to a locally-served catalog agent (a vertical pack), which
+  // applies its persona by restarting the runtime.
+  setPendingConfig: (c: "model" | "effort" | "workspace" | "preset" | "agent" | null) => void;
   // Local UI commands (never sent to server).
   addUserTurnOptimistic: (text: string) => void;
   clearView: () => void;
@@ -177,7 +180,7 @@ function appendThinking(turns: Turn[], delta: string) {
   if (last?.kind === "thinking") {
     last.text += delta;
   } else {
-    a.blocks.push({ kind: "thinking", text: delta, open: true });
+    a.blocks.push({ kind: "thinking", text: delta, open: true, autoOpen: true });
   }
 }
 
@@ -402,7 +405,18 @@ export const useChatStore = create<State>((set) => ({
           // Clone (not mutate): the finalized turn needs a new reference so
           // the memoized <AssistantTurn> re-renders its closed state.
           if (tail && tail.role === "assistant" && tail.streaming) {
-            turns[turns.length - 1] = { ...tail, streaming: false };
+            // Fold the reasoning away as the answer lands. A thinking block
+            // streams open (it is the only sign of life before the first token),
+            // but leaving every pass expanded buries the reply it produced — the
+            // transcript should read as answers, with reasoning one click away.
+            // Only blocks the stream opened itself are folded: a reader who
+            // expanded one is reading it, and the CLI's Ctrl+O state survives.
+            const blocks = tail.blocks.some((b) => b.kind === "thinking" && b.open && b.autoOpen)
+              ? tail.blocks.map((b) =>
+                  b.kind === "thinking" && b.open && b.autoOpen ? { ...b, open: false, autoOpen: false } : b,
+                )
+              : tail.blocks;
+            turns[turns.length - 1] = { ...tail, blocks, streaming: false };
           }
           // The dismissed run (if any) has ended; stop swallowing events.
           return { turns, isStreaming: false, suppressed: false };
@@ -456,8 +470,10 @@ export const useChatStore = create<State>((set) => ({
           return { models: m.models };
 
         case "current_agent":
-        case "agent_changed":
           return { currentAgent: m.id };
+
+        case "agent_changed":
+          return { currentAgent: m.id, pendingConfig: null };
 
         case "agents":
           return { agents: m.agents };
@@ -509,8 +525,11 @@ export const useChatStore = create<State>((set) => ({
                     id: nextId(),
                     role: "assistant",
                     // Restore the persisted block structure when present (tool
-                    // calls intact, collapsed); plain content is the legacy
-                    // fallback for pre-migration rows.
+                    // calls intact, collapsed — an errored one stays open, as it
+                    // streamed); plain content is the legacy fallback for
+                    // pre-migration rows. Reasoning is deliberately NOT persisted
+                    // (see chat-history recordMessage), so a reloaded turn is the
+                    // answer plus the tools that produced it.
                     blocks: msg.blocks?.length
                       ? msg.blocks.map((b) =>
                           b.kind === "tool"
@@ -521,9 +540,9 @@ export const useChatStore = create<State>((set) => ({
                                 args: b.args,
                                 result: b.result,
                                 state: b.state ?? ("done" as const),
-                                open: false,
+                                open: b.state === "error",
                               }
-                            : { kind: "text" as const, text: b.text },
+                            : { kind: "text" as const, text: typeof b.text === "string" ? b.text : "" },
                         )
                       : [{ kind: "text", text: msg.content }],
                     streaming: false,
@@ -631,7 +650,11 @@ export const useChatStore = create<State>((set) => ({
         if (t.role !== "assistant") return t;
         return {
           ...t,
-          blocks: t.blocks.map((b) => (b.kind === "thinking" ? { ...b, open: target } : b)),
+          // The reader is driving now: `autoOpen: false` keeps turn completion
+          // from folding these back up.
+          blocks: t.blocks.map((b) =>
+            b.kind === "thinking" ? { ...b, open: target, autoOpen: false } : b,
+          ),
         };
       });
       return { turns };
@@ -646,6 +669,8 @@ export const useChatStore = create<State>((set) => ({
           blocks: t.blocks.map((b, i) => {
             if (i !== index) return b;
             if (b.kind === "text" || b.kind === "error") return b;
+            // An explicit toggle answers the "was this opened for me?" question.
+            if (b.kind === "thinking") return { ...b, open: !b.open, autoOpen: false };
             return { ...b, open: !b.open };
           }),
         };
