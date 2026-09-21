@@ -14,7 +14,14 @@ const REFRESH_SECS = Number(process.env.CATALOG_REFRESH_SECS || 60);
 
 // The built-in local agent is always present (sources may override it). It
 // carries no runtime field: server.js routes `local` to the dsh session shim.
-const BUILT_IN = { id: "local", type: "agent-local", name: "Platform" };
+// Its name is the deployment's brand: the agent picker lists it beside the pack
+// agents, so a deployment that renamed the assistant must not keep advertising
+// "Platform" here (an unset variable keeps the shipped default).
+const BUILT_IN = {
+  id: "local",
+  type: "agent-local",
+  name: (process.env.ASSISTANT_NAME || "").trim() || "Platform",
+};
 
 let localEntries = { agents: [], apps: [] };
 let cloudEntries = null; // last-good cloud document (null until first success)

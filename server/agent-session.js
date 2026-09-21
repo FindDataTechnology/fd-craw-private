@@ -265,6 +265,18 @@ function catalogAgentForPreset(presetId) {
 // applying one restarts the child (the shared path for model/workspace/preset
 // switches) and takes effect on the next session. `local` restores the
 // deployment's persisted preset, dropping a pack persona.
+// The preset a switch back to `local` restores. A selected pack agent also
+// lands in `agent.preset` (that is what a restart composes), so the pick made
+// before the pack is parked here — otherwise returning to `local` would
+// re-select the pack and the picker would name an agent the persona is not.
+const OWN_PRESET_KEY = "agent.preset.own";
+
+function ownPreset() {
+  const persisted = ctx.db.getPreference("agent.preset");
+  if (persisted && !dshProfile.hasCatalogAgentPreset(persisted)) return persisted;
+  return ctx.db.getPreference(OWN_PRESET_KEY) || dshProfile.DEFAULT_AGENT_PRESET;
+}
+
 async function switchAgentToInner(id, ws) {
   if (ctx.isStreaming) {
     ws.send(JSON.stringify({ type: "error", message: "Cannot switch agent while the agent is responding" }));
@@ -275,11 +287,16 @@ async function switchAgentToInner(id, ws) {
     ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${id}` }));
     return false;
   }
-  const localPreset = id === "local" ? ctx.db.getPreference("agent.preset") || "standard" : id;
-  const isLocalAgent = id === "local" || dshProfile.hasCatalogAgentPreset(id);
+  const isPack = id !== "local" && dshProfile.hasCatalogAgentPreset(id);
+  const isLocalAgent = id === "local" || isPack;
   if (isLocalAgent) {
-    // The persisted preference is the user's own preset pick; a switch BACK to
-    // `local` returns to it, and a pack agent becomes it while selected.
+    if (isPack) {
+      const persisted = ctx.db.getPreference("agent.preset");
+      if (persisted && persisted !== id && !dshProfile.hasCatalogAgentPreset(persisted)) {
+        ctx.db.setPreference(OWN_PRESET_KEY, persisted);
+      }
+    }
+    const localPreset = isPack ? id : ownPreset();
     if (localPreset !== ctx.currentPreset) {
       const r = await switchPresetToInner(localPreset);
       if (!r.ok) {

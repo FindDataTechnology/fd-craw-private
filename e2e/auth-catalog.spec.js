@@ -413,6 +413,16 @@ test.describe("AUTH_MODE=forward_auth", () => {
       30_000,
     );
     expect(mock.lastChat).toBeNull(); // the entry's endpoint was never called
+
+    // Switching back to `local` must drop the pack persona. The pack's id IS
+    // the persisted preference while it is selected (that is what a restart
+    // composes), so the pick made before it has to survive somewhere — reading
+    // `agent.preset` back would otherwise re-select the pack and the picker
+    // would name an agent the persona is not.
+    user.msgs.length = 0;
+    user.ws.send(JSON.stringify({ type: "set_agent", id: "local" }));
+    await waitFor(() => user.msgs.some((m) => m.type === "agent_changed" && m.id === "local"));
+    await waitFor(() => user.msgs.some((m) => m.type === "current_preset" && m.id === "standard"));
     user.ws.close();
   });
 
