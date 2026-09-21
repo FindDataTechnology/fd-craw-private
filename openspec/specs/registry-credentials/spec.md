@@ -1,6 +1,13 @@
-# registry-credentials Specification (delta)
+# registry-credentials Specification
 
-## ADDED Requirements
+## Purpose
+
+Stores one MCP-registry credential per user so that installing and running
+registry-origin MCP servers needs no manual token handling: a silent SSO connect
+mints the credential once, installs reference it instead of embedding a secret,
+and the effective profile resolves the header at each application.
+
+## Requirements
 
 ### Requirement: Silent SSO connect flow
 

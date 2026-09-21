@@ -7,7 +7,7 @@ TBD - created by archiving change add-mcp-skills-model-select. Update Purpose af
 
 ### Requirement: Server connects to MCP servers defined in mcp.json at startup
 
-The server SHALL read `mcp.json` from the project root at startup and pass the MCP server configurations (stdio `command`/`args`/`env` and HTTP/SSE `url`/`headers`) to the dsh runtime's `dsh-mcp-client` plugin via the dsh profile, rather than connecting via the host-side `mcp-bridge.js`. The server SHALL also load MCP server configurations from the SQLite database (if present) and merge them with `mcp.json` entries, with database configs taking precedence for servers with the same name, before passing the merged set to the profile. An authenticated user's personal MCP binding SHALL be an enabled/disabled overlay over this global merged set; it SHALL NOT change the source configurations or persist a per-user copy. Role gating composes with this overlay: an installed server whose record carries a non-empty `requiredGroups` SHALL be omitted from the effective profile unless the current user's groups intersect it, so a role revoked in the identity provider takes effect on the next profile application without uninstalling the server. When no authenticated identity exists (auth off), role gating SHALL NOT filter anything. Locked bundled servers without `requiredGroups` are unaffected.
+The server SHALL read `mcp.json` from the project root at startup and pass the MCP server configurations (stdio `command`/`args`/`env` and HTTP/SSE `url`/`headers`) to the dsh runtime's `dsh-mcp-client` plugin via the dsh profile, rather than connecting via the host-side `mcp-bridge.js`. The server SHALL also load MCP server configurations from the SQLite database (if present) and merge them with `mcp.json` entries, with database configs taking precedence for servers with the same name, before passing the merged set to the profile. An authenticated user's personal MCP binding SHALL be an enabled/disabled overlay over this global merged set; it SHALL NOT change the source configurations or persist a per-user copy. Role gating composes with this overlay: an installed server whose record carries a non-empty `requiredGroups` SHALL be omitted from the effective profile unless the current user's groups intersect it, so a role revoked in the identity provider takes effect on the next profile application without uninstalling the server. Credential resolution composes with both: for registry-origin servers the `Authorization` header SHALL be resolved from the current user's stored registry credential at each profile application (see the `registry-credentials` capability), and a registry-origin server whose owner lacks a live credential SHALL be omitted from the effective profile with a warning instead of being passed with a placeholder header. When no authenticated identity exists (auth off), role gating SHALL NOT filter anything. Locked bundled servers without `requiredGroups` are unaffected.
 
 #### Scenario: stdio MCP server connects
 - **WHEN** `mcp.json` declares a server with `command: "npx"` and `args: ["-y", "@modelcontextprotocol/server-memory"]`
@@ -16,6 +16,16 @@ The server SHALL read `mcp.json` from the project root at startup and pass the M
 #### Scenario: HTTP/SSE MCP server connects
 - **WHEN** `mcp.json` declares a server with `url` and `headers`
 - **THEN** the dsh-mcp-client plugin SHALL connect via HTTP transport and complete the MCP handshake within the connection timeout
+
+#### Scenario: registry-origin server receives injected credential
+- **WHEN** the effective profile is generated for a user who installed a registry-origin server and holds a live registry credential
+- **THEN** that server's connection configuration carries `Authorization: Bearer <stored credential>` resolved at profile-application time
+- **AND** the stored installed record contains no embedded secret
+
+#### Scenario: registry-origin server omitted without credential
+- **WHEN** the effective profile is generated for a user whose registry credential is missing or stale
+- **THEN** registry-origin servers are omitted from the effective profile and a warning is logged
+- **AND** the installed records are unchanged, so the servers return once a credential is stored again
 
 #### Scenario: no mcp.json present
 - **WHEN** the project root has no `mcp.json`
