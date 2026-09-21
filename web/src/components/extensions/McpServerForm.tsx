@@ -10,6 +10,7 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import type { McpServer, MarketMcpServer } from "@platform/core";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
+import { RegistryConnectPanel } from "./RegistryConnectPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -54,10 +55,16 @@ interface McpServerFormProps {
 
 export function McpServerForm({ open, onOpenChange, server, initialConfig, setupServer, onInstalled }: McpServerFormProps) {
   const { t } = useTranslation();
-  const { addMcpServer, updateMcpServer } = useExtensionsStore();
+  const { addMcpServer, updateMcpServer, registryConnection, refreshRegistryConnection } = useExtensionsStore();
 
   const isEdit = !!server;
   const isSetup = !!setupServer && !isEdit;
+  // Registry-origin entries authenticate with the user's stored market
+  // credential, resolved at profile-write time — so the form never asks for a
+  // secret. Without a live credential the install is refused server-side, and
+  // the form routes to connect/paste first (registry-sso-credentials).
+  const isRegistrySetup = isSetup && setupServer?.origin === "registry";
+  const registryLive = Boolean(registryConnection?.connected);
 
   const [name, setName] = useState("");
   const [type, setType] = useState<"stdio" | "http">("stdio");
@@ -107,9 +114,11 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
       });
       setSetupArgs(initArgs);
       const initHeaders: Record<string, string> = {};
-      Object.entries(tmpl.headers || {}).forEach(([k, v]) => {
-        if (hasPlaceholder(v)) initHeaders[k] = "";
-      });
+      if (setupServer.origin !== "registry") {
+        Object.entries(tmpl.headers || {}).forEach(([k, v]) => {
+          if (hasPlaceholder(v)) initHeaders[k] = "";
+        });
+      }
       setSetupHeaders(initHeaders);
       setEnabled(true);
     } else if (initialConfig) {
@@ -134,11 +143,13 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
     setError("");
   }, [server, initialConfig, setupServer, open]);
 
-  // Setup form is valid when every placeholder field is non-empty.
+  // Setup form is valid when every placeholder field is non-empty — and, for a
+  // registry entry, when a live market credential exists (Add stays disabled
+  // until then, per the marketplace spec).
   const setupValid =
     Object.values(setupEnv).every((v) => v.trim().length > 0) &&
     Object.values(setupArgs).every((v) => v.trim().length > 0) &&
-    Object.values(setupHeaders).every((v) => v.trim().length > 0);
+    (isRegistrySetup ? registryLive : Object.values(setupHeaders).every((v) => v.trim().length > 0));
 
   const handleSetupSubmit = async () => {
     setError("");
@@ -160,6 +171,10 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
         envObj[k] = (setupEnv[k] || "").trim();
       });
       if (Object.keys(envObj).length > 0) config.env = envObj;
+    } else if (isRegistrySetup) {
+      // Registry install: the backend stamps credentialRef and resolves the
+      // Authorization header per request, so no header travels from here.
+      config = { url: tmpl.url };
     } else {
       // http template: url is fixed; placeholder headers take the user's values.
       config = {
@@ -179,7 +194,12 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
       onInstalled?.();
       onOpenChange(false);
     } catch (err) {
-      setError((err as Error).message);
+      const e = err as Error & { code?: string };
+      setError(e.message);
+      // The market refused the install because the credential is no longer
+      // live (it expired between render and submit, or the profile marked it
+      // stale): re-read so the panel offers the connect flow again.
+      if (e.code === "credential-required") refreshRegistryConnection();
     } finally {
       setLoading(false);
     }
@@ -298,9 +318,15 @@ export function McpServerForm({ open, onOpenChange, server, initialConfig, setup
                 </div>
               )}
 
+              {/* Registry entries: the credential comes from the connect flow
+                  (or the paste fallback), never from a field here. */}
+              {isRegistrySetup && (
+                <RegistryConnectPanel compact className="rounded-md border border-border p-3" />
+              )}
+
               {/* Placeholder headers: one labeled field per fillable header. */}
               {Object.entries(setupServer!.configTemplate.headers || {}).map(([k, v]) =>
-                hasPlaceholder(v) ? (
+                !isRegistrySetup && hasPlaceholder(v) ? (
                   <div key={`header-${k}`} className="space-y-2">
                     <Label htmlFor={`header-${k}`}>{k}</Label>
                     <Input

@@ -158,12 +158,28 @@
       },
       "permissionFull": {
         "label": "Full access",
-        "desc": "The agent can change anything, with no approval gates."
-      }
+        "desc": "The agent can change anything, with no approval gates.",
+        "confirmTitle": "Enable full access?",
+        "confirmBody": "Full access removes the sandbox and the approval prompts: the agent can read and write anything you can, including outside the workspace.",
+        "acknowledge": "I understand the risk",
+        "confirm": "Enable full access"
+      },
+      "add": "Add file or command",
+      "more": "More"
     }
   },
   "chat": {
     "empty": "Send a message to start chatting.",
+    "plan": {
+      "title": "Progress",
+      "ariaLabel": "Agent plan",
+      "statusPending": "{{count}} pending",
+      "statusInProgress": "{{count}} in progress",
+      "statusCompleted": "{{count}} completed",
+      "expand": "Expand plan",
+      "collapse": "Collapse plan",
+      "updated": "Updated the plan ({{done}}/{{total}})"
+    },
     "welcome": {
       "greeting": "How can I help today?",
       "suggestedPrompts": "Suggested prompts",
@@ -335,7 +351,7 @@
       "delete": "Delete",
       "noDocuments": "No documents.",
       "addDocPlaceholder": "Add document…",
-      "add": "Add",
+      "add": "Add file or command",
       "confirmDelete": "Delete this collection?"
     },
     "startConversation": "Start conversation…",
@@ -417,6 +433,26 @@
       "installFailed": "Failed to install {{name}}: {{error}}",
       "readyToUse": "Ready to use",
       "needsConfig": "Needs config"
+    },
+    "registry": {
+      "title": "MCP market account",
+      "state": {
+        "connected": "Connected",
+        "disconnected": "Not connected",
+        "stale": "Re-connect needed",
+        "expired": "Expired"
+      },
+      "connect": "Connect",
+      "reconnect": "Re-connect",
+      "connecting": "Connecting…",
+      "pasteToggle": "Paste token",
+      "pasteHint": "Mint a token in the market's own UI (Get JWT Token) and paste it here — it is stored exactly like a minted one.",
+      "tokenLabel": "Market token",
+      "tokenPlaceholder": "eyJ…",
+      "expires": "Expires {{date}}",
+      "disconnect": "Disconnect",
+      "unconfigured": "No MCP market is configured on this deployment — paste a token instead.",
+      "staleHint": "The market rejected the stored token. Re-connect to restore registry servers."
     }
   },
   "help": {

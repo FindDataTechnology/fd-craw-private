@@ -88,6 +88,7 @@ const { registerAuth } = await import("../server/auth.js");
 const { registerExtensionRoutes } = await import("../server/routes/extensions.js");
 const ownerGroups = await import("../server/owner-groups.js");
 const bridge = await import("../registry-bridge.js");
+const registryCredentials = await import("../registry-credentials.js");
 
 // Registry stub serving one gated MCP + one gated skill + one registry agent
 // (groups come from the registry-groups.json fixture above).
@@ -288,6 +289,12 @@ test("4.1 gated market MCP: member installs + stamps, non-member 403, auth-off i
   const memberHeaders = { "x-forwarded-email": "m@x.test", "x-forwarded-groups": "admin,mcp-jira-users" };
   const outsiderHeaders = { "x-forwarded-email": "o@x.test", "x-forwarded-groups": "admin,team-b" };
 
+  // The fixture entries are registry-origin, so installing one needs a live
+  // market credential (registry-sso-credentials) — admitted FIRST, credential
+  // SECOND. The member below holds one; the outsider deliberately does not
+  // (their 403 must come from admission, not from the credential check).
+  registryCredentials.store({ email: "m@x.test", token: "member-token" });
+
   const memberApp = extensionsCtx();
   const ok = await request(memberApp.app, "POST", "/api/extensions/mcp", {
     headers: memberHeaders,
@@ -295,6 +302,7 @@ test("4.1 gated market MCP: member installs + stamps, non-member 403, auth-off i
   });
   assert.equal(ok.status, 200, "member installs the gated entry");
   assert.deepEqual(ok.body.requiredGroups, ["mcp-jira-users"], "record carries the stamp");
+  assert.equal(ok.body.config.credentialRef, "registry", "and references the market credential");
 
   // API-level bypass with the SAME name: free the name first, then the
   // outsider's direct POST must be rejected by admission, not by uniqueness.
@@ -315,6 +323,10 @@ test("4.1 gated market MCP: member installs + stamps, non-member 403, auth-off i
   assert.equal(clone.status, 200, "renamed config installs (documented trade-off)");
   assert.equal(clone.body.requiredGroups, null, "hand-entered config carries no stamp");
 
+  // The outsider now connects (still no matching group): an UNGATED registry
+  // entry admits them, and the credential requirement is satisfied — the two
+  // checks are independent, and only admission is group-sensitive.
+  registryCredentials.store({ email: "o@x.test", token: "outsider-token" });
   const ungated = await request(memberApp.app, "POST", "/api/extensions/mcp", {
     headers: outsiderHeaders,
     body: { name: "open-weather", config: { url: "https://w.example/mcp" } },
@@ -323,11 +335,14 @@ test("4.1 gated market MCP: member installs + stamps, non-member 403, auth-off i
   assert.equal(ungated.body.requiredGroups, null, "ungated installs carry no stamp");
 
   const authOff = extensionsCtx({ authEnabled: false });
+  // The machine owner pastes their own token (the auth-off credential path).
+  registryCredentials.store({ email: null, token: "owner-token" });
   const off = await request(authOff.app, "POST", "/api/extensions/mcp", {
     body: { name: "gated-jira", config: { url: "https://jira2.example/mcp" } },
   });
   assert.equal(off.status, 200, "auth off = machine owner installs freely");
   assert.deepEqual(off.body.requiredGroups, ["mcp-jira-users"], "auth-off install still stamps");
+  assert.equal(off.body.config.credentialRef, "registry", "auth-off install references the machine credential");
 });
 
 test("4.2 registry skill install enforces group admission", async () => {

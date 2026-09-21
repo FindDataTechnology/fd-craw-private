@@ -158,12 +158,28 @@
       },
       "permissionFull": {
         "label": "Acceso total",
-        "desc": "El agente puede cambiar cualquier cosa, sin aprobaciones."
-      }
+        "desc": "El agente puede cambiar cualquier cosa, sin aprobaciones.",
+        "confirmTitle": "¿Habilitar acceso total?",
+        "confirmBody": "El acceso total elimina el sandbox y las confirmaciones de aprobación: el agente puede leer y escribir todo lo que tú puedes, incluso fuera del espacio de trabajo.",
+        "acknowledge": "Entiendo el riesgo",
+        "confirm": "Habilitar acceso total"
+      },
+      "add": "Añadir archivo o comando",
+      "more": "Más"
     }
   },
   "chat": {
     "empty": "Envía un mensaje para empezar a chatear.",
+    "plan": {
+      "title": "Progreso",
+      "ariaLabel": "Plan del agente",
+      "statusPending": "{{count}} pendientes",
+      "statusInProgress": "{{count}} en curso",
+      "statusCompleted": "{{count}} completadas",
+      "expand": "Expandir plan",
+      "collapse": "Contraer plan",
+      "updated": "Plan actualizado ({{done}}/{{total}})"
+    },
     "welcome": {
       "greeting": "¿En qué puedo ayudarte hoy?",
       "suggestedPrompts": "Sugerencias",
@@ -335,7 +351,7 @@
       "delete": "Eliminar",
       "noDocuments": "No hay documentos.",
       "addDocPlaceholder": "Añadir documento…",
-      "add": "Añadir",
+      "add": "Añadir archivo o comando",
       "confirmDelete": "¿Eliminar esta colección?"
     },
     "startConversation": "Iniciar conversación…",
@@ -417,6 +433,26 @@
       "installFailed": "Error al instalar {{name}}: {{error}}",
       "readyToUse": "Listo para usar",
       "needsConfig": "Requiere configuración"
+    },
+    "registry": {
+      "title": "Cuenta del mercado MCP",
+      "state": {
+        "connected": "Conectado",
+        "disconnected": "Sin conectar",
+        "stale": "Requiere reconexión",
+        "expired": "Caducado"
+      },
+      "connect": "Conectar",
+      "reconnect": "Reconectar",
+      "connecting": "Conectando…",
+      "pasteToggle": "Pegar token",
+      "pasteHint": "Genera un token en la interfaz del mercado (Get JWT Token) y pégalo aquí: se almacena igual que uno emitido automáticamente.",
+      "tokenLabel": "Token del mercado",
+      "tokenPlaceholder": "eyJ…",
+      "expires": "Caduca el {{date}}",
+      "disconnect": "Desconectar",
+      "unconfigured": "Esta instalación no tiene mercado MCP configurado: pega un token.",
+      "staleHint": "El mercado rechazó el token guardado. Reconecta para restaurar los servidores del registro."
     }
   },
   "help": {

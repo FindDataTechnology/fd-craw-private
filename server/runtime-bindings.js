@@ -142,7 +142,13 @@ export function attachRuntimeBindings(ctx) {
         ctx.broadcast({ type: "model_changed", id: target.id, provider: target.provider });
       }
 
-      await ctx.dshUpdateMcp?.(personalMcp, groups);
+      // The applying user owns the effective profile: their registry
+      // credential is what a registry-origin server authenticates with, and
+      // their groups are what the role filter reads. Both are remembered so a
+      // later rewrite reproduces the same profile.
+      ctx.runtimeOwnerEmail = email;
+      ctx.runtimeOwnerGroups = groups;
+      await ctx.dshUpdateMcp?.(personalMcp, groups, email);
       ctx.runtimeMcpOverlay = personalMcp;
       ctx.broadcastRuntimeBinding();
       ctx.pendingBindings.delete(email);

@@ -1,4 +1,5 @@
 import path from "node:path";
+import os from "node:os";
 import { defineConfig, devices } from "@playwright/test";
 import { E2E_PORT, baseURL, prepareTempStoreDirs } from "./e2e/helpers.js";
 
@@ -11,6 +12,10 @@ import { E2E_PORT, baseURL, prepareTempStoreDirs } from "./e2e/helpers.js";
 // scripts set PW_LIVE=1 to skip both the local-server launch and the temp-store
 // dir setup (the live suite touches neither).
 const PW_LIVE = process.env.PW_LIVE === "1";
+// The hermetic registry stand-in (e2e/registry-stub.js) and its service token:
+// the fast/smoke projects' server talks to this instead of the live registry.
+const E2E_REGISTRY_URL = process.env.E2E_REGISTRY_URL || "http://127.0.0.1:4599";
+const E2E_REGISTRY_TOKEN = process.env.E2E_REGISTRY_TOKEN || "e2e-registry-token";
 const LIVE_SERVICE_URL = process.env.LIVE_SERVICE_URL || "http://23.144.68.246:30950";
 
 // Create throwaway store directories before the server boots so the suite never
@@ -74,7 +79,11 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: "node e2e/seed-fixtures.js && node server.js",
+          // The registry stub runs in the background of this same command
+          // (same process group, so Playwright's teardown kills it): the market
+          // then carries registry entries and the connect popup can mint
+          // against a hermetic stand-in instead of the live registry.
+          command: `node e2e/registry-stub.js & node e2e/seed-fixtures.js && node server.js`,
           // The server listens FIRST and initializes the agent in the
           // background (listen-first boot) — readiness must gate on the
           // agent, not the port, or tests would race a half-booted server.
@@ -103,8 +112,26 @@ export default defineConfig({
             // Without this the suite drops uploaded files in the repo root.
             PLATFORM_DATA_DIR: storeDirs.root,
             MCP_CONFIG_PATH: path.join(storeDirs.root, "mcp.json"),
-            LLM_PROVIDERS_STORE: storeDirs.llmProviders,
-            LLM_DEFAULT_STORE: storeDirs.llmDefault,
+            // Hermetic by default (no user providers, no saved default). A
+            // smoke run that needs a REAL model — the smoke project makes live
+            // calls — exports these two pointing at the repo's stores, which
+            // brings the user-provider routes and their keys with them.
+            LLM_PROVIDERS_STORE: process.env.LLM_PROVIDERS_STORE || storeDirs.llmProviders,
+            LLM_DEFAULT_STORE: process.env.LLM_DEFAULT_STORE || storeDirs.llmDefault,
+            // dsh's own home (profile composition, settings.yaml, credentials,
+            // persisted session logs) defaults to the developer's real ~/.dsh.
+            // Point it at the throwaway store so a run cannot rewrite the live
+            // settings.yaml — whose baseURL this env deliberately fakes — or
+            // leave session logs whose ids collide with real ones. The installed
+            // dsh tree still resolves from the real home via DSH_SHARED_HOME.
+            DSH_HOME: storeDirs.dshHome,
+            // Registry source: the stub above, so registry-origin entries,
+            // credential injection and the silent-SSO mint are all reachable
+            // without a network dependency.
+            MARKET_REGISTRY_URL: process.env.MARKET_REGISTRY_URL || E2E_REGISTRY_URL,
+            MARKET_REGISTRY_TOKEN: process.env.MARKET_REGISTRY_TOKEN || E2E_REGISTRY_TOKEN,
+            MARKET_REGISTRY_TTL_SECS: process.env.MARKET_REGISTRY_TTL_SECS || "300",
+            DSH_SHARED_HOME: process.env.DSH_SHARED_HOME || path.join(os.homedir(), ".dsh"),
           },
         },
       }),

@@ -158,12 +158,28 @@
       },
       "permissionFull": {
         "label": "完全访问",
-        "desc": "智能体可以修改任何内容，且没有审批门槛。"
-      }
+        "desc": "智能体可以修改任何内容，且没有审批门槛。",
+        "confirmTitle": "启用完全访问？",
+        "confirmBody": "完全访问会移除沙箱与审批确认：智能体可以读写你能访问的任何位置，包括工作区之外。",
+        "acknowledge": "我已了解风险",
+        "confirm": "启用完全访问"
+      },
+      "add": "添加文件或命令",
+      "more": "更多"
     }
   },
   "chat": {
     "empty": "发送消息开始对话。",
+    "plan": {
+      "title": "进度",
+      "ariaLabel": "智能体计划",
+      "statusPending": "{{count}} 项待办",
+      "statusInProgress": "{{count}} 项进行中",
+      "statusCompleted": "{{count}} 项已完成",
+      "expand": "展开计划",
+      "collapse": "收起计划",
+      "updated": "已更新计划（{{done}}/{{total}}）"
+    },
     "welcome": {
       "greeting": "今天我可以帮你什么？",
       "suggestedPrompts": "推荐提示",
@@ -335,7 +351,7 @@
       "delete": "删除",
       "noDocuments": "暂无文档。",
       "addDocPlaceholder": "添加文档…",
-      "add": "添加",
+      "add": "添加文件或命令",
       "confirmDelete": "删除此集合？"
     },
     "startConversation": "开启对话…",
@@ -417,6 +433,26 @@
       "installFailed": "安装 {{name}} 失败：{{error}}",
       "readyToUse": "可直接使用",
       "needsConfig": "需要配置"
+    },
+    "registry": {
+      "title": "MCP 市场账号",
+      "state": {
+        "connected": "已连接",
+        "disconnected": "未连接",
+        "stale": "需要重新连接",
+        "expired": "已过期"
+      },
+      "connect": "连接 MCP 市场",
+      "reconnect": "重新连接",
+      "connecting": "连接中…",
+      "pasteToggle": "粘贴令牌",
+      "pasteHint": "在市场页面点击「Get JWT Token」生成令牌后粘贴到这里——与自动领取的令牌存储方式完全一致。",
+      "tokenLabel": "市场令牌",
+      "tokenPlaceholder": "eyJ…",
+      "expires": "{{date}} 过期",
+      "disconnect": "断开连接",
+      "unconfigured": "本部署未配置 MCP 市场，请改为粘贴令牌。",
+      "staleHint": "市场已拒绝当前令牌，重新连接后即可恢复 registry 服务。"
     }
   },
   "help": {

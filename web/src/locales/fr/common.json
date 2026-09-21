@@ -158,12 +158,28 @@
       },
       "permissionFull": {
         "label": "Accès complet",
-        "desc": "L'agent peut tout modifier, sans validation."
-      }
+        "desc": "L'agent peut tout modifier, sans validation.",
+        "confirmTitle": "Activer l’accès complet ?",
+        "confirmBody": "L’accès complet supprime le bac à sable et les confirmations d’approbation : l’agent peut lire et écrire tout ce que vous pouvez, y compris hors de l’espace de travail.",
+        "acknowledge": "Je comprends le risque",
+        "confirm": "Activer l’accès complet"
+      },
+      "add": "Ajouter un fichier ou une commande",
+      "more": "Plus"
     }
   },
   "chat": {
     "empty": "Envoyez un message pour commencer à discuter.",
+    "plan": {
+      "title": "Progression",
+      "ariaLabel": "Plan de l’agent",
+      "statusPending": "{{count}} à faire",
+      "statusInProgress": "{{count}} en cours",
+      "statusCompleted": "{{count}} terminées",
+      "expand": "Développer le plan",
+      "collapse": "Réduire le plan",
+      "updated": "Plan mis à jour ({{done}}/{{total}})"
+    },
     "welcome": {
       "greeting": "Comment puis-je vous aider aujourd'hui ?",
       "suggestedPrompts": "Suggestions",
@@ -335,7 +351,7 @@
       "delete": "Supprimer",
       "noDocuments": "Aucun document.",
       "addDocPlaceholder": "Ajouter un document…",
-      "add": "Ajouter",
+      "add": "Ajouter un fichier ou une commande",
       "confirmDelete": "Supprimer cette collection ?"
     },
     "startConversation": "Démarrer la conversation…",
@@ -417,6 +433,26 @@
       "installFailed": "Échec de l'installation de {{name}} : {{error}}",
       "readyToUse": "Prêt à l'emploi",
       "needsConfig": "Configuration requise"
+    },
+    "registry": {
+      "title": "Compte du marché MCP",
+      "state": {
+        "connected": "Connecté",
+        "disconnected": "Non connecté",
+        "stale": "Reconnexion requise",
+        "expired": "Expiré"
+      },
+      "connect": "Connecter",
+      "reconnect": "Reconnecter",
+      "connecting": "Connexion…",
+      "pasteToggle": "Coller un jeton",
+      "pasteHint": "Générez un jeton dans l'interface du marché (Get JWT Token) puis collez-le ici : il est stocké exactement comme un jeton émis automatiquement.",
+      "tokenLabel": "Jeton du marché",
+      "tokenPlaceholder": "eyJ…",
+      "expires": "Expire le {{date}}",
+      "disconnect": "Déconnecter",
+      "unconfigured": "Aucun marché MCP n'est configuré sur ce déploiement — collez un jeton.",
+      "staleHint": "Le marché a rejeté le jeton enregistré. Reconnectez-vous pour restaurer les serveurs du registre."
     }
   },
   "help": {

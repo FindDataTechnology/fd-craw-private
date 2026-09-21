@@ -119,6 +119,14 @@ export function createAppContext(config) {
     // rewrite the watched mcp.patch.yml so cordis HMR hot-swaps dsh-mcp-client
     // (no process restart). Assigned by initDshAgent.
     dshUpdateMcp: null,
+    // The identity the effective profile is currently generated for (a cell's
+    // user, or the last user whose bindings were applied). Resolves the
+    // registry-credential lookup in writeMcpPatch; null = auth off / machine
+    // owner. Set at boot and on every profile application. The groups snapshot
+    // beside it is the filter the last application used, so a later rewrite
+    // (e.g. a 401 marking the credential stale) reproduces it exactly.
+    runtimeOwnerEmail: null,
+    runtimeOwnerGroups: null,
     // Declared model list from the profile generator (initDshAgent populates
     // it; dsh exposes no stock listModels RPC, so this IS the model list).
     dshModels: [],
@@ -131,6 +139,12 @@ export function createAppContext(config) {
     dshToolNames: new Map(),
     dshTurnError: null,
     dshTurnBlocks: [],
+    // Latest `todo/write` plan snapshot per dsh session, normalized for the
+    // wire (add-plan-progress-panel). Keyed by dsh session id so switching away
+    // and back restores that session's plan. In-memory only: a server restart
+    // starts with no plan, the same honesty class as the permission pin
+    // reverting to the deployment default.
+    planBySession: new Map(),
 
     // ── Bot session collectors (design D2) ────────────────────────────────────
     // Per-session notification handlers for non-web chat sessions, keyed by

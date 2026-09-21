@@ -30,23 +30,61 @@ function tempStoreRoot() {
 // chat/docs/sessions/db paths to pass to the server via env. The db path is a
 // throwaway SQLite file (DB_PATH) so the suite never touches the project's real
 // data/app.db.
-export function prepareTempStoreDirs() {
-  const root = tempStoreRoot();
-  fs.rmSync(root, { recursive: true, force: true });
-  const chat = path.join(root, "chat-history-store");
-  const docs = path.join(root, "documents-store");
-  const sessions = path.join(root, "sessions-store");
-  const db = path.join(root, "app.db");
-  const llmProviders = path.join(root, "llm-providers.json");
-  const llmDefault = path.join(root, "llm-default.json");
+// `subdir` scopes a caller to its own tree under the run root (a spec that
+// boots a second server must not share the webServer's stores). A subdir has no
+// other user, so it is always prepared fresh; the shared root is not.
+// The run's store paths, WITHOUT touching the filesystem. Specs use this to
+// read artifacts the running server wrote (e.g. the generated dsh profile):
+// spec modules are collected by the playwright runner process, where
+// TEST_WORKER_INDEX is unset, so a destructive helper called at module scope
+// would delete the live store mid-run — exactly the failure the guard in
+// prepareTempStoreDirs exists to prevent.
+export function tempStoreDirs({ subdir = "" } = {}) {
+  const root = subdir ? path.join(tempStoreRoot(), subdir) : tempStoreRoot();
+  return {
+    root,
+    chat: path.join(root, "chat-history-store"),
+    docs: path.join(root, "documents-store"),
+    sessions: path.join(root, "sessions-store"),
+    db: path.join(root, "app.db"),
+    llmProviders: path.join(root, "llm-providers.json"),
+    llmDefault: path.join(root, "llm-default.json"),
+    dshHome: path.join(root, "dsh-home"),
+  };
+}
+
+export function prepareTempStoreDirs({ subdir = "" } = {}) {
+  const root = subdir ? path.join(tempStoreRoot(), subdir) : tempStoreRoot();
+  // Playwright re-evaluates playwright.config.js inside every test worker, so
+  // this runs a second time mid-run. Wiping the shared root then deletes the
+  // stores the running webServer is still using — most visibly the temp dsh
+  // home: the dsh child reads its profile dir on every preset mount, so losing
+  // profiles/node_modules there made `set_permission` fail with "Cannot find
+  // package '@deepseek-ai/dsh-persona'" (the runner's own call, before the
+  // server boots, is the one that prepares). Workers only take the paths.
+  if (subdir || process.env.TEST_WORKER_INDEX === undefined) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  const { chat, docs, sessions, db, llmProviders, llmDefault, dshHome } = tempStoreDirs({ subdir });
+  // The dsh runtime's own home: profile composition, settings.yaml,
+  // .credentials.yaml, and the persisted session logs. Kept per-run so the suite
+  // can never rewrite the developer's real ~/.dsh — the e2e env deliberately
+  // fakes the LLM baseURL, and a rewritten settings.yaml breaks any server
+  // already running against that home (observed: a live dev server's turns began
+  // failing with "no API key for provider route") — and never leaves session
+  // logs whose ids collide with the developer's own.
   fs.mkdirSync(chat, { recursive: true });
   fs.mkdirSync(docs, { recursive: true });
   fs.mkdirSync(sessions, { recursive: true });
-  return { chat, docs, sessions, db, llmProviders, llmDefault, root };
+  fs.mkdirSync(dshHome, { recursive: true });
+  return { chat, docs, sessions, db, llmProviders, llmDefault, dshHome, root };
 }
 
 export function cleanupTempStoreDirs() {
-  fs.rmSync(tempStoreRoot(), { recursive: true, force: true });
+  // A dsh child reaped a beat late can recreate a file mid-walk; rmSync's
+  // ENOTEMPTY on the root would then fail the whole run at teardown. Retry
+  // instead of losing the suite to a race the teardown cannot control.
+  fs.rmSync(tempStoreRoot(), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 // The temp SQLite file path — shared by the webServer env (playwright.config)

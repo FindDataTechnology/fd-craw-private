@@ -158,12 +158,28 @@
       },
       "permissionFull": {
         "label": "フルアクセス",
-        "desc": "承認なしにあらゆる変更が可能になります。"
-      }
+        "desc": "承認なしにあらゆる変更が可能になります。",
+        "confirmTitle": "フルアクセスを有効にしますか？",
+        "confirmBody": "フルアクセスはサンドボックスと承認確認を無効にします。エージェントはあなたがアクセスできる場所（ワークスペース外を含む）を読み書きできます。",
+        "acknowledge": "リスクを理解しました",
+        "confirm": "フルアクセスを有効にする"
+      },
+      "add": "ファイルまたはコマンドを追加",
+      "more": "その他"
     }
   },
   "chat": {
     "empty": "メッセージを送信してチャットを開始してください。",
+    "plan": {
+      "title": "進捗",
+      "ariaLabel": "エージェントの計画",
+      "statusPending": "未着手 {{count}} 件",
+      "statusInProgress": "進行中 {{count}} 件",
+      "statusCompleted": "完了 {{count}} 件",
+      "expand": "計画を展開",
+      "collapse": "計画を折りたたむ",
+      "updated": "計画を更新しました（{{done}}/{{total}}）"
+    },
     "welcome": {
       "greeting": "今日はどんなお手伝いできますか？",
       "suggestedPrompts": "おすすめのプロンプト",
@@ -335,7 +351,7 @@
       "delete": "削除",
       "noDocuments": "ドキュメントはありません。",
       "addDocPlaceholder": "ドキュメントを追加…",
-      "add": "追加",
+      "add": "ファイルまたはコマンドを追加",
       "confirmDelete": "このコレクションを削除しますか？"
     },
     "startConversation": "会話を開始…",
@@ -417,6 +433,26 @@
       "installFailed": "{{name}}のインストールに失敗しました: {{error}}",
       "readyToUse": "すぐに使える",
       "needsConfig": "設定が必要"
+    },
+    "registry": {
+      "title": "MCP マーケットのアカウント",
+      "state": {
+        "connected": "接続済み",
+        "disconnected": "未接続",
+        "stale": "再接続が必要",
+        "expired": "期限切れ"
+      },
+      "connect": "接続",
+      "reconnect": "再接続",
+      "connecting": "接続中…",
+      "pasteToggle": "トークンを貼り付け",
+      "pasteHint": "マーケット画面の「Get JWT Token」で発行したトークンを貼り付けてください。自動発行のトークンと同じ扱いで保存されます。",
+      "tokenLabel": "マーケットトークン",
+      "tokenPlaceholder": "eyJ…",
+      "expires": "{{date}} に期限切れ",
+      "disconnect": "切断",
+      "unconfigured": "このデプロイには MCP マーケットが設定されていません。トークンを貼り付けてください。",
+      "staleHint": "保存済みトークンがマーケットに拒否されました。再接続するとレジストリのサーバーが復帰します。"
     }
   },
   "help": {

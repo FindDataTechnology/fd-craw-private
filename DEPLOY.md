@@ -147,7 +147,13 @@ make k8s-logs          # tail the platform pod
 kubectl -n platform-private describe pod -l app.kubernetes.io/name=platform
 ```
 
-Reach it: **http://23.144.68.246:30950**
+Reach it: **https://craw.finddatatech.cloud** (canonical entry — Caddy on cheap1 →
+`127.0.0.1:3000`, and the app's own `PAAS_BASE_URL`). The k3s `fd-prod` platform
+also answers on its NodePort (**http://103.236.89.212:31870** when this was
+written — NodePorts get reallocated: `kubectl --context cheap -n fd-prod get svc platform`).
+Both entries now sit behind Logto (`/api/auth/me` → `mode: "logto"`), so anything
+that drives the UI needs a session; the older `http://23.144.68.246:30950` in
+notes below is dead — **no service in the cluster uses NodePort 30950 any more**.
 
 ### Override the Volces key in-cluster (optional)
 
@@ -220,8 +226,158 @@ otherwise), so the token is mandatory for registry entries to appear.
    `legal-research-cn` and the rest of the registry skill catalog; agents
    `registry-chatlaw`, `registry-fingpt` in `/api/catalog`.
 
-Rollback: remove the ConfigMap key and the Secret key, restart — back to
-bundled-only catalog, no leftover state (bridge snapshots are in-memory).
+#### Per-user market connect (registry-sso-credentials) — APPLIED 2026-09-21
+
+The Store's 连接 MCP 市场 button mints a **personal** registry token from a
+popup: the popup opens the registry login (shared Logto session ⇒ no re-typing),
+the registry redirects back to the platform, and the popup calls the registry's
+mint API **cross-origin with credentials** before handing the token to the
+backend (stored per user; it never touches browser storage).
+
+Two registry-side pieces make that cross-origin leg work. Both are now in place
+on china-cheap-1, and both are ops config rather than platform code:
+
+1. **Credentialed CORS allowlist** — `CORS_ALLOWED_ORIGINS` in
+   `/opt/mcp-gateway-registry/extra_env/registry.env` (the compose `env_file`
+   for the `registry` service; note the project `.env` is only used for compose
+   *interpolation* and does NOT reach the container):
+
+   ```
+   CORS_ALLOWED_ORIGINS=https://craw.finddatatech.cloud,http://103.236.89.212:31870
+   ```
+
+   The registry is fail-closed — its own origin is always included, nothing else
+   is. List the origins the **browser** loads the platform from; a preflight from
+   an unlisted origin is refused and the Store can only fall back to paste. The
+   k3s NodePort is reallocatable (the older `30950` no longer exists in the
+   cluster — see the note below), so re-check this line whenever the entry URL
+   changes.
+
+2. **Preflight exemption in nginx** — `/opt/mcp-gateway-registry/nginx_rev_proxy_http_only.conf`
+   (mounted read-only into the container as the registry-API template; a second
+   copy at `docker/nginx_rev_proxy_http_and_https.conf`). The `location /api/`
+   block authenticates every request with `auth_request /validate`, and a CORS
+   preflight never carries credentials by spec — so it could only ever 401, and
+   the browser then blocks the real credentialed call. The hotfix routes OPTIONS
+   to a named location that skips the auth subrequest and lets FastAPI's
+   CORSMiddleware apply the strict origin allowlist (OPTIONS has no body, no
+   cookies and no side effects; real requests are unchanged):
+
+   ```nginx
+   if ($request_method = OPTIONS) { return 418; }
+   error_page 418 = @registry_api_preflight;
+   # ...server scope:
+   location @registry_api_preflight { proxy_pass http://127.0.0.1:7860; ... }
+   ```
+
+   The session cookie was already `SameSite=None; Secure`, so nothing was needed
+   there.
+
+Apply a change to either file with (only the `registry` service is recreated;
+dependencies and the image are left alone, and a failed nginx reload keeps the
+old config running):
+
+```bash
+cd /opt/mcp-gateway-registry
+cp -a extra_env/registry.env extra_env/registry.env.bak-$(date +%Y%m%d-%H%M%S)   # or the .conf
+docker compose -f docker-compose.prebuilt.yml up -d --no-deps --no-build --pull never --force-recreate registry
+docker inspect -f '{{.State.Health.Status}}' mcp-gateway-registry-registry-1     # → healthy in ~1-2 min
+```
+
+Verify (all three from a machine that can reach the registry):
+
+```bash
+U=https://mcp.finddatatech.cloud; O=https://craw.finddatatech.cloud
+curl -D- -o /dev/null -H "Origin: $O" $U/api/auth/csrf-token | grep -i access-control        # ACAO = $O
+curl -D- -o /dev/null -X OPTIONS -H "Origin: $O" -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: content-type,x-csrf-token' $U/api/tokens/generate      # 200 + ACAO
+curl -D- -o /dev/null -X OPTIONS -H "Origin: https://evil.example" $U/api/tokens/generate    # 400, no ACAO
+```
+
+A browser check from the real origin (the anonymous case resolves the GET and
+sends the POST; the anonymous POST still 401s at nginx, which is expected — the
+mint needs a registry session):
+
+```js
+// devtools on https://craw.finddatatech.cloud
+await fetch("https://mcp.finddatatech.cloud/api/auth/csrf-token", { credentials: "include" })
+// → Response{status: 401, type: "cors"}  (a TypeError here means the allowlist is missing this origin)
+```
+
+Rollback: restore `extra_env/registry.env` / the `.conf` from its `.bak-*`
+backup and recreate the container. Registry routes moved in a version bump?
+Override the paths instead of patching code: `MARKET_REGISTRY_LOGIN_PATH`,
+`MARKET_REGISTRY_CSRF_PATH`, `MARKET_REGISTRY_TOKENS_PATH`.
+
+While the allowlist is missing an origin, the paste fallback is the supported
+path: the same dialog takes a token minted via the registry UI's "Get JWT Token",
+stores it in the same per-user row, and drives exactly the same injection
+(`Authorization` resolved at profile-write time, servers omitted with a warning
+when the credential is missing/stale/expired — see the `registry-credentials`
+and `dsh-runtime-bridge` specs for the profile side).
+
+### Bot relay (machine callers → chat-platform bots)
+
+Lets a cloud service on a trusted network push text through a configured bot
+without a browser session (`add-bot-relay-endpoint`). The route
+(`POST /api/bots/relay/send`) is identity-exempt like the bot webhooks and
+carries its own bearer token. Deploy inert first, then enable:
+
+1. **Confirm it is inert** on the running service (no token yet):
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+     <PLATFORM_URL>/api/bots/relay/send -d '{}'   # → 404, e.g. https://craw.finddatatech.cloud
+   ```
+
+2. **Add the token** (same rotation rhythm as `MARKET_REGISTRY_TOKEN`):
+
+   ```bash
+   TOKEN=$(openssl rand -base64 32)
+   kubectl --context cheap -n fd-prod patch secret platform-secrets \
+     -p "{\"stringData\":{\"BOTS_RELAY_TOKEN\":\"$TOKEN\"}}"
+   kubectl --context cheap -n fd-prod rollout restart deploy/platform
+   kubectl --context cheap -n fd-prod rollout status deploy/platform
+   ```
+
+3. **Verify both answers**, then keep `$TOKEN` only in the caller's server-side
+   config (never in a browser, never in a repo):
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+     <PLATFORM_URL>/api/bots/relay/send \
+     -H 'authorization: Bearer wrong' -d '{}'                    # → 401
+   curl -s -X POST <PLATFORM_URL>/api/bots/relay/send \
+     -H "authorization: Bearer $TOKEN" \
+     -H 'content-type: application/json' \
+     -d '{"channel":"ops-alerts","text":"hello"}'                # → {"ok":true}
+   ```
+
+4. **Bind a channel** (admin session required; the pair must be a chat the bot
+   has already been messaged from, which requires inbound to work — see
+   `PUBLIC_BASE_URL` below):
+
+   ```bash
+   curl -s <platform>/api/bots/chats                      # find botId + chatKey
+   curl -s -X POST <platform>/api/bots/channels \
+     -H 'content-type: application/json' \
+     -d '{"name":"ops-alerts","botId":"<botId>","chatKey":"<chatKey>"}'
+   ```
+
+**Transport**: the token must only cross a network the operator trusts. Calling
+from the same host (the registry stack) uses the loopback/node address and is
+fine as-is; an off-host caller needs a TLS-terminated ingress in front of the
+platform — do not send it over the plain-HTTP NodePort from the open internet.
+
+**Inbound reminder**: webhook platforms (WeCom/Feishu/WeChat OA) can only
+receive with `PUBLIC_BASE_URL` set on the deployment; without it only Telegram
+works (long-poll), and no `bot_chats` row is recorded for webhook platforms, so
+nothing is bindable there.
+
+**Rollback**: unset the Secret key (`kubectl patch secret … -p
+'{"stringData":{"BOTS_RELAY_TOKEN":""}}'`) and restart — the route answers 404
+again. The `bot_chats` / `bot_channels` / `bot_relay_log` tables stay as inert
+leftovers; dropping them is optional.
 
 ### Role-gated market entries (Logto groups)
 
@@ -320,15 +476,21 @@ deployed k3s NodePort - so you can verify a deploy actually serves a working app
 with one command, instead of opening the URL and clicking around.
 
 ```bash
-make test-live                 # read-only suite against http://23.144.68.246:30950
+make test-live LIVE_SERVICE_URL=https://craw.finddatatech.cloud   # read-only suite
 # or, equivalently:
-npm run test:e2e:live
+LIVE_SERVICE_URL=https://craw.finddatatech.cloud npm run test:e2e:live
 ```
 
 The `live` Playwright project connects to an already-running external URL
-(`LIVE_SERVICE_URL`, default `http://23.144.68.246:30950`); it **never** launches
-a local `node server.js` and **never** creates temp store dirs. Point it at a
-different deploy by overriding the URL:
+(`LIVE_SERVICE_URL`; the built-in default — the old `23.144.68.246:30950` — is
+dead, see the entry note above, so pass the current URL explicitly); it **never**
+launches a local `node server.js` and **never** creates temp store dirs.
+
+⚠️ The deployed instances now enforce Logto, so the SPA/WebSocket specs fail
+without a session (observed against `craw.finddatatech.cloud`: 5 failed with
+`websocket error` / no `/chat` redirect). Use the suite against an
+unauthenticated deploy, or sign in first. Point it at a different deploy by
+overriding the URL:
 
 ```bash
 make test-live LIVE_SERVICE_URL=http://staging-host:30950
@@ -362,10 +524,10 @@ make test-live-smoke           # sets LIVE_SMOKE=1
 npm run test:e2e:live:smoke
 ```
 
-> **Note:** live tests target a NodePort on a private IP, so they are a
-> dev-machine / self-hosted-runner concern - not run from `ubuntu-latest` CI
-> (which has no route to `23.144.68.246:30950`). The local `fast`/`smoke`
-> suites (`npm run test:e2e`) are unaffected and still launch their own local
+> **Note:** live tests target a deployed entry (private IP NodePort or the
+> public domain), so they are a dev-machine / self-hosted-runner concern - not
+> run from `ubuntu-latest` CI, which has no route to either. The local
+> `fast`/`smoke` suites (`npm run test:e2e`) are unaffected and still launch their own local
 > `node server.js`.
 
 ---

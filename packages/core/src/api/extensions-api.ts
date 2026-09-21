@@ -15,6 +15,9 @@ export interface McpServer {
     env?: Record<string, string>;
     url?: string;
     headers?: Record<string, string>;
+    // Registry-origin servers reference the user's stored market credential
+    // instead of embedding a secret; the string is always "registry".
+    credentialRef?: string;
   };
   enabled: boolean;
   source: "user" | "startup";
@@ -71,6 +74,58 @@ export interface MarketCatalog {
   skills: MarketSkill[];
 }
 
+// ── Registry connection (market credential) ──────────────────────────────────
+//
+// The token is write-only: every response here carries connection state and
+// expiry only, never the credential itself.
+
+export interface RegistryConnection {
+  connected: boolean;
+  expiresAt: string | null;
+  expired: boolean;
+  stale: boolean;
+  source: string | null;
+  updatedAt: string | null;
+  // Where the connect popup opens and which mint endpoints it calls ("" URL =
+  // the registry source is disabled and only the paste fallback applies).
+  registryUrl: string;
+  loginPath: string;
+  mint: { csrfPath: string; tokensPath: string; csrfHeader: string; defaultTtlHours: number };
+}
+
+export async function fetchRegistryConnection(): Promise<RegistryConnection> {
+  const res = await http("/api/registry/connection");
+  if (!res.ok) throw new Error(`Failed to fetch registry connection: ${res.statusText}`);
+  return res.json();
+}
+
+// `source` is "sso" for the popup handoff and "paste" for the manual fallback;
+// both write the same row server-side.
+export async function saveRegistryCredential(
+  token: string,
+  source: "sso" | "paste" = "sso"
+): Promise<RegistryConnection> {
+  const res = await http("/api/registry/credential", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, source }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to save the credential: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function disconnectRegistry(): Promise<RegistryConnection> {
+  const res = await http("/api/registry/connection", { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to disconnect: ${res.statusText}`);
+  }
+  return res.json();
+}
+
 // ── MCP Servers ──────────────────────────────────────────────────────────────
 
 export async function fetchMcpServers(): Promise<McpServer[]> {
@@ -91,8 +146,13 @@ export async function addMcpServer(
     body: JSON.stringify({ name, config, enabled }),
   });
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || `Failed to add MCP server: ${res.statusText}`);
+    const err = await res.json().catch(() => ({}));
+    const error = new Error(err.error || `Failed to add MCP server: ${res.statusText}`);
+    // Machine-readable reason: the market's registry installs answer
+    // "credential-required" when the user has no live market credential, which
+    // the Store maps to the connect prompt rather than a raw error.
+    if (err.code) (error as Error & { code?: string }).code = err.code;
+    throw error;
   }
   return res.json();
 }

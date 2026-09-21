@@ -63,4 +63,24 @@ function seedFixtures() {
   }
 }
 
+// The registry stub runs in the background of the same webServer command; the
+// server's FIRST bridge refresh must see it or the market carries no registry
+// entries for the whole TTL. Wait (briefly) for its snapshot endpoint.
+async function waitForRegistryStub() {
+  const url = process.env.MARKET_REGISTRY_URL;
+  if (!url) return;
+  const token = process.env.MARKET_REGISTRY_TOKEN || "";
+  for (let i = 0; i < 50; i++) {
+    try {
+      const res = await fetch(`${url.replace(/\/+$/, "")}/api/servers?limit=1`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) return;
+    } catch { /* not up yet */ }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  console.warn(`[e2e seed-fixtures] registry stub at ${url} did not answer; market will have no registry entries`);
+}
+
 seedFixtures();
+await waitForRegistryStub();

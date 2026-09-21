@@ -211,6 +211,32 @@ export function getAgentEntries() {
   return agentSnapshot;
 }
 
+// Registry base URL ("" when the source is disabled) and the path of its own
+// login page. The connect popup needs both; neither is a secret.
+export function getRegistryUrl() {
+  return REGISTRY_URL;
+}
+
+export function getRegistryLoginPath() {
+  return (process.env.MARKET_REGISTRY_LOGIN_PATH || "/login").trim();
+}
+
+// The per-user token mint contract, as recorded in DEPLOY.md against the
+// deployed registry: GET {csrfPath} → a CSRF token, then POST {tokensPath} with
+// that value in the X-CSRF-Token header. Both calls ride the user's registry
+// session cookie, which is why only the browser (the connect popup) can make
+// them, and why the registry must CORS-allow this origin with credentials.
+// Paths are overridable because the registry is a self-hosted image whose
+// routes have moved between versions.
+export function getRegistryMint() {
+  return {
+    csrfPath: (process.env.MARKET_REGISTRY_CSRF_PATH || "/api/auth/csrf-token").trim(),
+    tokensPath: (process.env.MARKET_REGISTRY_TOKENS_PATH || "/api/tokens/generate").trim(),
+    csrfHeader: "X-CSRF-Token",
+    defaultTtlHours: 168,
+  };
+}
+
 // Fetch a registry skill's raw SKILL.md (frontmatter included).
 export async function getSkillContent(contentPath) {
   const p = String(contentPath || "");

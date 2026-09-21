@@ -366,7 +366,14 @@ function toMcpClientEntry(name, config) {
 // profile user holds a matching group, so an identity-provider revocation
 // lands on the next patch write with no record mutation. null (no
 // authenticated identity — auth off) filters nothing.
-export async function writeMcpPatch({ mcpOverlay, userGroups = null } = {}) {
+//
+// ownerEmail is the identity the effective profile is generated FOR. It
+// resolves the credential of registry-origin servers (config.credentialRef):
+// the Authorization header is read from that user's stored credential at each
+// write — never from the installed record — so a refreshed token takes effect
+// without reinstalling. No live credential ⇒ the server is omitted with a
+// warning (same shape as the requiredGroups filter), and its record survives.
+export async function writeMcpPatch({ mcpOverlay, userGroups = null, ownerEmail = null } = {}) {
   // 1. mcp.json (operator config, base layer).
   let mcpJsonServers = {};
   try {
@@ -391,6 +398,38 @@ export async function writeMcpPatch({ mcpOverlay, userGroups = null } = {}) {
     }
   } catch (e) {
     console.warn(`[dsh-profile] DB MCP read failed; mcp.json/OC only: ${e?.message || e}`);
+  }
+
+  // Resolve registry credentials before anything else looks at the config: a
+  // server whose ref cannot be resolved must never reach toMcpClientEntry with
+  // a placeholder header.
+  const registryRefs = [];
+  try {
+    const credentials = await import("./registry-credentials.js");
+    for (const [name, config] of Object.entries(servers)) {
+      if (credentials.isRegistryRef(config)) registryRefs.push(name);
+    }
+    const token = registryRefs.length > 0 ? credentials.liveToken(ownerEmail) : null;
+    if (token) {
+      for (const name of registryRefs) {
+        servers[name] = {
+          ...servers[name],
+          headers: { ...(servers[name].headers || {}), Authorization: `Bearer ${token}` },
+        };
+      }
+    } else if (registryRefs.length > 0) {
+      for (const name of registryRefs) delete servers[name];
+      console.warn(
+        `[dsh-profile] omitting ${registryRefs.length} registry MCP server(s) (${registryRefs.join(", ")}): no live market credential for ${ownerEmail || "the machine owner"}`,
+      );
+    }
+  } catch (e) {
+    // The ref is unresolvable for an unknown reason (import failure, DB error)
+    // — omit every ref-carrying server rather than pass one through unauthenticated.
+    console.warn(`[dsh-profile] registry credential resolution failed; omitting those servers: ${e?.message || e}`);
+    for (const [name, config] of Object.entries(servers)) {
+      if (config?.credentialRef) delete servers[name];
+    }
   }
 
   // Apply the active identity's availability overlay after the global merge.

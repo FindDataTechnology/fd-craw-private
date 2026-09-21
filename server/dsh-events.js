@@ -15,7 +15,80 @@
 import * as chatHistory from "../chat-history.js";
 import * as trace from "./trace.js";
 
+// Normalize a `todo/write` snapshot for the wire: keep only `content`/`status`,
+// drop entries with no content, coerce an unrecognized status to "pending", and
+// count the three states once here so every client renders its header without
+// recounting. Returns null when the payload is not a list at all — the caller
+// then ignores the event, as the protocol requires (a plan is UI state, never
+// worth failing a turn over).
+function normalizePlan(raw) {
+  if (!Array.isArray(raw)) return null;
+  const todos = [];
+  for (const item of raw) {
+    const content = typeof item?.content === "string" ? item.content : "";
+    // Whitespace-only content would render as an invisible row; drop it rather
+    // than send the UI a row nobody can read.
+    if (!content.trim()) continue;
+    const status =
+      item.status === "in_progress" || item.status === "completed" ? item.status : "pending";
+    todos.push({ content, status });
+  }
+  const counts = { pending: 0, inProgress: 0, completed: 0 };
+  for (const t of todos) {
+    if (t.status === "pending") counts.pending += 1;
+    else if (t.status === "in_progress") counts.inProgress += 1;
+    else counts.completed += 1;
+  }
+  return { todos, counts };
+}
+
+// A 401 from a registry-origin MCP endpoint means the stored market credential
+// is no longer accepted (expiry, revocation, registry restart). Mark it stale —
+// profile generation then treats it as absent — and ping the clients so the
+// Store can prompt for a one-click re-connect (registry-sso-credentials).
+// dsh names MCP tools `mcp__<serverName>__<toolName>` (dsh-profile), so the
+// failing tool identifies the installed record to check for a credential ref.
+const UNAUTHORIZED_RE = /\b401\b|unauthoriz/i;
+
+function markRegistryCredentialStaleOn401(ctx, toolName, resultText) {
+  if (!toolName || !resultText || !UNAUTHORIZED_RE.test(resultText)) return;
+  const serverName = /^mcp__(.+?)__/.exec(toolName)?.[1];
+  if (!serverName) return;
+  Promise.all([import("../extension-store.js"), import("../registry-credentials.js")])
+    .then(([extensionStore, credentials]) => {
+      const server = extensionStore.getMcpServer(serverName);
+      if (!credentials.isRegistryRef(server?.config)) return;
+      const owner = ctx.runtimeOwnerEmail;
+      // false ⇒ already stale: the profile was re-applied then, so a run of
+      // 401s costs exactly one re-apply.
+      if (!credentials.markStale(owner)) return;
+      console.warn(
+        `[registry] 401 from MCP server "${serverName}" — credential for ${owner || "the machine owner"} marked stale`,
+      );
+      ctx.broadcast?.({ type: "registry_credential_stale" });
+      // The server cannot authenticate any more; drop it from the effective
+      // profile now rather than leaving a call that fails every time. Groups
+      // are the last-applied owner's, so the role filter is preserved.
+      ctx
+        .dshUpdateMcp?.(ctx.runtimeMcpOverlay ?? null, ctx.runtimeOwnerGroups ?? null, owner)
+        ?.catch((e) => console.warn(`[registry] profile update after stale mark failed: ${e.message}`));
+    })
+    .catch((e) => console.warn(`[registry] stale detection failed: ${e.message}`));
+}
+
 export function attachDshEvents(ctx) {
+  // The plan message for a session: the cached snapshot, or an explicit empty
+  // list when the session has none. Sending the empty form (rather than
+  // nothing) is what guarantees a client that just switched sessions can never
+  // keep the previous session's plan on screen. Shared by the connect-time
+  // syncs (ws.js) and the new-session/session-load paths (agent-session.js).
+  ctx.planMessage = (sessionId) => {
+    const plan = sessionId ? ctx.planBySession.get(sessionId) : null;
+    return plan
+      ? { type: "todos", todos: plan.todos, counts: plan.counts }
+      : { type: "todos", todos: [], counts: { pending: 0, inProgress: 0, completed: 0 } };
+  };
+
   // Mark the current agent turn finished: reset the streaming flag, broadcast
   // `done` (which re-enables the UI / model selector and finalizes tool
   // blocks), and refresh the sidebar session list. Idempotent per turn — it
@@ -179,14 +252,38 @@ export function attachDshEvents(ctx) {
           result: resultText,
           isError,
         });
+        if (isError) markRegistryCredentialStaleOn401(ctx, ctx.dshToolNames.get(callId), resultText);
         break;
       }
-      case "turn/end":
-        if (ev.data?.reason?.kind === "error" && ctx.dshTurnError) {
-          ctx.broadcast({ type: "error", message: ctx.dshTurnError });
+      case "turn/end": {
+        // An errored turn must never end silently. LLM failures are captured
+        // earlier (assistant/chunk finish → dshTurnError) and replayed here;
+        // other failures — e.g. the dsh session-log id collision after a child
+        // restart — arrive ONLY on turn/end itself, and without this fallback
+        // the client sees the turn end with no output and no explanation.
+        const reason = ev.data?.reason;
+        if (reason?.kind === "error") {
+          const message = ctx.dshTurnError || reason.error?.message || "The agent turn failed";
+          ctx.broadcast({ type: "error", message });
         }
         ctx.dshTurnError = null;
         break;
+      }
+      case "todo/write": {
+        // The agent's plan — a WHOLE-LIST snapshot (dsh-tool-todo replaces the
+        // list on every call; last write wins). Cached per dsh session for the
+        // rehydration push and broadcast to every web client. Deliberately NOT
+        // cleared on turn boundaries: the plan outlives the turn that wrote it,
+        // and only a new/loaded session resets it (agent-session.js / ws.js).
+        const plan = normalizePlan(ev.data?.todos);
+        if (!plan) {
+          if (process.env.DSH_DEBUG) console.debug("[dsh] todo/write without a todos list; ignored");
+          break;
+        }
+        if (ctx.dshSessionId) ctx.planBySession.set(ctx.dshSessionId, plan);
+        ctx.broadcast({ type: "todos", todos: plan.todos, counts: plan.counts });
+        break;
+      }
       case "permission/preset": {
         // The session's permission preset changed (a live switch via the
         // strip, or the initial pin when a fresh session publishes). Keying on

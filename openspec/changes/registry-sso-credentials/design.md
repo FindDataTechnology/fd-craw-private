@@ -42,6 +42,59 @@ The fallback writes the same credential row (parsed for expiry if the JWT is dec
 3. Ship connect UI + injection behind no flag (absent credential = previous behavior for non-registry entries; registry entries previously required manual paste anyway).
 4. Rollback: revert deploy; table left in place harmlessly; manually pasted installs from V0 continue to work.
 
+## Implementation notes (2026-09-21)
+
+Landed repo-side, verified locally, in the shape the decisions above describe:
+
+- **Schema** — migration v15 `user_registry_credentials(email PK, token,
+  expires_at, stale, source, updated_at)` (`db.js`); CRUD + `registry-credentials.js`
+  (token-free `status`, `store`, `disconnect`, `markStale`, `liveToken`,
+  `tokenExpiry`). With no authenticated identity the key is the machine owner
+  (`machine-owner`), which is what keeps the auth-off paste path working.
+- **API** — `server/routes/registry.js`: `GET /api/registry/connection`,
+  `POST /api/registry/credential` (mint receipt OR manual paste, `source` only
+  for diagnostics), `DELETE /api/registry/connection`. Hosted mode requires an
+  identity; auth off is the machine owner. The payload adds `registryUrl` /
+  `loginPath` / `mint{csrfPath, tokensPath, csrfHeader, defaultTtlHours}` so the
+  popup takes no build-time config, and every path is env-overridable
+  (`MARKET_REGISTRY_LOGIN_PATH`, `MARKET_REGISTRY_CSRF_PATH`,
+  `MARKET_REGISTRY_TOKENS_PATH`) for a registry version that moves a route.
+- **Mint contract as implemented** (`web/public/registry-connect.html`):
+  login leg `GET {registry}{login}?redirect_uri=<popup?leg=mint>` (the parameter
+  name is overridable), mint leg `GET {csrfPath}` then
+  `POST {tokensPath}` with `X-CSRF-Token` and `{expires_in_hours: 168}`,
+  both `credentials: "include"`; the token is accepted from
+  `access_token` / `token` / `jwt_token` / `data.access_token`, posted to the
+  opener, and never stored in the popup. This is DEPLOY.md's recorded shape
+  (task 1.2) — one confirming mint against the deployed registry is still open.
+- **Injection** — `writeMcpPatch({ mcpOverlay, userGroups, ownerEmail })`
+  resolves `credentialRef: "registry"` at each write, dropping the server with a
+  warning when the owner has no live credential; `ctx.runtimeOwnerEmail/-Groups`
+  remember who the profile is for (boot: `CELL_USER_EMAIL` + the owner-groups
+  snapshot; per-request: `applyProfile`). Install stamps the ref and drops the
+  template's placeholder headers (`POST /api/extensions/mcp`, 409
+  `credential-required` without a live credential).
+- **Staleness** — a 401 in a `tool/result` for an `mcp__<server>__<tool>` whose
+  record carries the ref marks the owner's credential stale, pings clients with
+  `registry_credential_stale`, and re-applies the profile once (a second 401 is a
+  no-op until re-connect).
+- **Tests** — `scripts/test-registry-credentials.mjs` (17 unit tests: migration,
+  routes, staleness through the real event path, install branches, injection
+  matrix, paste expiry) and `e2e/registry-connect.spec.js` (5 fast specs: state +
+  paste, one-click silent connect, registry install with/without a credential,
+  disconnect dropping the server from the profile). The fast suite's server now
+  boots against `e2e/registry-stub.js` — a hermetic registry that CORS-allows the
+  platform origin with credentials and mints real JWTs, i.e. the ops
+  configuration task 1.1 still has to apply to `mcp.finddatatech.cloud`.
+- **Two existing unit tests updated** (`scripts/test-role-gated-extensions.mjs`
+  4.1 + its dependent 1.2): their registry fixture entries are registry-origin,
+  so the new install rule requires a credential there. The credential
+  precondition was added; nothing about admission/stamping was weakened.
+
+Still open: 1.1 (registry-side CORS + `SameSite=None; Secure`), 1.2 (one mint
+against the deployed registry), 5.1 (fd-prod pass with a real Logto session), 5.2
+(docs flip after ship).
+
 ## Open Questions
 
 - Exact registry mint endpoint response shape (confirmed `POST /api/tokens/generate` + CSRF from archived spike notes; re-verify at implementation against the deployed registry version).

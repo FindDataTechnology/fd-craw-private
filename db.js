@@ -270,6 +270,62 @@ const MIGRATIONS = [
       `ALTER TABLE extension_configs ADD COLUMN required_groups TEXT`,
     ],
   },
+  {
+    // Machine-caller relay (add-bot-relay-endpoint). `bot_chats` records which
+    // chats have actually talked to each bot — the chat key is otherwise never
+    // persisted (it is hashed one-way into the dsh session id), so this is the
+    // only way a destination can be shown or bound. `bot_channels` binds a
+    // stable name to exactly one (bot, chat_key), which is what a relay caller
+    // addresses. `bot_relay_log` audits every relay attempt.
+    //
+    // No message text in any of the three: the log keeps the length only, and
+    // the chat record keeps identity and timing only (design D4/D5).
+    version: 14,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS bot_chats (
+        bot_id TEXT NOT NULL,
+        chat_key TEXT NOT NULL,
+        sender_name TEXT,
+        first_seen_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        PRIMARY KEY (bot_id, chat_key)
+      )`,
+      `CREATE TABLE IF NOT EXISTS bot_channels (
+        name TEXT PRIMARY KEY,
+        bot_id TEXT NOT NULL,
+        chat_key TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS bot_relay_log (
+        ts TEXT NOT NULL,
+        channel TEXT,
+        bot_id TEXT,
+        text_chars INTEGER,
+        outcome TEXT NOT NULL,
+        error TEXT
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_bot_relay_log_ts ON bot_relay_log(ts)`,
+    ],
+  },
+  {
+    // registry-sso-credentials: one market-proxy credential per user, minted
+    // through the registry's silent SSO popup (or pasted by hand). Keyed by
+    // identity email, never returned to the browser, and referenced from an
+    // installed registry MCP server as `credentialRef: "registry"` — the
+    // effective-profile writer resolves that ref to an Authorization header, so
+    // the token itself never lands in extension_configs.
+    version: 15,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS user_registry_credentials (
+        email TEXT PRIMARY KEY,
+        token TEXT NOT NULL,
+        expires_at TEXT,
+        stale INTEGER NOT NULL DEFAULT 0,
+        source TEXT NOT NULL DEFAULT 'sso',
+        updated_at TEXT NOT NULL
+      )`,
+    ],
+  },
 ];
 
 function nowIso() {
@@ -905,6 +961,58 @@ export function deleteUserMcpBinding(email, name) {
     .run(normalizeIdentityEmail(email), name).changes > 0;
 }
 
+// ── Registry credentials (market proxy token, one row per user) ──────────────
+//
+// The raw token is returned by getRegistryCredential for the overlay writer
+// only. Route handlers must go through registry-credentials.js, whose status
+// projection is token-free by construction.
+
+export function getRegistryCredential(email) {
+  if (!dbReady) return null;
+  const key = normalizeIdentityEmail(email);
+  if (!key) return null;
+  const row = stmt(
+    "SELECT token, expires_at AS expiresAt, stale, source, updated_at AS updatedAt FROM user_registry_credentials WHERE email = ?"
+  ).get(key);
+  return row ? { ...row, stale: !!row.stale } : null;
+}
+
+export function setRegistryCredential({ email, token, expiresAt = null, source = "sso" }) {
+  if (!dbReady) return null;
+  const key = normalizeIdentityEmail(email);
+  if (!key || !token) return null;
+  // A fresh token clears the stale flag: the user just proved the credential
+  // works (or replaced it), so the next overlay write may use it again.
+  stmt(
+    `INSERT INTO user_registry_credentials (email, token, expires_at, stale, source, updated_at)
+     VALUES (@email, @token, @expiresAt, 0, @source, @updatedAt)
+     ON CONFLICT(email) DO UPDATE SET
+       token = excluded.token,
+       expires_at = excluded.expires_at,
+       stale = 0,
+       source = excluded.source,
+       updated_at = excluded.updated_at`
+  ).run({ email: key, token, expiresAt, source, updatedAt: nowIso() });
+  return getRegistryCredential(key);
+}
+
+export function deleteRegistryCredential(email) {
+  if (!dbReady) return false;
+  return stmt("DELETE FROM user_registry_credentials WHERE email = ?")
+    .run(normalizeIdentityEmail(email)).changes > 0;
+}
+
+// 401 from a registry-origin MCP server: keep the row (so the UI can tell
+// "expired" apart from "never connected") but stop injecting it until the user
+// reconnects. `AND stale = 0` makes the return value "the state actually
+// changed", which is what the caller uses to re-apply the profile exactly once
+// per expiry instead of on every failing call.
+export function markRegistryCredentialStale(email) {
+  if (!dbReady) return false;
+  return stmt("UPDATE user_registry_credentials SET stale = 1, updated_at = ? WHERE email = ? AND stale = 0")
+    .run(nowIso(), normalizeIdentityEmail(email)).changes > 0;
+}
+
 // ── Extension configs (MCP servers) ──────────────────────────────────────────
 
 function parsePermissions(raw) {
@@ -1159,4 +1267,107 @@ export function updateBot(id, { name, credentials, enabled }) {
 export function deleteBot(id) {
   if (!dbReady) return false;
   return stmt("DELETE FROM bots WHERE id = ?").run(id).changes > 0;
+}
+
+// ── Bot chats, relay channels, relay audit (add-bot-relay-endpoint) ───────────
+//
+// The relay's destination list. A channel binding is only creatable from a row
+// `upsertBotChat` wrote, so a caller holding the relay token cannot reach a
+// chat this deployment has never seen. None of these rows carries message text.
+
+const BOT_CHAT_COLS =
+  "bot_id AS botId, chat_key AS chatKey, sender_name AS senderName, " +
+  "first_seen_at AS firstSeenAt, last_seen_at AS lastSeenAt";
+
+// Record a verified inbound message's chat. `first_seen_at` is written once;
+// later messages only advance `last_seen_at`, and a later message without a
+// display name keeps the name already known.
+export function upsertBotChat(botId, chatKey, senderName) {
+  if (!dbReady) return false;
+  const now = nowIso();
+  stmt(
+    `INSERT INTO bot_chats (bot_id, chat_key, sender_name, first_seen_at, last_seen_at)
+     VALUES (@bot_id, @chat_key, @sender_name, @now, @now)
+     ON CONFLICT(bot_id, chat_key) DO UPDATE SET
+       last_seen_at = @now,
+       sender_name = COALESCE(excluded.sender_name, bot_chats.sender_name)`
+  ).run({
+    bot_id: String(botId),
+    chat_key: String(chatKey),
+    sender_name: String(senderName ?? "").trim() || null,
+    now,
+  });
+  return true;
+}
+
+export function listBotChats() {
+  if (!dbReady) return [];
+  return db.prepare(`SELECT ${BOT_CHAT_COLS} FROM bot_chats ORDER BY last_seen_at DESC`).all();
+}
+
+export function getBotChat(botId, chatKey) {
+  if (!dbReady) return null;
+  return (
+    stmt(`SELECT ${BOT_CHAT_COLS} FROM bot_chats WHERE bot_id = ? AND chat_key = ?`).get(
+      String(botId),
+      String(chatKey),
+    ) ?? null
+  );
+}
+
+const CHANNEL_COLS = "name, bot_id AS botId, chat_key AS chatKey, created_at AS createdAt";
+
+export function listChannels() {
+  if (!dbReady) return [];
+  return db.prepare(`SELECT ${CHANNEL_COLS} FROM bot_channels ORDER BY name`).all();
+}
+
+export function getChannel(name) {
+  if (!dbReady) return null;
+  return stmt(`SELECT ${CHANNEL_COLS} FROM bot_channels WHERE name = ?`).get(String(name)) ?? null;
+}
+
+// Throws on a duplicate name (the primary key is the authority — a check-then-
+// insert in the route would race the constraint anyway).
+export function createChannel({ name, botId, chatKey }) {
+  if (!dbReady) return null;
+  stmt(
+    `INSERT INTO bot_channels (name, bot_id, chat_key, created_at)
+     VALUES (@name, @botId, @chatKey, @createdAt)`
+  ).run({ name, botId, chatKey: String(chatKey), createdAt: nowIso() });
+  return getChannel(name);
+}
+
+export function deleteChannel(name) {
+  if (!dbReady) return false;
+  return stmt("DELETE FROM bot_channels WHERE name = ?").run(String(name)).changes > 0;
+}
+
+// One row per relay attempt that got past authentication. `text_chars` is the
+// length, never the text — the log answers "to which channel, and did it land"
+// for incident review without becoming a copy of the traffic.
+export function insertRelayLog({ channel, botId, textChars, outcome, error }) {
+  if (!dbReady) return false;
+  stmt(
+    `INSERT INTO bot_relay_log (ts, channel, bot_id, text_chars, outcome, error)
+     VALUES (@ts, @channel, @bot_id, @text_chars, @outcome, @error)`
+  ).run({
+    ts: nowIso(),
+    channel: channel == null ? null : String(channel),
+    bot_id: botId == null ? null : String(botId),
+    text_chars: Number.isInteger(textChars) ? textChars : null,
+    outcome: String(outcome),
+    error: error == null ? null : String(error),
+  });
+  return true;
+}
+
+export function listRelayLog(limit = 50) {
+  if (!dbReady) return [];
+  return db
+    .prepare(
+      `SELECT ts, channel, bot_id AS botId, text_chars AS textChars, outcome, error
+       FROM bot_relay_log ORDER BY ts DESC, rowid DESC LIMIT ?`
+    )
+    .all(Math.max(1, Number(limit) || 50));
 }

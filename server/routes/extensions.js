@@ -2,6 +2,7 @@
 
 import { getFileSkills } from "../skills.js";
 import { getMarketEntries, getSkillContent } from "../../registry-bridge.js";
+import * as registryCredentials from "../../registry-credentials.js";
 
 export function registerExtensionRoutes(ctx) {
   const { app, db, extensionStore, skillMaterialize, broadcast } = ctx;
@@ -27,8 +28,8 @@ export function registerExtensionRoutes(ctx) {
       return res.status(503).json({ error: "Extensions management is disabled (database unavailable)" });
     }
     if (!requireMcpManage(req, res)) return;
-    const { name, config, enabled } = req.body || {};
-    if (!name || !config) {
+    const { name, config: submitted, enabled } = req.body || {};
+    if (!name || !submitted) {
       return res.status(400).json({ error: "Missing name or config" });
     }
     // Market install admission (design D3): resolve the merged catalog entry
@@ -45,6 +46,24 @@ export function registerExtensionRoutes(ctx) {
         return res.status(403).json({ error: `MCP server "${name}" requires one of groups: ${requiredGroups.join(", ")}` });
       }
     }
+    // Registry-origin installs are credential-shaped (registry-sso-credentials):
+    // the record references the installer's stored market credential, and the
+    // Authorization header is resolved at profile-write time. Installing
+    // without a live credential is refused — storing the template's
+    // placeholder would create a server that can never authenticate — so the UI
+    // routes the user to connect (or paste a token) and retries.
+    let config = submitted;
+    if (entry?.origin === "registry") {
+      const status = registryCredentials.status(req.user?.email ?? null);
+      if (!status.connected) {
+        return res.status(409).json({
+          error: "Connect the MCP market (or paste a token) before installing registry servers",
+          code: "credential-required",
+        });
+      }
+      const { headers: _placeholderHeaders, ...rest } = submitted;
+      config = { ...rest, credentialRef: registryCredentials.REGISTRY_CREDENTIAL_REF };
+    }
     try {
       const server = extensionStore.addMcpServer({ name, config, enabled, requiredGroups });
       // broadcast immediately so the UI refreshes right away, then
@@ -53,7 +72,7 @@ export function registerExtensionRoutes(ctx) {
       // saved; the connection is best-effort.
       broadcast({ type: "extensions_changed", resource: "mcp", action: "added", name });
       res.json(server);
-      ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+      ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null, req.user?.email ?? undefined).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
     } catch (err) {
       if (err.message?.includes("UNIQUE constraint")) {
         return res.status(409).json({ error: `MCP server "${name}" already exists` });
@@ -85,7 +104,7 @@ export function registerExtensionRoutes(ctx) {
       if (configChanged || enabledChanged) {
         // dsh owns MCP connections via the profile; rewrite the watched patch so
         // cordis HMR hot-swaps dsh-mcp-client (no restart on the primary path).
-        ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+        ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null, req.user?.email ?? undefined).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
         broadcast({ type: "extensions_changed", resource: "mcp", action: "updated", name });
       }
       res.json(server);
@@ -111,7 +130,7 @@ export function registerExtensionRoutes(ctx) {
     extensionStore.removeMcpServer(name);
     broadcast({ type: "extensions_changed", resource: "mcp", action: "removed", name });
     res.json({ ok: true });
-    ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+    ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null, req.user?.email ?? undefined).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
   });
 
   // Enable or disable an MCP server.
@@ -136,7 +155,7 @@ export function registerExtensionRoutes(ctx) {
     // broadcast + respond immediately; update (dsh hot-swap) in background.
     broadcast({ type: "extensions_changed", resource: "mcp", action: "toggled", name, enabled });
     res.json(updated);
-    ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
+    ctx.dshUpdateMcp?.(ctx.runtimeMcpOverlay, req.user?.groups ?? null, req.user?.email ?? undefined).catch((e) => console.warn(`[extensions] dsh MCP update failed: ${e.message}`));
   });
 
   // List all skills (file-based + custom from database).

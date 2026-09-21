@@ -80,6 +80,9 @@ npm run dist      # 然后才能打包安装程序
 | `NANGO_SECRET_KEY` | Nango connect session 密钥（服务端用，不发往浏览器）。 |
 | `DOCUMENTS_MODEL` | Documents RAG 模型（默认 `deepseek-v4-pro`）。 |
 | `MARKET_REGISTRY_URL` / `MARKET_REGISTRY_TOKEN` | 接入自建 [mcp-gateway-registry](https://github.com/agentic-community/mcp-gateway-registry)：把 registry 里的 MCP 服务器、技能（安装时拉取内容）、Agent 拉进扩展市场与 Agent 目录。组可见性用本地 `registry-groups.json`（已 gitignore）映射；未配置 URL 时仅用内置目录。 |
+| `MARKET_REGISTRY_LOGIN_PATH` / `MARKET_REGISTRY_CSRF_PATH` / `MARKET_REGISTRY_TOKENS_PATH` | registry 的登录页与个人令牌铸造端点路径（默认 `/login`、`/api/auth/csrf-token`、`/api/tokens/generate`）。自建 registry 版本升级改了路由时在这里覆盖，无需改代码。 |
+| `MARKET_REGISTRY_TTL_SECS` | registry 快照刷新周期（秒，默认 300）。 |
+| `BOTS_RELAY_TOKEN` | 机器调用通道（云端 MCP 等服务 → 聊天平台 bot）：`POST /api/bots/relay/send` 以 Bearer 令牌认证，只能发到管理员预先绑定的频道（`/api/bots/channels`，绑定对象必须是与 bot 聊过天的会话）。未设置时该路由返回 404（功能关闭）。令牌只应走可信网络（本机/内网，或你自己前置的 TLS 入口）。 |
 
 想接入自建的 LLM 代理或 SaaS 连接器网关？自行部署后，按 MCP 服务器（`mcp.json`）或目录里的 `external-service` 条目接入即可——项目本身不再附带这两类服务。
 
@@ -256,6 +259,9 @@ Everything sensitive lives in **`.env`** and **`mcp.json`** (both gitignored; te
 | `NANGO_SECRET_KEY` | Server-side Nango secret for connect sessions (never sent to browser). |
 | `DOCUMENTS_MODEL` | Documents RAG model (default `deepseek-v4-pro`). |
 | `MARKET_REGISTRY_URL` / `MARKET_REGISTRY_TOKEN` | Wire in a self-hosted [mcp-gateway-registry](https://github.com/agentic-community/mcp-gateway-registry): its MCP servers, skills (content fetched at install time), and agents appear in the extension market and agent catalog. Group visibility comes from a local `registry-groups.json` (gitignored); without a URL only the bundled catalog is used. |
+| `MARKET_REGISTRY_LOGIN_PATH` / `MARKET_REGISTRY_CSRF_PATH` / `MARKET_REGISTRY_TOKENS_PATH` | Registry routes the connect flow uses: its login page and the personal-token mint (defaults `/login`, `/api/auth/csrf-token`, `/api/tokens/generate`). Override them when a registry version moves a route — no code change needed. |
+| `MARKET_REGISTRY_TTL_SECS` | Registry snapshot refresh interval in seconds (default 300). |
+| `BOTS_RELAY_TOKEN` | Machine-caller channel (cloud MCP services → chat-platform bots): `POST /api/bots/relay/send` authenticates with this bearer token and can only deliver to channels an operator pre-bound (`/api/bots/channels`; a channel binds to a chat that has messaged the bot). Unset (default) makes the route answer 404 — the feature is off. The token must only travel over a network you trust (loopback/LAN, or a TLS ingress you front yourself). |
 
 Want a self-hosted LLM proxy or a SaaS-connector gateway? Run it yourself and wire it in as an MCP server (`mcp.json`) or as an `external-service` entry in the catalog — the project no longer ships either one.
 
