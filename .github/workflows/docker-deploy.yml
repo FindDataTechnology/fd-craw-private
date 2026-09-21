@@ -1,5 +1,24 @@
 # ── CI/CD: build → America Harbor → chengsi bridge → cheap-2 deploy ───────────
 #
+# ⚠️ SUPERSEDED (2026-09-21) — kept for reference, no longer triggered by pushes.
+# The live deploy is k3s `fd-prod` on china-cheap-1, and neither Harbor this
+# workflow names is reachable from a GitHub runner (America Harbor
+# 23.144.68.246:30880 times out; the internal one, 100.64.0.8:30880, is a
+# private address). Every push to main therefore died at `docker/login-action`
+# with "context deadline exceeded", which is pure noise.
+#
+# The working build path (DEPLOY.md § "Per-user market connect" and the
+# architecture notes): build on china-cheap-1 with its existing buildx builder
+# against the internal Harbor, then bump the image tag in the GitOps repo the
+# cluster follows —
+#   1. `docker buildx build --push --builder lawcraw-builder … -t \
+#      100.64.0.8:30880/paas_private/platform:sha-<rev>` on cheap1
+#   2. edit `all-services/prod/platform.yaml` in fd-infra-deploy (Git Gitee)
+#   3. push → ArgoCD `all-services-prod` syncs → `kubectl --context cheap -n
+#      fd-prod rollout status deploy/platform`
+# To revive this workflow, run it manually (Actions → docker-deploy → Run
+# workflow) or give the job a runner that can reach the intended registry.
+#
 # Network reality (all verified 2026-08-29):
 #   - cheap-2 (103.236.89.174:20400) is reachable ONLY from Chinese IPs;
 #     GitHub runners and America cannot SSH in.
@@ -25,22 +44,6 @@
 name: docker-deploy
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'server.js'
-      - '*.js'
-      - 'web/**'
-      - 'scripts/**'
-      - 'supervisor/**'
-      - 'bootstrap/**'
-      - 'skills/**'
-      - 'package*.json'
-      - 'web/package*.json'
-      - 'platform.bundle.json'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - '.github/workflows/docker-deploy.yml'
   workflow_dispatch:
     inputs:
       skip_deploy:

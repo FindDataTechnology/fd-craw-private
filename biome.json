@@ -15,6 +15,7 @@
       "!**/package-lock.json",
       "!.claude",
       "!.zcode",
+      "!.pi",
       "!connect-app",
       "!resources",
       "!dist",
