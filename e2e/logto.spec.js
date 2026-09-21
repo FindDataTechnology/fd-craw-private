@@ -46,7 +46,9 @@ test.describe("AUTH_MODE=logto", () => {
   let bootLog;
   let secret;
   let cookie;
-  const stores = prepareTempStoreDirs();
+  // Its own tree: this spec boots a second server, so it must not share — or,
+  // as a worker-time call, wipe — the webServer's stores.
+  const stores = prepareTempStoreDirs({ subdir: "logto" });
 
   test.beforeAll(async () => {
     const fixturePort = await freePort();
@@ -105,6 +107,11 @@ test.describe("AUTH_MODE=logto", () => {
         MCP_CONFIG_PATH: path.join(stores.root, "mcp.json"),
         LLM_PROVIDERS_STORE: stores.llmProviders,
         LLM_DEFAULT_STORE: stores.llmDefault,
+        // Workers do not inherit the webServer's env, so without these this
+        // server's dsh child would compose against the developer's real ~/.dsh
+        // and rewrite its settings.yaml.
+        DSH_HOME: stores.dshHome,
+        DSH_SHARED_HOME: process.env.DSH_SHARED_HOME || path.join(os.homedir(), ".dsh"),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

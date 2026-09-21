@@ -20,6 +20,17 @@ const MAX_MESSAGE_CHARS = 4000;
 const RATE_LIMIT_PER_MIN = 10;
 const TURN_TIMEOUT_MS = Number(process.env.BOTS_TURN_TIMEOUT_MS) || 180_000;
 
+// Relay guards (add-bot-relay-endpoint, design D6). The same bounds as the
+// inbound pipeline's, named separately so either path can move without the
+// other. The timeout bounds the response a machine caller waits for; the
+// adapters' send fetch takes no AbortSignal, so a hung platform call can
+// outlive the reply (recorded as a risk in the change's design).
+// MAX_RELAY_CHARS is exported for the route's error message — the cap itself is
+// enforced here, at the send.
+export const MAX_RELAY_CHARS = 4000;
+const RELAY_RATE_PER_MIN = 10;
+const RELAY_SEND_TIMEOUT_MS = 15_000;
+
 // v1 posture: bot turns are answer-only. dsh exposes no per-session tool
 // control (tools are auto-allowed by the profile's plugins), so this is
 // enforced in two places that ARE available: an explicit instruction on the
@@ -36,6 +47,7 @@ const state = {
   bots: new Map(), // id → { bot, adapter, stopPoll }
   queues: new Map(), // sessionId → tail promise (serializes turns within a chat)
   buckets: new Map(), // `${botId}:${chatKey}` → { tokens, refilledAt }
+  relayBuckets: new Map(), // channel name → { tokens, refilledAt }
 };
 
 const allowTools = () => process.env.BOTS_ALLOW_TOOLS === "1";
@@ -133,18 +145,26 @@ export { validateCredentials };
 
 // ── Guards ───────────────────────────────────────────────────────────────────
 
-// Per-chat token bucket, refilled continuously. Returns false when the chat has
-// exhausted its allowance for the current window.
-function takeToken(botId, chatKey) {
-  const key = `${botId}:${chatKey}`;
+// Token bucket, refilled continuously. Returns false when `key` has exhausted
+// its allowance for the current window. Shared by the inbound limiter (keyed by
+// bot + chat) and the relay limiter (keyed by channel).
+function takeBucket(store, key, perMin) {
   const now = Date.now();
-  const b = state.buckets.get(key) ?? { tokens: RATE_LIMIT_PER_MIN, refilledAt: now };
-  b.tokens = Math.min(RATE_LIMIT_PER_MIN, b.tokens + ((now - b.refilledAt) / 60_000) * RATE_LIMIT_PER_MIN);
+  const b = store.get(key) ?? { tokens: perMin, refilledAt: now };
+  b.tokens = Math.min(perMin, b.tokens + ((now - b.refilledAt) / 60_000) * perMin);
   b.refilledAt = now;
-  state.buckets.set(key, b);
+  store.set(key, b);
   if (b.tokens < 1) return false;
   b.tokens -= 1;
   return true;
+}
+
+function takeToken(botId, chatKey) {
+  return takeBucket(state.buckets, `${botId}:${chatKey}`, RATE_LIMIT_PER_MIN);
+}
+
+function takeRelayToken(channel, botId, chatKey) {
+  return takeBucket(state.relayBuckets, `${channel}:${botId}:${chatKey}`, RELAY_RATE_PER_MIN);
 }
 
 // ── Turn runner ──────────────────────────────────────────────────────────────
@@ -189,10 +209,25 @@ function collectTurn(ctx, sessionId) {
   });
 }
 
+// ── Seen chats (relay destinations) ─────────────────────────────────────────
+//
+// The chat key only ever arrives with a message, and the dsh session id is a
+// one-way hash of it — so without this record there is no way to enumerate (or
+// bind) a destination. Recorded only after the platform's own verification and
+// the size check, so unverified content still never reaches storage, and
+// failure-isolated: a broken store must not cost the user their answer.
+function recordChat(bot, botId, chatKey, senderName) {
+  try {
+    state.ctx?.db?.upsertBotChat(botId, chatKey, senderName);
+  } catch (e) {
+    console.warn(`[bots] "${bot.name}" could not record the chat: ${e.message}`);
+  }
+}
+
 // Run one agent turn for an inbound message and deliver the reply. Turns within
 // a chat are serialized (queued on the session id); different chats run in
 // parallel. Every failure path still tries to tell the user something.
-export async function handleMessage(botId, { chatKey, text }) {
+export async function handleMessage(botId, { chatKey, senderName, text }) {
   const entry = state.bots.get(botId);
   if (!entry || !entry.bot.enabled) return;
   const { bot, adapter } = entry;
@@ -201,6 +236,7 @@ export async function handleMessage(botId, { chatKey, text }) {
     console.warn(`[bots] "${bot.name}" dropped an oversized/empty message from a chat`);
     return;
   }
+  recordChat(bot, botId, chatKey, senderName);
   if (!takeToken(botId, chatKey)) {
     console.warn(`[bots] "${bot.name}" rate limit hit for a chat; message dropped`);
     return;
@@ -255,4 +291,102 @@ export async function sendTo(botId, chatKey, text) {
   const entry = state.bots.get(botId);
   if (!entry) throw new Error("Bot not found or not running");
   await entry.adapter.sendText(entry.bot.credentials, chatKey, text);
+}
+
+// ── Relay: machine callers on a trusted network ──────────────────────────────
+//
+// Authentication lives in the route (server/routes/bot-relay.js); everything
+// past it is destination resolution, guards, delivery, and audit. Delivery goes
+// through the runtime entry's adapter — the same object the reply path uses —
+// so platform token caches and any polling loop keep exactly one owner in this
+// process (design D1). The caller names a channel; the destination is the
+// admin's binding, so a leaked token can only reach approved chats.
+
+// A bounded response for a machine caller. The adapter's fetch keeps running
+// without an AbortSignal, so this bounds the wait, not the socket.
+function withTimeout(promise, ms) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`send timed out after ${ms}ms`)), ms);
+    }),
+  ]);
+}
+
+// Platform errors quote the request URL, and for Telegram that URL *is* the
+// credential (`/bot<token>/sendMessage`); WeCom/WeChat put an access token in a
+// query string. Both the HTTP answer and the audit row go through this, so a
+// failed send never republishes the bot's credentials.
+function redactCredentials(message, credentials) {
+  let out = String(message ?? "");
+  for (const value of Object.values(credentials ?? {})) {
+    const secret = String(value ?? "");
+    if (secret.length >= 6) out = out.split(secret).join("***");
+  }
+  return out;
+}
+
+// Returns { ok: true } or { ok: false, reason, error }, with `reason` a stable
+// token the route maps to an HTTP status. Every attempt past authentication
+// writes exactly one audit row — length, never text.
+export async function relaySend(channel, rawText) {
+  const db = state.ctx?.db;
+  const text = String(rawText ?? "");
+  const chars = text.length;
+  const audit = (outcome, botId, error) => {
+    try {
+      db?.insertRelayLog({ channel, botId, textChars: chars, outcome, error });
+    } catch (e) {
+      console.warn(`[bots] relay audit write failed: ${e.message}`);
+    }
+  };
+
+  if (!db?.isDbReady()) {
+    console.warn("[bots] relay send refused: database unavailable");
+    return { ok: false, reason: "unavailable" };
+  }
+
+  const binding = db.getChannel(channel);
+  if (!binding) {
+    audit("rejected", null, "unknown channel");
+    return { ok: false, reason: "unknown-channel" };
+  }
+
+  // Deliberately stricter than the admin endpoint (design D7): the relay is
+  // network-reachable, so a disabled bot means the channel is out of service.
+  const bot = db.getBot(binding.botId);
+  if (!bot || !bot.enabled) {
+    audit("rejected", binding.botId, "bot missing or disabled");
+    return { ok: false, reason: "bot-unavailable" };
+  }
+
+  if (!text || chars > MAX_RELAY_CHARS) {
+    audit("rejected", bot.id, text ? "text over the relay cap" : "empty text");
+    return { ok: false, reason: "too-long" };
+  }
+
+  if (!takeRelayToken(binding.name, bot.id, binding.chatKey)) {
+    audit("rejected", bot.id, "channel rate limit");
+    return { ok: false, reason: "rate-limited" };
+  }
+
+  const entry = state.bots.get(bot.id);
+  if (!entry) {
+    audit("rejected", bot.id, "no runtime entry for the bot");
+    return { ok: false, reason: "bot-unavailable" };
+  }
+
+  try {
+    await withTimeout(
+      entry.adapter.sendText(bot.credentials, binding.chatKey, text),
+      RELAY_SEND_TIMEOUT_MS,
+    );
+  } catch (err) {
+    const error = redactCredentials(err.message, bot.credentials);
+    audit("failed", bot.id, error);
+    return { ok: false, reason: "send-failed", error };
+  }
+  audit("sent", bot.id, null);
+  return { ok: true };
 }

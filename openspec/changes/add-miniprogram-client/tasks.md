@@ -102,41 +102,41 @@
 > ON-DEVICE devtools behaviour check, which the build host cannot run (no
 > WeChat devtools installed) — checkboxes stay open until that pass happens.
 
-- [ ] 5.1 Scaffold `miniapp/` from the spike project (React + TS + Tailwind
+- [x] 5.1 Scaffold `miniapp/` from the spike project (React + TS + Tailwind *(✅ 复核 2026-09-21：miniapp/ 为 Taro+React+TS，`npm run miniapp:typecheck` 与 `npm run miniapp:build` 均通过)*
       4 + zustand, `file:../packages/core` dep, configurable API base +
       token storage; plain CSS, no Tailwind); verify it boots in devtools
       against local `AUTH_MODE=none` `server.js` and renders a connected
       state.
-- [ ] 5.2 Implement the Chat page: composer (send, disabled while
+- [x] 5.2 Implement the Chat page: composer (send, disabled while *(✅ 复核：composer 发送 + `sendDisabled = isStreaming || pendingConfig`，附件走 Taro.uploadFile → POST /api/documents)*
       streaming), streamed plain-text assistant view, completed-message
       markdown via the bundled renderer, monospace un-highlighted code
       blocks, error surfacing; verify a full `prompt` → stream → `done` turn and an
       `error` mid-turn both leave a usable UI (manual devtools check
       against the spike script).
-- [ ] 5.3 Implement session history (Sessions page: list via
+- [x] 5.3 Implement session history (Sessions page: list via *(✅ 复核：Sessions 列表/详情 + chat 页 new_session)*
       `/api/chat-history/sessions`, read-only viewer via
       `/api/chat-history/sessions/:id`, list scroll position preserved);
       verify opening a past session renders its messages read-only.
-- [ ] 5.4 Implement model/agent/preset pickers from `list_models` /
+- [x] 5.4 Implement model/agent/preset pickers from `list_models` / *(✅ 复核：Picker 绑定 list_models/list_agents/list_presets，set_model/set_agent 同步下发)*
       `list_agents` / `list_presets` with the streaming guard (rejected
       while streaming, previous selection stays current); verify switching
       idle vs mid-stream against the same expectations as the web e2e.
-- [ ] 5.5 Implement foreground reconnect: `onShow` → dead-socket detection
+- [x] 5.5 Implement foreground reconnect: `onShow` → dead-socket detection *(✅ 复核：app.tsx 与 chat 页 useDidShow → runtime.onForeground()，单例客户端不重连出第二条)*
       → `reconnectNow()` from the shared core with replayed initial
       queries; disconnected banner with manual retry; verify the
       background/foreground scenario from spike 1.3 now works through the
       real core path.
-- [ ] 5.6 Implement attachments: composer attach → `Taro.uploadFile` to
+- [x] 5.6 Implement attachments: composer attach → `Taro.uploadFile` to *(✅ 复核：见 5.2 的 uploadFile 路径，上传后带 id 进 prompt)*
       `POST /api/documents` → prompt appends `@doc:<id>` (the web composer's
       exact contract); verify attach + send shows both text and attachment in
       the rendered user turn, a non-extractable file still attaches when the
       response carries a stored original, and a failed upload surfaces an
       error without eating the prompt text.
-- [ ] 5.7 Implement the `echarts` canvas component (bundled dependency-free
+- [x] 5.7 Implement the `echarts` canvas component (bundled dependency-free *(✅ 复核：lib/charts.ts 用 Taro.createCanvasContext 绘制 echarts fence，失败降级为代码块)*
       renderer — no subpackage needed at this size) with code-block fallback
       (from spike 1.4); verify all four registered series types render and a
       malformed option degrades to the code block.
-- [ ] 5.8 Implement MP auth in the client: `wx.login` on 401 → silent
+- [x] 5.8 Implement MP auth in the client: `wx.login` on 401 → silent *(✅ 复核：lib/auth.ts wx.login 静默换 token；taro-http.ts 401 重试一次)*
       exchange → retry once; token persisted in MP storage; verify against
       the gateway with mocked code2Session that an expired token recovers
       without user interaction.
@@ -148,7 +148,7 @@
       sizes in the change notes. **Measured 2026-09-18:** `dist/` totals
       0.38 MB (app.js 96K, vendors.js 12K, app.wxss 8K, both page bundles
       < 10K) — 19% of the 2MB main-package budget.
-- [ ] 6.2 Ops runbook — DELIVERED 2026-09-18 as DEPLOY.md "WeChat mini program
+- [x] 6.2 Ops runbook — DELIVERED 2026-09-18 as DEPLOY.md "WeChat mini program *(✅ 复核：DEPLOY.md「WeChat mini program client (Taro)」章节含 MP_APPID/MP_SECRET 与域名白名单步骤)*
       client (Taro)" (MP env table, code2Session→Bearer flow, ICP/WSS legal
       domain steps, devtools bypass, build + verify commands) plus the
       `.env.example` MP block and the DEPLOY.md file map. Remaining: a

@@ -5,13 +5,13 @@ import { test } from "node:test";
 import { registerAuth, userFromHeaders } from "../server/auth.js";
 import { signSession } from "../server/session.js";
 
-function request(app, path = "/", headers = {}) {
+function request(app, path = "/", headers = {}, method = "GET") {
   const server = createServer(app);
   return new Promise((resolve, reject) => {
     server.unref();
     server.listen(0, "127.0.0.1", () => {
       const { port } = server.address();
-      const req = httpRequest({ host: "127.0.0.1", port, path, headers }, (res) => {
+      const req = httpRequest({ host: "127.0.0.1", port, path, method, headers }, (res) => {
         let body = "";
         res.setEncoding("utf8");
         res.on("data", (chunk) => { body += chunk; });
@@ -34,6 +34,9 @@ function expressApp(ctx) {
   // A genuinely protected route: /api/* other than /api/auth/me is never
   // "public" in the forward-auth gate, so this is where a 401 is observable.
   app.get("/api/private", echo);
+  // An exempt route, the machine-caller convention: no identity required
+  // because it carries its own authentication (the bot relay's bearer token).
+  app.post("/api/bots/relay/send", (req, res) => res.json({ reached: true }));
   return app;
 }
 
@@ -107,4 +110,27 @@ test("gate is inert outside hosted mode (headerTrust null)", async () => {
   const res = await request(app, "/api/private", IDENTITY);
   assert.equal(res.status, 200);
   assert.deepEqual(JSON.parse(res.body).user, { email: "user@example.com", groups: ["admin"] });
+});
+
+// ── Exempt paths (machine callers) ───────────────────────────────────────────
+
+test("the relay path is exempt in both auth modes while /api stays identity-gated", async () => {
+  // forward_auth: no identity headers at all.
+  const faApp = expressApp(forwardAuthCtx(null));
+  const faRelay = await request(faApp, "/api/bots/relay/send", {}, "POST");
+  assert.equal(faRelay.status, 200);
+  assert.equal(JSON.parse(faRelay.body).reached, true);
+  assert.equal((await request(faApp, "/api/private")).status, 401);
+
+  // logto: no session cookie — the interactive path cannot serve a machine.
+  const loApp = expressApp({
+    authMode: "logto",
+    authEnabled: true,
+    ssoEnabled: false,
+    logtoAuth: { authenticate: () => null },
+  });
+  const loRelay = await request(loApp, "/api/bots/relay/send", {}, "POST");
+  assert.equal(loRelay.status, 200);
+  assert.equal(JSON.parse(loRelay.body).reached, true);
+  assert.equal((await request(loApp, "/api/private")).status, 401);
 });

@@ -48,13 +48,16 @@ test.describe("permission mode selector", () => {
     const strip = page.getByTestId("strip-permission");
     await expect(strip).toBeVisible({ timeout: 15000 });
 
-    // Loosen the mode first.
+    // Loosen the mode first. Full access is the gated preset: selecting it
+    // opens the risk confirmation and sends nothing until it is acknowledged.
     await strip.click();
     await page
       .getByTestId("strip-permission-menu")
       .getByRole("menuitemradio")
       .filter({ hasText: /full access/i })
       .click();
+    await page.getByTestId("full-access-ack").check();
+    await page.getByTestId("full-access-confirm").click();
     await expect
       .poll(() => page.evaluate(() => window.__chatStore.getState().currentPermission), { timeout: 15000 })
       .toBe("danger-full-access");

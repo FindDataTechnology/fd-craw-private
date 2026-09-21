@@ -1,4 +1,4 @@
-import { ChevronRight, Eye, Loader2, Wrench } from "lucide-react";
+import { ChevronRight, Eye, ListChecks, Loader2, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useChatStore, type Block } from "@platform/core";
@@ -21,6 +21,19 @@ function stringify(v: unknown): string {
   }
 }
 
+// A `todo_write` call carries the whole plan as its arguments; the counts for
+// the summary line come from THAT snapshot (not the live store — a historical
+// block must report what it actually wrote). Null when the payload has no list,
+// in which case the line falls back to the bare tool name.
+function planCounts(args: unknown): { done: number; total: number } | null {
+  const list = (args as { todos?: unknown } | null)?.todos;
+  if (!Array.isArray(list)) return null;
+  return {
+    total: list.length,
+    done: list.filter((item) => (item as { status?: unknown })?.status === "completed").length,
+  };
+}
+
 function ToolBlockBase({ block, onToggle }: Props) {
   const { t } = useTranslation();
   const { name, args, state, result, partial, open } = block;
@@ -40,11 +53,17 @@ function ToolBlockBase({ block, onToggle }: Props) {
         : "border-l-success";
   const statusKey =
     state === "running" ? "turn.statusRunning" : state === "error" ? "turn.statusError" : "turn.statusDone";
+  // The plan's own tool owns a line of its own: its content is rendered as the
+  // plan surface, so a generic block repeating the whole list as raw JSON would
+  // be noise (the arguments stay reachable through the expand path).
+  const isPlanUpdate = name === "todo_write";
+  const counts = isPlanUpdate ? planCounts(args) : null;
 
   return (
     <div
       className={cn("overflow-hidden rounded-md border border-border border-l-2 bg-muted/40", accent)}
       data-testid="tool-block"
+      data-tool-name={name}
       data-tool-state={state}
       data-open={open ? "true" : "false"}
     >
@@ -55,8 +74,19 @@ function ToolBlockBase({ block, onToggle }: Props) {
         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted"
       >
         <ChevronRight className={cn("h-3 w-3 transition-transform", open && "rotate-90")} aria-hidden="true" />
-        <Wrench className="h-3 w-3 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 truncate font-mono font-semibold text-foreground">{name}</span>
+        {isPlanUpdate ? (
+          <>
+            <ListChecks className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="min-w-0 truncate font-medium text-foreground">
+              {counts ? t("chat.plan.updated", { done: counts.done, total: counts.total }) : name}
+            </span>
+          </>
+        ) : (
+          <>
+            <Wrench className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="min-w-0 truncate font-mono font-semibold text-foreground">{name}</span>
+          </>
+        )}
         <span
           className={cn(
             "ml-auto flex items-center gap-1 text-[11px] italic",

@@ -60,27 +60,77 @@ class PlatformSdkServer extends HarnessSdkJsonRpcServer {
     return super.initialize(params);
   }
 
+  // Per-agent options are identical for create and resume, so a restart that
+  // also switched the model resumes the old conversation on the NEW model.
+  #agentOptions() {
+    return {
+      provider: this.provider,
+      model: this.model,
+      ...(this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens }),
+    };
+  }
+
+  // Does this session id already own a persisted log? The profile's
+  // persistence service is the jsonl backend (JsonlSessionPersistence), whose
+  // `loadStored(id)` answers undefined for a session this home never stored —
+  // verified inside the composed child, not inferred from the base class (the
+  // base only carries prepare/readRaw). A missing service or a probe failure
+  // degrades to "not persisted": callers then take the stock create path
+  // exactly as they did before this bridge learned to resume.
+  async #isPersisted(sessionId) {
+    const persistence = this.ctx.get("sessionPersistence");
+    if (persistence?.loadStored === undefined) return false;
+    try {
+      return (await persistence.loadStored(SessionId(sessionId))) !== undefined;
+    } catch {
+      return false;
+    }
+  }
+
+  // Lazily create — or RESUME — one session. After a child restart (model /
+  // workspace switch, MCP hot-swap fallback, crash) the platform keeps
+  // prompting session ids whose logs are already on disk. Creating those fresh
+  // is rejected by dsh's persistence layer, and it rejects LATE (at the first
+  // append, as an id-collision turn error), so "create, then recover" is not
+  // available: the stored log has to be probed FIRST and the session resumed
+  // instead. Resume takes the same preset mount through its own
+  // pre-publication setup hook, so a resumed agent is composed identically.
   async createSession(sessionId) {
     const presets = this.ctx.get("agentPresets");
-    if (presets === undefined) return super.createSession(sessionId);
+    const persisted = await this.#isPersisted(sessionId);
+    if (presets === undefined) {
+      // No roster composed. A fresh id still goes through the stock create; a
+      // persisted one has no stock resume equivalent, so resume directly.
+      if (!persisted) return super.createSession(sessionId);
+      const resumed = {
+        handle: await this.ctx.agents.resume({
+          resumeSessionId: SessionId(sessionId),
+          agentOptions: this.#agentOptions(),
+        }),
+      };
+      this.sessions.set(sessionId, resumed);
+      return resumed;
+    }
     // Resolve before creation so an unknown id fails before any session or
     // agent state exists; mount in setup so a broken composition rolls the
     // whole creation back instead of publishing a half-composed agent.
     const preset = await presets.resolve(this.agentPresetId ?? undefined);
-    const rec = {
-      handle: await this.ctx.agents.create({
-        sessionId: SessionId(sessionId),
-        meta: { cwd: this.cwd, agentPreset: preset.id },
-        agentOptions: {
-          provider: this.provider,
-          model: this.model,
-          ...(this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens }),
-        },
-        setup: async (agentCtx) => {
-          await presets.mount(agentCtx, preset.id);
-        },
-      }),
+    const setup = async (agentCtx) => {
+      await presets.mount(agentCtx, preset.id);
     };
+    const handle = persisted
+      ? await this.ctx.agents.resume({
+          resumeSessionId: SessionId(sessionId),
+          agentOptions: this.#agentOptions(),
+          setup,
+        })
+      : await this.ctx.agents.create({
+          sessionId: SessionId(sessionId),
+          meta: { cwd: this.cwd, agentPreset: preset.id },
+          agentOptions: this.#agentOptions(),
+          setup,
+        });
+    const rec = { handle };
     this.sessions.set(sessionId, rec);
     return rec;
   }

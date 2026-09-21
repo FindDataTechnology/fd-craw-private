@@ -1,7 +1,8 @@
 # social-bot-channels Specification
 
 ## Purpose
-TBD - synced from change social-bot-channels. Update Purpose after archive.
+The inbound and outbound bridge between external chat platforms (企业微信 self-built apps, 飞书 custom apps, Telegram, 微信公众号) and the platform's agent: verified platform messages run agent turns on per-(bot, chat) persistent sessions under untrusted-input guards, bots are administered through an admin REST/UI surface, and each chat that messages a bot is recorded server-side so it can be addressed later — including through the machine-caller relay (see `bot-relay`).
+
 ## Requirements
 ### Requirement: The server accepts inbound bot messages from configured chat platforms
 The server SHALL expose per-bot webhook endpoints (`/api/bots/webhook/:botId/:secret`) for 企业微信 (WeCom self-built app), 飞书 (Feishu custom app), Telegram, and 微信公众号 (WeChat official account), each authenticating the request via the platform's own verification mechanism (signature check or payload decryption) plus a per-bot secret in the path BEFORE any payload content reaches the agent. Unauthenticated or unverified requests SHALL be rejected with 403 and their content SHALL NOT be logged.
@@ -113,3 +114,22 @@ The bots module SHALL be inert when no bots are configured, and a failing or mis
 #### Scenario: bad credentials do not crash the server
 - **WHEN** a bot's send API rejects its credentials during a reply
 - **THEN** the failure SHALL be logged, the chat's user notified of the error where possible, and the server SHALL continue serving
+
+### Requirement: Inbound bot messages record their chat for later addressing
+The server SHALL record the chat of every verified inbound bot message — bot id, chat key, sender display name, and first/last-seen timestamps — upserting one row per (bot, chat key), so previously-seen chats are enumerable for administrative channel binding. The record SHALL NOT contain message content. A recording failure SHALL be logged and SHALL NOT block the agent turn or the reply.
+
+#### Scenario: first message from a chat is recorded
+- **WHEN** a verified inbound message arrives from a chat not seen before
+- **THEN** a row for that (bot, chat key) is created carrying the sender display name and the first-seen timestamp
+
+#### Scenario: repeat messages update, never duplicate
+- **WHEN** further messages arrive from a recorded chat
+- **THEN** the existing row's last-seen timestamp is updated and no duplicate row is created
+
+#### Scenario: content is not stored
+- **WHEN** any inbound message is recorded
+- **THEN** only identity and timing fields are stored, never the message text
+
+#### Scenario: recording failure does not affect the conversation
+- **WHEN** recording the chat fails
+- **THEN** the failure is logged and the agent turn and its reply proceed normally

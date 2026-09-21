@@ -1,7 +1,8 @@
 # chat-history Specification
 
 ## Purpose
-TBD - synced from change left-nav-docs-history. Update Purpose after archive.
+Chat sessions as durable, user-facing history: every conversation is mirrored to the project database as it runs, and users can list, start, resume, switch, rename, and delete sessions — the list refreshes after each turn ends, and each session records the workspace it ran in.
+
 ## Requirements
 ### Requirement: Chat sessions are mirrored to the project database as the conversation progresses
 The server SHALL mirror each chat session's user prompts and assistant responses into the project SQLite database (managed by `project-database`) as the conversation progresses - the user message on `prompt` and the assistant's final message on turn completion (`done`). This SHALL apply to **both local dsh agent turns and remote (catalog `agent-remote`) agent turns**: remote turns (streamed via `streamRemoteChat`) SHALL be persisted on stream completion via the same `recordMessage()` path as local turns, so a browser close/reopen does not leave a dangling user message with no reply. The project database SHALL be the store of record for the session list and read-only view APIs. The dsh runtime persists sessions by id to its own disk store; the server SHALL keep the SQLite mirror in sync as turns progress. The server SHALL track a current session in memory. Each session SHALL expose an id, a title (derived from the first user message), creation timestamp, and update timestamp. SQLite writes SHALL be atomic and crash-safe via transactions.

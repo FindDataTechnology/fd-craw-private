@@ -176,6 +176,11 @@ test.describe("AUTH_MODE=forward_auth", () => {
         DOCUMENTS_STORE_DIR: path.join(tmpRoot, "docs"),
         SESSIONS_STORE_DIR: path.join(tmpRoot, "sessions"),
         DB_PATH: path.join(tmpRoot, "app.db"),
+        // Isolate this spawned server's dsh home (see prepareTempStoreDirs):
+        // workers do not inherit the webServer's DSH_HOME, so without this the
+        // child composes against — and rewrites — the developer's real ~/.dsh.
+        DSH_HOME: path.join(tmpRoot, "dsh-home"),
+        DSH_SHARED_HOME: process.env.DSH_SHARED_HOME || path.join(os.homedir(), ".dsh"),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });

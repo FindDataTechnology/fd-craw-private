@@ -19,7 +19,7 @@ The server SHALL include the tool's input arguments in `tool_start` events and t
 - **THEN** the server SHALL send `{ "type": "tool_end", "name": "bash", "result": "<error output>", "isError": true }`
 
 ### Requirement: UI renders tool calls as collapsible blocks
-The chat UI SHALL render each tool call as a collapsible block with the tool name in its header and the input and output in its body, replacing the previous one-line tool indicator.
+The chat UI SHALL render each tool call as a collapsible block with the tool name in its header and the input and output in its body, replacing the previous one-line tool indicator. A `todo_write` call is the exception: because its whole-list snapshot is rendered as the plan surface (see `chat-plan-progress`), its block SHALL render as a single compact summary line naming the tool and the resulting counts (e.g. `更新了计划（3/6）`, localized), with the full arguments available only through the block's expand path. No other tool loses the generic block.
 
 #### Scenario: tool call block shown while running
 - **WHEN** the server sends a `tool_start` event for tool `bash`
@@ -33,6 +33,11 @@ The chat UI SHALL render each tool call as a collapsible block with the tool nam
 #### Scenario: tool block is collapsible
 - **WHEN** the user clicks the block header
 - **THEN** the body SHALL toggle between collapsed and expanded
+
+#### Scenario: todo_write renders as a summary line
+- **WHEN** the assistant calls `todo_write` with a 6-item list of which 3 are completed
+- **THEN** the transcript SHALL render one compact line naming the tool and the `3/6` counts instead of the generic block with raw JSON arguments
+- **AND** the plan surface SHALL show the same list
 
 ### Requirement: UI renders tool errors with distinct styling
 The chat UI SHALL visually distinguish tool calls that ended in error from successful ones.

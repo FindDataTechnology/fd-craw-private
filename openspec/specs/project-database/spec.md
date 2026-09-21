@@ -1,7 +1,7 @@
 # project-database Specification
 
 ## Purpose
-TBD - synced from change sqlite-pageindex-storage. Update Purpose after archive.
+The project's single SQLite database (better-sqlite3, WAL): transactional, idempotent schema migrations applied at startup, graceful degradation when the database cannot open, the persisted stores for chat, documents, the document index, user preferences, and email-keyed runtime bindings, and the one-time idempotent import of the legacy file-based stores.
 
 ## Requirements
 

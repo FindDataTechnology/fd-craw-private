@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import { useChatStore } from "@platform/core";
 import { SlashCommandPicker, type SlashCommand } from "@/components/SlashCommandPicker";
 import { ControlStrip } from "@/components/ControlStrip";
+import { PlanDock } from "@/components/PlanPanel";
 import { HelpDialog } from "@/components/HelpDialog";
 import type { ClientMessage } from "@platform/core";
 import { cn } from "@/lib/utils";
@@ -367,7 +368,11 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
         onPick={handlePick}
         commands={commands}
       />
-      <div className="mx-auto flex max-w-3xl flex-col gap-2 rounded-2xl border border-border bg-background px-3 py-2 focus-within:border-primary">
+      <div className="mx-auto flex max-w-4xl flex-col gap-2 rounded-2xl border border-border bg-background px-3 py-2 focus-within:border-primary">
+        {/* Narrow-viewport plan line (≥ lg it lives in the right-hand panel
+            instead). Inside the pinned composer card, so expanding it consumes
+            message-log height rather than moving the composer. */}
+        <PlanDock />
         {attachments.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[10px] text-muted-foreground" data-testid="composer-attach-count">
@@ -416,75 +421,68 @@ export function Composer({ send, value, onChange, focusTick = 0 }: Props) {
             ))}
           </div>
         )}
-        <div className="flex items-end gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            data-testid="composer-file-input"
-            className="hidden"
-            onChange={(e) => {
-              attachFiles(Array.from(e.target.files ?? []));
-              e.target.value = "";
-            }}
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled}
-            aria-label={t("composer.attach")}
-            data-testid="composer-attach"
-            className={cn(
-              "grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground",
-              "hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40",
-            )}
-          >
-            <Paperclip className="h-4 w-4" />
-          </button>
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onKeyDown={onKeyDown}
-            rows={1}
-            data-testid="composer-input"
-            placeholder={t("composer.placeholder")}
-            className={cn(
-              "min-h-[24px] flex-1 resize-none bg-transparent text-sm text-foreground outline-none",
-              "placeholder:text-muted-foreground",
-            )}
-          />
-          {/* Typing is never disabled — a local-first product must absorb the
-              outage, not punish it: draft while disconnected, send when back. */}
-          {isStreaming ? (
-            <button
-              onClick={stopStreaming}
-              aria-label={t("composer.stop")}
-              data-testid="composer-stop"
-              className={cn(
-                "grid h-8 w-8 place-items-center rounded-full bg-primary-deep text-primary-foreground",
-                "hover:opacity-90",
-              )}
-            >
-              <Square className="h-3 w-3 fill-current" />
-            </button>
-          ) : (
-            <button
-              onClick={submit}
-              disabled={!canSend}
-              aria-label={t("composer.send")}
-              data-testid="composer-send"
-              className={cn(
-                "grid h-8 w-8 place-items-center rounded-full bg-primary-deep text-primary-foreground",
-                "hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
-              )}
-            >
-              <ArrowUp className="h-4 w-4" />
-            </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          data-testid="composer-file-input"
+          className="hidden"
+          onChange={(e) => {
+            attachFiles(Array.from(e.target.files ?? []));
+            e.target.value = "";
+          }}
+        />
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          rows={1}
+          data-testid="composer-input"
+          placeholder={t("composer.placeholder")}
+          className={cn(
+            "min-h-[24px] w-full resize-none bg-transparent text-sm text-foreground outline-none",
+            "placeholder:text-muted-foreground",
           )}
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <ControlStrip send={send} onOpenCommands={openCommands} />
-        </div>
+        />
+        {/* One control row, two clusters, with send/stop as its rightmost
+            element (see ControlStrip). The attachment entry inside the `+` menu
+            clicks the file input above — the upload path is unchanged. */}
+        <ControlStrip
+          send={send}
+          onOpenCommands={openCommands}
+          onAttach={() => fileInputRef.current?.click()}
+          trailing={
+            /* Typing is never disabled — a local-first product must absorb the
+               outage, not punish it: draft while disconnected, send when back. */
+            isStreaming ? (
+              <button
+                onClick={stopStreaming}
+                aria-label={t("composer.stop")}
+                data-testid="composer-stop"
+                className={cn(
+                  "grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary-deep text-primary-foreground",
+                  "hover:opacity-90",
+                )}
+              >
+                <Square className="h-3 w-3 fill-current" />
+              </button>
+            ) : (
+              <button
+                onClick={submit}
+                disabled={!canSend}
+                aria-label={t("composer.send")}
+                data-testid="composer-send"
+                className={cn(
+                  "grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary-deep text-primary-foreground",
+                  "hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
+                )}
+              >
+                <ArrowUp className="h-4 w-4" />
+              </button>
+            )
+          }
+        />
       </div>
       {drag && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-md border-2 border-dashed border-primary bg-primary/5 text-sm text-primary">

@@ -70,7 +70,7 @@ export function ChatWelcome({ onPrefill, send }: Props) {
       data-testid="chat-welcome"
       className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10"
     >
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
         {/* Greeting */}
         <h1 className="text-2xl font-semibold text-foreground">
           {t("chat.welcome.greeting")}

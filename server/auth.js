@@ -18,7 +18,11 @@ import { noteOwnerGroups } from "./owner-groups.js";
 //   /api/bots/webhook/ — chat platforms (WeCom/Feishu/Telegram/WeChat OA);
 //     authenticated by the per-bot path secret plus the platform's own
 //     signature check or payload decryption (see server/routes/bots.js).
-const AUTH_EXEMPT_PREFIXES = ["/api/bots/webhook/"];
+//   /api/bots/relay/ — machine callers on an operator-trusted network (cloud
+//     MCP services); authenticated by a deployment-injected bearer token
+//     compared in constant time, checked before the body is read (see
+//     server/routes/bot-relay.js). Inert (404) with no token configured.
+const AUTH_EXEMPT_PREFIXES = ["/api/bots/webhook/", "/api/bots/relay/"];
 
 export function normalizeAuthPath(value, fallback) {
   const raw = String(value || "").trim();
@@ -48,7 +52,10 @@ const isExempt = (p) => AUTH_EXEMPT_PREFIXES.some((prefix) => p.startsWith(prefi
 // The header the gateway injects alongside the identity headers in hosted mode.
 export const GATEWAY_SECRET_HEADER = "x-cloud-gateway-secret";
 
-function secretMatches(provided, expected) {
+// Constant-time secret compare. Exported for the exempt routes that carry their
+// own authentication (the bot relay's bearer token) — one implementation, so a
+// caller-supplied secret is never compared with `===`.
+export function secretMatches(provided, expected) {
   if (typeof provided !== "string" || !expected) return false;
   const given = Buffer.from(provided);
   const want = Buffer.from(expected);

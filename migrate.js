@@ -24,6 +24,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import * as db from "./db.js";
 import { extractMessageText } from "./chat-history.js";
+import { truncateTitle as truncateTitleShared } from "./lib/persistence.js";
 
 const TITLE_MAX = 60;
 

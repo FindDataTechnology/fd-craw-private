@@ -27,5 +27,5 @@
 
 ## 5. Demo playbook + end-to-end
 
-- [ ] 5.1 Write `docs/vertical-packs.md`: per-pack composition table, operator runbook (Logto/scope/token steps from §1 + V0 manual token paste), canned demo input per pack, expected deliverable shape. Verify: an operator other than the author reproduces one pack demo from the doc alone.
+- [x] 5.1 Write `docs/vertical-packs.md`: per-pack composition table, operator runbook (Logto/scope/token steps from §1 + V0 manual token paste), canned demo input per pack, expected deliverable shape. Verify: an operator other than the author reproduces one pack demo from the doc alone. *(✅ 复核 2026-09-21：docs/vertical-packs.md 214 行，含 §1 包构成总表、§3 operator runbook（Logto/scope/token/registry-groups/技能注册/fd-find-data）、§5 每包预置演示输入与预期交付、§7 回滚、§8 已知边界；四个 pack 全部覆盖。"另一 operator 独立复现"属人工彩排，随 5.2)*
 - [ ] 5.2 Full dress rehearsal of all four packs on fd-prod with fresh demo accounts (V0 tokens). Verify: each canned input produces its expected deliverable; law-bench and fd-* calls visible as real MCP invocations; chat agents reply; wrong-role account sees no pack entries.

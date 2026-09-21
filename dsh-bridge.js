@@ -99,6 +99,11 @@ export class DshBridge {
     // permission overlay MUST come after the preset overlay — it swaps the
     // preset bridge's loader row.
     const args = ["--profile", PROFILE];
+    // Which provider/model this generation was spawned with: a restart carries
+    // the values current at spawn time, and a wrong one here is the difference
+    // between a working turn and "no API key for provider route" — worth one
+    // line in the log rather than a debugging session.
+    console.log(`[dsh-bridge] spawn generation=${this.#generation} provider=${this.#provider} model=${this.#model} cwd=${this.#cwd}`);
     if (this.#mcpPatchPath) args.push("--patch", this.#mcpPatchPath);
     if (this.#skillsPatchPath) args.push("--patch", this.#skillsPatchPath);
     if (this.#presetsPatchPath) args.push("--patch", this.#presetsPatchPath);

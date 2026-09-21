@@ -90,7 +90,7 @@ The React frontend SHALL use shadcn/ui components installed as source files unde
 
 The chat surface at `/chat` SHALL occupy exactly the browser viewport height. The sidebar column, message log, and composer SHALL fit inside the viewport at all times; the browser window itself SHALL NOT gain a page-level vertical scrollbar as chat turns accumulate.
 
-The message log SHALL be the only vertically scrolling region on the chat page. Its intrinsic minimum height SHALL NOT be allowed to expand its ancestors — parent flex/grid tracks that contain the scroller SHALL declare `min-height: 0` (or equivalent) so `overflow-y` engages instead of pushing content past the viewport.
+The message log and the plan progress panel (see `chat-plan-progress`) SHALL be the only vertically scrolling regions on the chat page. Each scroller's intrinsic minimum height SHALL NOT be allowed to expand its ancestors — parent flex/grid tracks that contain a scroller SHALL declare `min-height: 0` (or equivalent) so `overflow-y` engages instead of pushing content past the viewport. On narrow viewports the plan renders as a dock inside the composer card (see `chat-plan-progress`); that dock belongs to the pinned composer stack and its expansion SHALL NOT move the composer.
 
 The composer SHALL remain visible at the bottom edge of the viewport regardless of message-log content length. It SHALL NOT be inside the scrolling region.
 
@@ -107,6 +107,10 @@ The empty-state placeholder (shown when there are no turns) SHALL be laid out in
 #### Scenario: Window resize preserves the pinned composer
 - **WHEN** the browser window is resized (including cross-axis and short viewports)
 - **THEN** the chat surface fills exactly the new viewport height and the composer remains visible without a page-level scrollbar
+
+#### Scenario: Plan panel scrolls without a page scrollbar
+- **WHEN** the plan progress panel is mounted and its list exceeds the panel height
+- **THEN** the panel list SHALL scroll internally and the page SHALL NOT gain a page-level vertical scrollbar
 
 ### Requirement: Chat page has a header when turns exist
 When the chat page has at least one turn (a session is loaded or in progress), the page SHALL render a **session header** above the message log. The header SHALL contain exactly two elements: an editable title (click-to-edit text input that commits on Enter, cancels on Escape, debounced 300ms) and an overflow (`⋯`) trigger.

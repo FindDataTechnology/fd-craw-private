@@ -1,7 +1,8 @@
 # app-navigation Specification
 
 ## Purpose
-TBD - synced from change left-nav-docs-history. Update Purpose after archive.
+The application's left sidebar navigation shell: a canonical tab set (including the Bots entry) with exactly one visible panel per selected tab, the chat session list, the label-free drag-drop overlay, a single status-and-settings footer row, and the collapsible desktop navigation rail.
+
 ## Requirements
 ### Requirement: Left sidebar navigation shell with a canonical tab set
 The web UI SHALL provide a persistent left sidebar navigation containing, in order, the view tabs: **Chat, Knowledge, Agents, Bots, Trace**. These five tabs are the application's *work surfaces* — views the user visits to read or produce content. Configuration surfaces SHALL NOT appear as view tabs: **MCP Servers**, **Skills**, and **Models** are sections of the Settings modal (see `settings-surface`), reached at `/settings/mcp`, `/settings/skills`, and `/settings/models` respectively. The legacy "Dashboard", "Documents", and "Extensions" top-level entries SHALL remain absent; System Status is likewise a Settings section at `/settings/status`. The legacy `/extensions` parent route SHALL NOT be registered. Each view tab SHALL correspond to exactly one main-content panel. On initial load the UI SHALL activate the Chat tab. The sidebar session-list region SHALL remain visible regardless of which view tab is active. The displayed label of each view tab SHALL be resolved from the internationalization (`i18n`) resource bundle, keyed by a stable identifier, so that the label follows the active locale while the tab's identity, ordering, and icon remain stable.

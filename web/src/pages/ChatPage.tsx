@@ -7,6 +7,7 @@ import { Chat } from "@/components/Chat";
 import { ChatHeader } from "@/components/ChatHeader";
 import { ChatWelcome } from "@/components/ChatWelcome";
 import { Composer } from "@/components/Composer";
+import { PlanPanel } from "@/components/PlanPanel";
 import type { ClientMessage } from "@platform/core";
 
 // Chat page: the empty state (ChatWelcome) and the in-session state
@@ -110,18 +111,27 @@ export function ChatPage({ send, onToggleNav }: Props) {
           </button>
         </div>
       )}
-      {isEmpty ? (
-        <>
-          <ChatWelcome onPrefill={prefillComposer} send={send} />
-          <Composer send={send} value={draft} onChange={setDraft} focusTick={focusTick} />
-        </>
-      ) : (
-        <>
-          <ChatHeader send={send} />
-          <Chat send={send} onPrefill={prefillComposer} />
-          <Composer send={send} value={draft} onChange={setDraft} focusTick={focusTick} />
-        </>
-      )}
+      {/* Two columns: the chat column (header + log + composer) and, on wide
+          viewports with a live plan, the progress panel beside it. The panel
+          unmounts when the plan is empty, so the chat column re-centers with
+          no reserved gutter (add-plan-progress-panel). */}
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {isEmpty ? (
+            <>
+              <ChatWelcome onPrefill={prefillComposer} send={send} />
+              <Composer send={send} value={draft} onChange={setDraft} focusTick={focusTick} />
+            </>
+          ) : (
+            <>
+              <ChatHeader send={send} />
+              <Chat send={send} onPrefill={prefillComposer} />
+              <Composer send={send} value={draft} onChange={setDraft} focusTick={focusTick} />
+            </>
+          )}
+        </div>
+        <PlanPanel />
+      </div>
     </main>
   );
 }

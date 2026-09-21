@@ -1,7 +1,7 @@
 # document-management Specification
 
 ## Purpose
-TBD - synced from change left-nav-docs-history. Update Purpose after archive.
+Document ingestion as a local, deterministic pipeline: uploads are extracted and indexed without any LLM calls or platform LLM-provider dependency, and an interrupted upload surfaces a resumable state after a restart.
 
 ## Requirements
 

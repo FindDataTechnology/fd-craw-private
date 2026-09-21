@@ -73,6 +73,9 @@ const syncReadyClient = async (ws) => {
   if (ctx.currentPermission) sendIfOpen(ws, { type: "current_permission", name: ctx.currentPermission });
   await syncPermissionState(ws);
   if (ws.readyState !== ws.OPEN) return;
+  // The live plan (add-plan-progress-panel): pushed after a mid-boot connect
+  // completes so the client agrees with the running session before any turn.
+  if (!sendIfOpen(ws, ctx.planMessage(ctx.dshSessionId))) return;
 
   const sessions = await chatHistory.listSessions();
   if (version !== ctx.sessionVersion) return;
@@ -98,6 +101,10 @@ ctx.wss.on("connection", (ws, req) => {
   if (ws.identity) ctx.sendUserBindings?.(ws, ws.identity.email);
   // Sync the agent-mode selection so the welcome picker can mark it.
   ws.send(JSON.stringify({ type: "current_preset", id: ctx.currentPreset }));
+  // The live plan for the current session (add-plan-progress-panel). Sent
+  // unconditionally — a session with no plan sends the empty list, which the
+  // client treats as "hide the surface" rather than as a stale snapshot.
+  ws.send(JSON.stringify(ctx.planMessage(ctx.dshSessionId)));
   if (ctx.ready.dsh) {
     void syncPermissionState(ws).catch((e) =>
       console.warn(`[chat-history] permission sync on connect failed: ${e.message}`)
@@ -452,6 +459,10 @@ ctx.wss.on("connection", (ws, req) => {
             title: result.title,
             messages: result.messages,
           });
+          // The target session's own plan (or the empty list). The client clears
+          // the plan on session_loaded; this push is what restores it when the
+          // user switches back to a session that had one (add-plan-progress-panel).
+          ctx.broadcast(ctx.planMessage(result.id));
           ctx.broadcast({ type: "session_changed", id: result.id });
           const version = ctx.sessionVersion;
           const sessions = await chatHistory.listSessions();

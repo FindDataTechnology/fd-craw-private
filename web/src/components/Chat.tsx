@@ -67,7 +67,7 @@ export function Chat({ send, onPrefill }: Props) {
           {t("chat.empty")}
         </div>
       ) : (
-        <div className="mx-auto flex max-w-3xl flex-col gap-6">
+        <div className="mx-auto flex max-w-4xl flex-col gap-6">
           {turns.map((t, i) => {
             const isLastUser =
               t.role === "user" && !turns.slice(i + 1).some((x) => x.role === "user");

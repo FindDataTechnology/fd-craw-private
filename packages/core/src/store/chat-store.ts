@@ -23,7 +23,11 @@ import type {
   ServerMessage,
   SessionMeta,
   SkillInfo,
+  TodoCounts,
+  TodoItem,
 } from "../types/ws";
+
+const NO_TODOS: TodoCounts = { pending: 0, inProgress: 0, completed: 0 };
 
 export type ConnStatus = "connecting" | "connected" | "disconnected";
 
@@ -97,6 +101,12 @@ interface State {
   currentSessionId: string | null;
   turns: Turn[];
   isStreaming: boolean;
+  // The agent's plan: the latest `todo/write` snapshot (replaced wholesale on
+  // every write). It outlives turn boundaries by design — cleared only by a
+  // new/loaded session, never by turn/start or turn/end. Empty = no plan, and
+  // the plan surface renders nothing at all.
+  todos: TodoItem[];
+  todoCounts: TodoCounts;
   // True while the remainder of a dismissed run (user stop, or a socket drop
   // mid-stream) must be ignored. dsh has no interrupt RPC, so "stop" is a
   // view-level finalize; without this flag the orphaned run's late events
@@ -266,6 +276,8 @@ export const useChatStore = create<State>((set) => ({
   currentSessionId: null,
   turns: [],
   isStreaming: false,
+  todos: [],
+  todoCounts: NO_TODOS,
   suppressed: false,
   composerDraft: null,
 
@@ -465,6 +477,11 @@ export const useChatStore = create<State>((set) => ({
         case "current_permission":
           return { currentPermission: m.name };
 
+        case "todos":
+          // Whole-list replacement, live write and rehydration push alike.
+          // Counts come from the server so header rendering needs no recount.
+          return { todos: m.todos, todoCounts: m.counts };
+
         case "current_preset":
           return { currentPreset: m.id, pendingConfig: null };
 
@@ -514,6 +531,10 @@ export const useChatStore = create<State>((set) => ({
             ),
             isStreaming: false,
             suppressed: state.suppressed,
+            // A plan belongs to its session: clear on load, then the server's
+            // snapshot push (when the target session has one) repopulates it.
+            todos: [],
+            todoCounts: NO_TODOS,
           };
 
         case "user_bindings":
@@ -577,6 +598,8 @@ export const useChatStore = create<State>((set) => ({
       turns: [],
       isStreaming: false,
       suppressed: state.suppressed || state.isStreaming,
+      todos: [],
+      todoCounts: NO_TODOS,
     }));
   },
 

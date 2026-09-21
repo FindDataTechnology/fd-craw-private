@@ -59,36 +59,47 @@ test.describe("Agent control — composer strip", () => {
   });
 
   test("hidden with fewer than two agents, shown with two or more", async ({ page }) => {
+    // The agent section lives inside the overflow popover now, so each check
+    // opens it first and closes it again with Escape.
     await seed(page, [], null);
+    await page.getByTestId("strip-more").click();
     await expect(page.getByTestId("strip-agent")).toHaveCount(0);
+    await page.keyboard.press("Escape");
 
     await seed(page, [LOCAL], "local");
+    await page.getByTestId("strip-more").click();
     await expect(page.getByTestId("strip-agent")).toHaveCount(0);
+    await page.keyboard.press("Escape");
 
     await seed(page, [LOCAL, REMOTE], "local");
+    await page.getByTestId("strip-more").click();
     await expect(page.getByTestId("strip-agent")).toBeVisible();
   });
 
-  test("renders between workspace and model", async ({ page }) => {
+  test("orders the two clusters: + and permissions, then model, overflow, send", async ({ page }) => {
     await seed(page, [LOCAL, REMOTE], "local");
+    // The permission chip only exists once the roster arrives.
+    await expect(page.getByTestId("strip-permission")).toBeVisible();
     const order = await page.evaluate(() => {
       const strip = document.querySelector('[data-testid="composer-control-strip"]');
       return [...strip.querySelectorAll("[data-testid]")]
         .map((el) => el.getAttribute("data-testid"))
-        .filter((id) => ["strip-workspace", "strip-agent", "strip-model"].includes(id));
+        .filter((id) =>
+          ["strip-plus", "strip-permission", "strip-model", "strip-more", "composer-send"].includes(id),
+        );
     });
-    expect(order).toEqual(["strip-workspace", "strip-agent", "strip-model"]);
+    // Left cluster (context) first, then the runtime cluster, with send last.
+    expect(order).toEqual(["strip-plus", "strip-permission", "strip-model", "strip-more", "composer-send"]);
   });
 
   test("displays the active agent's name and marks it in the menu", async ({ page }) => {
     await seed(page, [LOCAL, REMOTE], "remote-a");
+    await page.getByTestId("strip-more").click();
     await expect(page.getByTestId("strip-agent")).toContainText("Remote A");
 
-    await page.getByTestId("strip-agent").click();
-    const menu = page.getByTestId("strip-agent-menu");
-    await expect(menu).toBeVisible();
-    await expect(menu.getByTestId("strip-menu-item")).toHaveCount(2);
-    await expect(menu.getByRole("menuitemradio", { checked: true })).toContainText("Remote A");
+    const options = page.getByTestId("strip-agent-option");
+    await expect(options).toHaveCount(2);
+    await expect(page.getByRole("menuitemradio", { checked: true })).toContainText("Remote A");
   });
 
   test("selecting an agent emits set_agent and does not block the composer", async ({ page }) => {
@@ -100,26 +111,30 @@ test.describe("Agent control — composer strip", () => {
     await page.getByTestId("composer-input").fill("ready to send");
     await expect(page.getByTestId("composer-send")).toBeEnabled();
 
-    await page.getByTestId("strip-agent").click();
-    await page.getByTestId("strip-agent-menu").getByText("Remote A").click();
+    await page.getByTestId("strip-more").click();
+    await page.getByTestId("strip-agent-option").filter({ hasText: "Remote A" }).click();
 
     await expect
       .poll(() => page.evaluate(() => window.__sent.filter((m) => m.type === "set_agent")))
       .toEqual([{ type: "set_agent", id: "remote-a" }]);
 
     // No restart, so: no spinner, and send stays enabled. Switching the MODEL
-    // here would set pendingConfig and disable it — that is the difference.
-    await expect(page.getByTestId("strip-agent")).not.toHaveAttribute("data-pending", "true");
+    // here would set pendingConfig and disable it — that is the difference. The
+    // overflow trigger is the control that would show a restart spinner (it
+    // carries the workspace switch's), so it is the honest place to assert on.
+    await expect(page.getByTestId("strip-more")).not.toHaveAttribute("data-pending", "true");
     await expect(page.getByTestId("composer-send")).toBeEnabled();
   });
 
   test("renders store state, not the click — the label follows the broadcast", async ({ page }) => {
     await seed(page, [LOCAL, REMOTE], "local");
-    await page.getByTestId("strip-agent").click();
-    await page.getByTestId("strip-agent-menu").getByText("Remote A").click();
+    await page.getByTestId("strip-more").click();
+    await page.getByTestId("strip-agent-option").filter({ hasText: "Remote A" }).click();
 
     // set_agent was swallowed, so no agent_changed came back — the control must
     // still show the OLD agent rather than optimistically showing the new one.
+    // Selecting closes the popover, so reopen it to read the label.
+    await page.getByTestId("strip-more").click();
     await expect(page.getByTestId("strip-agent")).toContainText("Local");
 
     // Once the store reflects the server's broadcast, the label follows.
@@ -129,12 +144,14 @@ test.describe("Agent control — composer strip", () => {
 
   test("disabled while a turn is streaming", async ({ page }) => {
     await seed(page, [LOCAL, REMOTE], "local");
-    await expect(page.getByTestId("strip-agent")).toBeEnabled();
+    await page.getByTestId("strip-more").click();
+    const first = page.getByTestId("strip-agent-option").first();
+    await expect(first).toBeEnabled();
 
     await page.evaluate(() => window.__chatStore.setState({ isStreaming: true }));
-    await expect(page.getByTestId("strip-agent")).toBeDisabled();
+    await expect(first).toBeDisabled();
 
     await page.evaluate(() => window.__chatStore.setState({ isStreaming: false }));
-    await expect(page.getByTestId("strip-agent")).toBeEnabled();
+    await expect(first).toBeEnabled();
   });
 });

@@ -143,6 +143,57 @@ export function registerBotRoutes(ctx) {
     res.json({ ok: true });
   });
 
+  // ── Seen chats + relay channels (admin-gated) ──────────────────────────────
+  //
+  // The destination list a relay caller can address (add-bot-relay-endpoint).
+  // A binding is creatable only from a chat the inbound pipeline recorded, so
+  // the relay token can never be pointed at a chat this deployment has not
+  // seen. These rows carry identity and timing only — no message text, and no
+  // bot credentials.
+
+  const CHANNEL_NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
+  app.get("/api/bots/chats", (req, res) => {
+    if (!ctx.requireAdmin(req, res) || !requireDb(res)) return;
+    const names = new Map(db.listBots().map((b) => [b.id, b.name]));
+    res.json({
+      chats: db.listBotChats().map((c) => ({ ...c, botName: names.get(c.botId) ?? null })),
+    });
+  });
+
+  app.get("/api/bots/channels", (req, res) => {
+    if (!ctx.requireAdmin(req, res) || !requireDb(res)) return;
+    res.json({ channels: db.listChannels() });
+  });
+
+  app.post("/api/bots/channels", (req, res) => {
+    if (!ctx.requireAdmin(req, res) || !requireDb(res)) return;
+    const { name, botId, chatKey } = req.body || {};
+    if (!CHANNEL_NAME_RE.test(String(name ?? ""))) {
+      return res.status(400).json({ error: "Channel name must match [a-z0-9][a-z0-9._-]{0,63}" });
+    }
+    if (!botId || !chatKey) return res.status(400).json({ error: "Missing botId or chatKey" });
+    if (!db.getBot(botId)) return res.status(404).json({ error: "Bot not found" });
+    if (!db.getBotChat(botId, chatKey)) {
+      return res.status(400).json({ error: "That chat has never messaged this bot" });
+    }
+    try {
+      db.createChannel({ name, botId, chatKey });
+    } catch {
+      // The primary key is the authority; a check-then-insert would race it.
+      return res.status(409).json({ error: "Channel name already exists" });
+    }
+    res.json({ channel: db.getChannel(name) });
+  });
+
+  app.delete("/api/bots/channels/:name", (req, res) => {
+    if (!ctx.requireAdmin(req, res) || !requireDb(res)) return;
+    if (!db.deleteChannel(req.params.name)) {
+      return res.status(404).json({ error: "Channel not found" });
+    }
+    res.json({ ok: true });
+  });
+
   // ── Onboarding QR (user entry) ─────────────────────────────────────────────
   // Same posture as the read side of config management: behind the proxy /
   // forward-auth gate like every non-webhook route here, credentials stay

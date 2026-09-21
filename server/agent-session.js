@@ -341,6 +341,11 @@ async function startNewSession() {
   const id = await createNewSession();
   ctx.broadcast({ type: "session_changed", id });
   ctx.broadcast({ type: "session_loaded", id, title: "New chat", messages: [] });
+  // A fresh session carries no plan: broadcast the empty list explicitly (the
+  // client also clears on session_loaded; this keeps every connected client in
+  // agreement). Any previous session's cached plan is deliberately KEPT — it is
+  // that session's state, restored when the user switches back to it.
+  ctx.broadcast(ctx.planMessage(id));
   const version = ctx.sessionVersion;
   const sessions = await chatHistory.listSessions();
   if (version === ctx.sessionVersion) {

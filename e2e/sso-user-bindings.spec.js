@@ -11,11 +11,8 @@ import { baseURL } from "./helpers.js";
 // Optional SSO (SSO_ENABLED=true) layered on AUTH_MODE=none.
 //
 // A second `node server.js` is spawned with SSO_ENABLED=true and isolated
-// stores/DB, so the shared webServer keeps exercising the default (no SSO)
-// path. The spawned server shares $DSH_HOME with the first one (the dsh profile
-// is machine-global); its MCP seed set is therefore deliberately kept to the
-// same names the fast suite uses, and afterAll restores the shared
-// mcp.patch.yml by asking the FIRST server to regenerate it.
+// stores/DB/dsh home, so the shared webServer keeps exercising the default (no
+// SSO) path and its dsh profile is never touched by this spec.
 
 function freePort() {
   return new Promise((resolve) => {
@@ -116,6 +113,11 @@ test.describe("SSO_ENABLED optional identity + user runtime bindings", () => {
         LLM_PROVIDERS_STORE: path.join(tmpRoot, "llm-providers.json"),
         LLM_DEFAULT_STORE: path.join(tmpRoot, "llm-default.json"),
         DB_PATH: DB_FILE,
+        // Isolate this spawned server's dsh home (see prepareTempStoreDirs):
+        // workers do not inherit the webServer's DSH_HOME, so without this the
+        // child composes against — and rewrites — the developer's real ~/.dsh.
+        DSH_HOME: path.join(tmpRoot, "dsh-home"),
+        DSH_SHARED_HOME: process.env.DSH_SHARED_HOME || path.join(os.homedir(), ".dsh"),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -149,8 +151,9 @@ test.describe("SSO_ENABLED optional identity + user runtime bindings", () => {
         child.kill("SIGKILL");
         child = null;
       }
-      // Put the machine-global mcp.patch.yml back to the shared server's set:
-      // a global toggle makes THAT server regenerate the file from its own DB.
+      // Legacy cleanup from when this spec shared the webServer's dsh home:
+      // re-enable the memory MCP on the shared server. Harmless no-op now
+      // that the spawned server writes only to its own isolated home.
       await fetch(`${baseURL}/api/extensions/mcp/memory/enable`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },

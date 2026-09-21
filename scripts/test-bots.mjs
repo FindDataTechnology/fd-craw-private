@@ -210,6 +210,61 @@ test("guard: BOTS_ALLOW_TOOLS unset withholds a tool-derived answer", async () =
   assert.ok(ctx.dshBridge.prompts.at(-1).text.startsWith("You are answering a message"));
 });
 
+// ── Seen chats (add-bot-relay-endpoint) ─────────────────────────────────────
+
+test("a verified inbound message records its chat for later addressing", async () => {
+  sent.length = 0;
+  scriptedTurn = [assistantText("noted")];
+  const bot = await makeBot("chats");
+  const mine = () => db.listBotChats().filter((c) => c.botId === bot.id);
+  const marker = "remember-me-please";
+
+  await deliver(bot, secretOf(bot), update(777, marker));
+
+  const first = mine();
+  assert.equal(first.length, 1);
+  assert.equal(first[0].chatKey, "777");
+  assert.equal(first[0].senderName, "u");
+  assert.equal(first[0].firstSeenAt, first[0].lastSeenAt);
+  // Identity and timing only — the message text never reaches the table.
+  assert.ok(!JSON.stringify(first).includes(marker));
+
+  // A repeat message updates the same row instead of adding another.
+  await new Promise((r) => setTimeout(r, 5));
+  await deliver(bot, secretOf(bot), update(777, "again"));
+  const second = mine();
+  assert.equal(second.length, 1);
+  assert.ok(second[0].lastSeenAt >= first[0].lastSeenAt);
+  assert.equal(second[0].firstSeenAt, first[0].firstSeenAt);
+});
+
+test("an oversized message is not recorded as a chat", async () => {
+  const bot = await makeBot("chatcap");
+  await deliver(bot, secretOf(bot), update(1234, "x".repeat(4001)));
+  assert.equal(db.listBotChats().filter((c) => c.botId === bot.id).length, 0);
+});
+
+test("a recording failure is logged and does not cost the reply", async () => {
+  sent.length = 0;
+  scriptedTurn = [assistantText("still answered")];
+  const bot = await makeBot("chatfail");
+  const realDb = ctx.db;
+  ctx.db = { ...realDb, upsertBotChat() { throw new Error("store down"); } };
+  const warnings = [];
+  const realWarn = console.warn;
+  console.warn = (...args) => { warnings.push(args.join(" ")); };
+
+  try {
+    await deliver(bot, secretOf(bot), update(888, "hello"));
+  } finally {
+    console.warn = realWarn;
+    ctx.db = realDb;
+  }
+
+  assert.deepEqual(sent, [{ chatKey: "888", text: "still answered" }]);
+  assert.ok(warnings.some((w) => w.includes("could not record the chat")));
+});
+
 // ── Onboarding QR endpoint (redesign-bots-surface) ───────────────────────────
 
 test("GET /api/bots advertises the per-type qr capability", async () => {

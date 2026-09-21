@@ -29,8 +29,10 @@ import { registerExtensionRoutes } from "./server/routes/extensions.js";
 import { registerChatHistoryRoutes } from "./server/routes/chat-history.js";
 import { registerTraceRoutes } from "./server/routes/trace.js";
 import { registerUserBindingRoutes } from "./server/routes/user-bindings.js";
+import { registerRegistryRoutes } from "./server/routes/registry.js";
 import { registerFileRoutes } from "./server/routes/files.js";
 import { registerBotRoutes, WEBHOOK_PREFIX } from "./server/routes/bots.js";
+import { registerBotRelayRoutes, RELAY_PREFIX } from "./server/routes/bot-relay.js";
 import { registerExternalServiceRoutes } from "./server/routes/external-services.js";
 import { attachDshEvents } from "./server/dsh-events.js";
 import { attachRuntimeBindings } from "./server/runtime-bindings.js";
@@ -118,9 +120,14 @@ ctx.upload = multer({
 // XML, and every platform signs the body exactly as sent), so they mount their
 // own express.raw parser. Consuming the stream here would leave them with an
 // empty body and break signature verification.
+// The bot relay is excluded for a different reason: its bearer token must be
+// verified before the payload is parsed, so it mounts its own JSON parser
+// inside the route, behind that check.
 const jsonBodyParser = express.json();
 app.use((req, res, next) =>
-  req.path.startsWith(WEBHOOK_PREFIX) ? next() : jsonBodyParser(req, res, next),
+  req.path.startsWith(WEBHOOK_PREFIX) || req.path.startsWith(RELAY_PREFIX)
+    ? next()
+    : jsonBodyParser(req, res, next),
 );
 // HTTP compression for static assets + API JSON (the entry chunk ships ~600KB
 // raw). Must mount before express.static (registered in routes/misc.js).
@@ -140,6 +147,11 @@ registerExtensionRoutes(ctx);
 registerChatHistoryRoutes(ctx);
 registerTraceRoutes(ctx);
 registerUserBindingRoutes(ctx);
+registerRegistryRoutes(ctx);
+// The relay must register BEFORE the bots routes: POST /api/bots/relay/send
+// would otherwise match POST /api/bots/:id/send with id = "relay", and the
+// admin-gated handler there would answer a machine caller.
+registerBotRelayRoutes(ctx);
 registerBotRoutes(ctx);
 // Preview drawer file serving — mounted with the other /api routes, BEFORE the
 // static SPA fallback, so the catch-all cannot shadow /api/files.
@@ -234,7 +246,12 @@ async function initDshAgent() {
   // (per-request identity leaves no boot-time state; the snapshot persists
   // it). Missing snapshot (first boot) ⇒ null ⇒ no filtering.
   const cellOwnerGroups = cellUser ? (await import("./server/owner-groups.js")).readOwnerGroups()?.groups ?? null : null;
-  const mcpPatchPath = await writeMcpPatch({ mcpOverlay: cellMcpOverlay, userGroups: cellOwnerGroups });
+  // The owner the profile is generated FOR: a cell's single user, or nobody
+  // (auth off / shared runtime), where the registry-credential lookup falls
+  // back to the machine owner key.
+  ctx.runtimeOwnerEmail = cellUser || null;
+  ctx.runtimeOwnerGroups = cellOwnerGroups;
+  const mcpPatchPath = await writeMcpPatch({ mcpOverlay: cellMcpOverlay, userGroups: cellOwnerGroups, ownerEmail: ctx.runtimeOwnerEmail });
 
   // Write the skill-filesystem config override (customSkillDirs) so dsh
   // discovers the project's skills/ dir AND the DB-custom-skill materialization
@@ -333,9 +350,13 @@ async function initDshAgent() {
   // the documented fallback (PLATFORM_MCP_HOTSWAP=0, or hot-swap never settles).
   const hotswapEnabled = process.env.PLATFORM_MCP_HOTSWAP !== "0";
   const HOTSWAP_SETTLE_MS = Number(process.env.PLATFORM_MCP_HOTSWAP_SETTLE_MS || 800);
-  ctx.dshUpdateMcp = (mcpOverlay, userGroups = null) => {
+  ctx.dshUpdateMcp = (mcpOverlay, userGroups = null, ownerEmail = undefined) => {
     const update = async () => {
-      const patchPath = await writeMcpPatch({ mcpOverlay, userGroups });
+      // ownerEmail undefined = "keep whoever the runtime last served" (global
+      // routes that do not act for a specific identity); explicit null = the
+      // machine owner (auth off).
+      if (ownerEmail !== undefined) ctx.runtimeOwnerEmail = ownerEmail;
+      const patchPath = await writeMcpPatch({ mcpOverlay, userGroups, ownerEmail: ctx.runtimeOwnerEmail });
       if (hotswapEnabled && patchPath) {
         // The patch file was rewritten atomically (temp+rename inside
         // writeMcpPatch); cordis' Chokidar watcher fires refresh() → dsh-mcp-client

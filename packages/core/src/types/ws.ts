@@ -31,6 +31,7 @@ export type ServerMessage =
   | { type: "current_preset"; id: string }
   | { type: "permissions"; options: PermissionOption[]; current: string | null }
   | { type: "current_permission"; name: string }
+  | { type: "todos"; todos: TodoItem[]; counts: TodoCounts }
   | { type: "catalog_changed" }
   | { type: "skills"; skills: SkillInfo[] }
   | { type: "documents_status"; [k: string]: unknown }
@@ -51,6 +52,9 @@ export type ServerMessage =
   | { type: "dashboard_state"; state: unknown }
   | { type: "extensions_changed"; resource: string; action: string; name: string; enabled?: boolean }
   | { type: "market_changed" }
+  // A 401 from a registry-origin MCP server marked the market credential
+  // stale: the Store re-reads the connection and prompts to reconnect.
+  | { type: "registry_credential_stale" }
   | { type: "user_bindings"; model: BindingModel | null; mcp: McpBindingState[] }
   | { type: "runtime_binding"; model: RuntimeModel | null; mcp: { name: string; enabled: boolean }[] }
   | { type: "runtime_binding_pending"; model: RuntimeModel | null; mcp: { name: string; enabled: boolean }[] };
@@ -142,6 +146,20 @@ export interface PermissionOption {
   name: string;
   label: string;
   description: string;
+}
+
+// One entry in the agent's plan, mirroring the dsh `todo/write` snapshot shape
+// verbatim (no renaming, so raw payloads pass through). The list is replaced
+// wholesale on every write — entries carry no stable id by design.
+export interface TodoItem {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+}
+
+export interface TodoCounts {
+  pending: number;
+  inProgress: number;
+  completed: number;
 }
 
 export interface SessionMeta {
