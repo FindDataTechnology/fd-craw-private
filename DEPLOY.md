@@ -155,6 +155,15 @@ Both entries now sit behind Logto (`/api/auth/me` → `mode: "logto"`), so anyth
 that drives the UI needs a session; the older `http://23.144.68.246:30950` in
 notes below is dead — **no service in the cluster uses NodePort 30950 any more**.
 
+The `fd-prod` deployment runs `100.64.0.8:30880/paas_private/platform:sha-cc148eb`
+(per-user MCP market credentials, deployed 2026-09-21). The image tag lives in the
+GitOps repo (`fd-infra-deploy`, `all-services/prod/platform.yaml`); ArgoCD
+`all-services-prod` syncs it. `kubectl --context cheap -n fd-prod get deploy
+platform -o jsonpath='{.spec.template.spec.containers[0].image}'` is the source of
+truth — and if a rollout seems to ignore a new tag, force a refresh with
+`kubectl --context cheap -n argocd annotate application all-services-prod
+argocd.argoproj.io/refresh=normal --overwrite`.
+
 ### Override the Volces key in-cluster (optional)
 
 ```bash
@@ -228,11 +237,15 @@ otherwise), so the token is mandatory for registry entries to appear.
 
 #### Per-user market connect (registry-sso-credentials) — APPLIED 2026-09-21
 
-The Store's 连接 MCP 市场 button mints a **personal** registry token from a
-popup: the popup opens the registry login (shared Logto session ⇒ no re-typing),
-the registry redirects back to the platform, and the popup calls the registry's
-mint API **cross-origin with credentials** before handing the token to the
-backend (stored per user; it never touches browser storage).
+The Store's 连接 MCP 市场 button mints a **personal** registry token. The registry
+window it opens is the registry's own login page — the platform's sign-in has
+already established a Logto session in the same browser, so the registry's single
+`Continue with Logto` button completes the sign-in with **nothing typed**; the
+platform then mints **cross-origin with credentials** (the registry session
+cookie is `SameSite=None; Secure`) and hands the token to the backend, which
+stores it per user (`user_registry_credentials`). It never touches browser
+storage, and the popup itself is closed by the platform the moment the mint
+lands.
 
 Two registry-side pieces make that cross-origin leg work. Both are now in place
 on china-cheap-1, and both are ops config rather than platform code:
@@ -304,17 +317,47 @@ await fetch("https://mcp.finddatatech.cloud/api/auth/csrf-token", { credentials:
 // → Response{status: 401, type: "cors"}  (a TypeError here means the allowlist is missing this origin)
 ```
 
+**Verified end-to-end on fd-prod (2026-09-21, `sha-cc148eb`, account
+`aloadtree@gmail.com`)** — `scripts/verify-live-connect-flow.mjs` (credentials
+from `LOGTO_EMAIL`/`LOGTO_PASSWORD`; it resets the connection, picks a registry
+entry the deployment does not already serve, and uninstalls it again, so running
+it leaves the environment as it found it):
+
+| Step | Result |
+| --- | --- |
+| Platform sign-in | `/login` → `Sign in with SSO` → Logto → `/chat` |
+| Connect | Connect + the registry's own `Continue with Logto` — **no credential typed anywhere**; connected, `expiresAt` +168 h, `source: sso` |
+| Install a registry entry | form has **no** `Authorization` field, Add enabled immediately; the stored record carries `credentialRef: "registry"` and **no** header |
+| Effective profile on the pod | the entry in `mcp.patch.yml` carries `Authorization: Bearer …` whose JWT `exp` equals the connection's expiry — i.e. the user's own credential, resolved at write time |
+| The credential works | `initialize` → serverInfo `AI Registry`; `tools/list` → 7 tools |
+| Chat turn | answered through the deployed instance (LLM + agent path healthy) |
+| Cleanup | entry uninstalled; the deployment's five managed servers untouched; the credential row left connected |
+
+Two things that runbook should know about the registry side:
+
+- The registry's login page is **not** an automatic redirect: the first connect
+  takes one extra click (`Continue with Logto`) on the registry's own origin,
+  which the platform cannot click for the user. Afterwards the registry cookie
+  lives for 24 h, so repeat connects are a single click on Connect.
+- That card renders **"No login methods are currently configured"** when its own
+  `/api/auth/providers` call loses the race against a busy page load (observed
+  while the SPA was still fetching its bundle; the endpoint itself stays 200).
+  A reload fixes it, so the verification script retries the window; if a demo
+  operator ever sees it, reload the window (or just click Connect again). The
+  paste fallback stays available at all times.
+
 Rollback: restore `extra_env/registry.env` / the `.conf` from its `.bak-*`
 backup and recreate the container. Registry routes moved in a version bump?
 Override the paths instead of patching code: `MARKET_REGISTRY_LOGIN_PATH`,
 `MARKET_REGISTRY_CSRF_PATH`, `MARKET_REGISTRY_TOKENS_PATH`.
 
-While the allowlist is missing an origin, the paste fallback is the supported
-path: the same dialog takes a token minted via the registry UI's "Get JWT Token",
-stores it in the same per-user row, and drives exactly the same injection
-(`Authorization` resolved at profile-write time, servers omitted with a warning
-when the credential is missing/stale/expired — see the `registry-credentials`
-and `dsh-runtime-bridge` specs for the profile side).
+If the allowlist is missing an origin — or the registry is unreachable, or the
+account cannot sign in there — the paste fallback is the supported path: the same
+dialog takes a token minted via the registry UI's "Get JWT Token", stores it in
+the same per-user row with `source: "paste"`, and drives exactly the same
+injection (`Authorization` resolved at profile-write time, servers omitted with a
+warning when the credential is missing/stale/expired — see the
+`registry-credentials` and `dsh-runtime-bridge` specs for the profile side).
 
 ### Bot relay (machine callers → chat-platform bots)
 

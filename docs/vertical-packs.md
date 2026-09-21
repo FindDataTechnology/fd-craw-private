@@ -22,7 +22,7 @@
 ## 2. 演示动线（每包约 5 分钟）
 
 1. 用带对应角色的账号登录 fd-prod → 左侧 Store。
-2. **连接 MCP 市场**（见 §4 凭据；registry-sso-credentials 上线前为 V0：粘贴预签 token）。
+2. **连接 MCP 市场**（见 §4 凭据）。V1 已上线：点"连接 MCP 市场"→ registry 页面点 `Continue with Logto`（共享 Logto 会话，**全程不输入任何凭据**）。
 3. 安装包的 MCP（勾选后无需再填 token）→ 安装入口技能（技能热加载，即装即用）。
 4. 进入 Chat，选择包的 agent（合同审查官/案件分析师/行业分析师）。
 5. 粘贴 §5 的演示输入 → 全流程跑完。
@@ -142,15 +142,18 @@ FindData 商业数据 MCP（zihan 机 `100.64.0.4:30803`，Tailscale 可达）�
 - **端到端验证**：公网网关 `law_search(title_query=劳动合同)` 返回真实法规（劳动合同法/实施条例/上海条例 + 效力状态）。
 - **边界**：类案（裁判文书）检索无数据源；该服务器的法规库不含司法案例。
 
-## 4. MCP 凭据（V0 → V1）
+## 4. MCP 凭据（V1 已上线，V0 为回退）
 
-**V0（现状，演示日执行）**：
-- 每个演示账号提前 mint 一次 registry JWT（registry UI → 登录 → Get JWT Token；TTL 168h=7 天）→ 安装 registry MCP 时粘贴进 token 表单。
-- **法律-合同包额外一步**：该账号存一次 law-bench PAT（§3.3 命令，30 天有效）。
-- fd-\* 包（股票/中国经济）：JWT 粘贴即可，无额外凭据。
-- 7 天内同账号免重复（PAT 30 天）。
+**V1（现状，2026-09-21 起，fd-prod `sha-cc148eb` 起可用）**：
+- Store 页 → **连接 MCP 市场**。无 registry 会话时弹出一个 registry 窗口，点其中的 `Continue with Logto` 即完成（复用平台登录建立的 Logto 会话，**不输入任何凭据**）；已有 registry 会话时点一次即连上。凭据按用户存储（`user_registry_credentials`），TTL 168h。
+- 安装 registry 来源的 MCP 时表单**不再出现 token 栏**：记录只存 `credentialRef: "registry"`，真实 token 在写入 dsh profile 时按用户解析注入（`mcp.patch.yml` 里的 `Authorization: Bearer …`）。
+- 凭据过期或被 registry 拒绝：首个 401 会把该凭据标记为 stale 并推 `registry_credential_stale`，Store 显示"重新连接"提示——**重新连接即可，无需重装 MCP**。
+- **法律-合同包额外一步**：law-bench 的后端凭据（`MCB_HTTP_TOKEN`）由 registry 侧 egress PAT 注入（§3.3），与用户凭据无关，演示账号无需操作。
+- 现场实测（2026-09-21，`aloadtree@gmail.com`）：连接 → 安装 registry MCP → profile 注入 → `initialize`/`tools/list` 成功（7 工具）→ 一轮对话 → 卸载，全程零凭据输入。复现脚本：`scripts/verify-live-connect-flow.mjs`。
 
-**V1（`registry-sso-credentials` 落地后）**：Store 页"连接 MCP 市场"一键静默 SSO（共享 Logto 会话）→ 安装表单不再出现 token 栏。law-bench PAT 流程另行评估是否并入。
+**V0（回退路径，registry 会话拿不到时用）**：
+- registry UI → 登录 → Get JWT Token（TTL 168h）→ 在 Store 的连接面板选"粘贴 token"。
+- 存储、注入、过期处理与 V1 完全一致（只有取得 token 的方式不同）。
 
 law-bench 为 `group-restricted`：客户账号 mint 的 JWT 必须含 `legal` 组（§3.2 配好后自动带上），否则安装后调用仍 401。
 
@@ -209,6 +212,6 @@ fd-prod 部署：`FD_TOKEN_API_KEY` 进 `platform-secrets`，`AGENTS_CONFIG_URL`
 
 - 案件包的**法条检索已实**（`fd-find-data-business-mcp` 的 `law_search`/`law_read`，真实法规库）；**类案（裁判文书）检索仍无数据源**，演示时如实说明。
 - chatlaw / fingpt 卡片是生态展示（GitHub link），对话入口用包的 chat agent。
-- 168h token 到期后安装的 MCP 会 401——演示季内每日检查，或等 V1 自动化；law-bench 的 PAT 有效期 30 天（至 2026-10-18，admin 账号）。
+- 凭据 TTL 168h：到期后已安装的 MCP 会 401，平台随即把凭据标为 stale 并在 Store 提示"重新连接"（点一次 `Continue with Logto` 即恢复，无需重装）。law-bench 的 egress PAT 有效期 30 天（至 2026-10-18，admin 账号），与用户凭据互不影响。
 - 公开 LLM 网关偶发 502（实测约 1/5 瞬时抖动，重试即恢复；平台 agent 调用无自动重试）——演示时若首答失败，重发一次即可。
 - registry 的 egress 相关 API（Connected Accounts 自助存 PAT）被 safeline WAF 拦截（404），目前由 admin 直连 cheap1 代存（§3.3）。

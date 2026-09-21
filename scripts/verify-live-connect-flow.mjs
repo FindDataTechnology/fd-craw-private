@@ -68,27 +68,73 @@ async function fillLogtoForm(page, timeoutMs = 30_000) {
 async function signInPlatform(page) {
   await page.goto(`${PLATFORM}/login`, { waitUntil: "domcontentloaded", timeout: 90_000 });
   await page.waitForTimeout(3000);
+  // With AUTH_MODE=logto the page is a landing card, not a redirect: it takes
+  // the "Sign in with SSO" click to reach the identity provider.
+  if (!/auth\.finddatatech\.cloud/.test(page.url())) {
+    const sso = page.getByRole("link", { name: /sign in with sso/i });
+    if (await sso.isVisible().catch(() => false)) {
+      await sso.click();
+      await page.waitForTimeout(4000);
+    }
+  }
   if (!/auth\.finddatatech\.cloud/.test(page.url())) return page.url();
   await fillLogtoForm(page);
   await page
     .waitForURL((u) => !/auth\.finddatatech\.cloud/.test(u.href), { timeout: 90_000 })
     .catch(() => {});
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(2000);
   return page.url();
 }
 
-// The registry window either closes itself (the Logto session from the platform
-// sign-in is enough) or lands on Logto. If it asks, answer with the same account
-// — and say so, because "nothing typed in the platform" is the claim under test.
-async function handleRegistryWindow(popup) {
-  if (!popup) return "no window (session already live)";
-  await popup.waitForLoadState("domcontentloaded", { timeout: 30_000 }).catch(() => {});
-  if (!/auth\.finddatatech\.cloud/.test(popup.url())) return `opened at ${popup.url().slice(0, 60)}, no login needed`;
-  await fillLogtoForm(popup, 20_000).catch(() => {});
-  await popup
-    .waitForURL((u) => !/auth\.finddatatech\.cloud/.test(u.href), { timeout: 60_000 })
-    .catch(() => {});
-  return "the registry window had to sign in to Logto first";
+// The registry window either closes itself (a registry session already lives in
+// this browser) or lands on the registry's own login page, which offers exactly
+// one button: "Continue with Logto". Clicking it completes the SSO sign-in with
+// NO credential typed (the platform's sign-in already established the Logto
+// session) and sets the registry's own SameSite=None session cookie, which is
+// what the platform-side mint then rides on.
+//
+// It runs concurrently with the state poll, and it NEVER throws: the platform
+// closes this window itself the moment the mint lands, so "the window went away
+// mid-sentence" is the success path, not an error.
+async function driveRegistryWindow(popup) {
+  if (!popup) return "no window at all (registry session already live) — one click";
+  try {
+    await popup.waitForLoadState("domcontentloaded", { timeout: 30_000 }).catch(() => {});
+    // The registry's login card renders "No login methods are currently
+    // configured" when its own /api/auth/providers call loses the race against
+    // whatever else the browser is loading — observed while the platform SPA was
+    // still fetching its bundle. Reloading it clears it, so retry rather than
+    // report a registry hiccup as a connect failure.
+    let hasLogos = false;
+    for (let attempt = 1; attempt <= 3 && !hasLogos; attempt++) {
+      hasLogos = await popup
+        .getByRole("button", { name: /continue with logto/i })
+        .isVisible({ timeout: 12_000 })
+        .catch(() => false);
+      if (!hasLogos && attempt < 3) {
+        await popup.reload({ waitUntil: "domcontentloaded" }).catch(() => {});
+        await popup.waitForTimeout(3000);
+      }
+    }
+    if (hasLogos) {
+      await popup.getByRole("button", { name: /continue with logto/i }).click();
+      if (/auth\.finddatatech\.cloud/.test(popup.url())) {
+        // Only reachable if Logto itself asks: report it, because it contradicts
+        // the "nothing typed" claim.
+        await fillLogtoForm(popup, 20_000).catch(() => {});
+        return "the registry window went through Logto WITH a form — finding";
+      }
+      return `"Continue with Logto" clicked on the registry's own page (still nothing typed) — two clicks`;
+    }
+    if (/auth\.finddatatech\.cloud/.test(popup.url())) {
+      await fillLogtoForm(popup, 20_000).catch(() => {});
+      return "the registry window had to sign in to Logto (credentials typed) — finding";
+    }
+    const text = await popup.locator("body").innerText().catch(() => "");
+    return `nothing to click at ${popup.url().slice(0, 60)} — page said "${text.replace(/\s+/g, " ").slice(0, 80)}"`;
+  } catch (err) {
+    return `window was closed by the platform while it was being driven (${String(err.message).split("\n")[0].slice(0, 60)}) — the mint had landed`;
+  }
 }
 
 const browser = await chromium.launch({ args: ["--proxy-server=direct://"] });
@@ -117,6 +163,10 @@ try {
   // ── 3. one click connects the market ────────────────────────────────────
   await page.goto(`${PLATFORM}/settings/mcp`, { waitUntil: "domcontentloaded", timeout: 90_000 });
   await page.getByTestId("extensions-page").waitFor({ state: "visible", timeout: 45_000 });
+  // Let the SPA finish loading before opening the registry window: its login
+  // card gives up on its own provider list if it loses the race for the
+  // browser's connections to whatever is still in flight here.
+  await page.waitForLoadState("networkidle", { timeout: 30_000 }).catch(() => {});
   await page.getByRole("button", { name: /store/i }).click();
   const panel = page.getByTestId("mcp-market-section").getByTestId("registry-connect-panel");
   await panel.waitFor({ state: "visible", timeout: 45_000 });
@@ -124,8 +174,10 @@ try {
 
   const popupPromise = ctx.waitForEvent("page", { timeout: 15_000 }).catch(() => null);
   await panel.getByTestId("registry-connect").click();
-  const how = await handleRegistryWindow(await popupPromise);
-  ok(`registry window: ${how}`);
+  // Drive the window and poll the state at the same time: the click that opens
+  // the SSO pass-through and the mint that follows it are one continuous race,
+  // and the window disappears the instant the mint lands.
+  const howPromise = popupPromise.then((popup) => driveRegistryWindow(popup));
 
   const deadline = Date.now() + CONNECT_TIMEOUT_MS;
   let state = await panel.getAttribute("data-registry-state");
@@ -133,6 +185,7 @@ try {
     await page.waitForTimeout(1500);
     state = await panel.getAttribute("data-registry-state");
   }
+  ok(`registry window: ${await howPromise}`);
   if (state !== "connected") throw new Error(`one-click connect did not complete (state=${state})`);
   const conn = await page.evaluate(() => fetch("/api/registry/connection").then((r) => r.json()));
   if (!conn.connected || !conn.expiresAt) throw new Error(`unexpected connection payload: ${JSON.stringify(conn)}`);
@@ -180,9 +233,15 @@ try {
   ok("install dialog: no credential field, Add enabled immediately");
 
   await page.getByTestId("form-submit").click();
-  await page.waitForTimeout(6000);
-  const servers = await page.evaluate(() => fetch("/api/extensions/mcp").then((r) => r.json()));
-  const installed = (servers.servers || []).find((s) => s.name === target);
+  // The install round-trips through the DB, the profile write and a market
+  // refresh, so poll for the record rather than guessing one sleep.
+  let installed = null;
+  const installDeadline = Date.now() + 30_000;
+  while (Date.now() < installDeadline && !installed) {
+    await page.waitForTimeout(1500);
+    const servers = await page.evaluate(() => fetch("/api/extensions/mcp").then((r) => r.json()));
+    installed = (servers.servers || []).find((s) => s.name === target) || null;
+  }
   if (!installed) throw new Error(`${target} was not installed`);
   if (installed.config?.credentialRef !== "registry") {
     throw new Error(`no credentialRef on the record: ${JSON.stringify(installed.config)}`);
@@ -199,12 +258,20 @@ try {
   // at THIS entry only: from its serverName to the next list item.
   const flat = patch.replace(/\s+/g, " ");
   const at = flat.indexOf(`serverName: ${target}`);
-  if (at < 0) throw new Error(`${target} is not in the profile the pod loads:\n${patch.slice(0, 600)}`);
+  if (at < 0) {
+    throw new Error(`${target} is not in the profile the pod loads (names present: ${[...patch.matchAll(/serverName: ([^\s]+)/g)].map((m) => m[1]).join(", ")})`);
+  }
   const rest = flat.slice(at);
   const nextItem = rest.indexOf("- id: ", 10);
   const entry = nextItem > 0 ? rest.slice(0, nextItem) : rest;
-  const bearer = entry.match(/Authorization: Bearer ([A-Za-z0-9._~+/-]+=*)/);
-  if (!bearer) throw new Error(`${target}'s profile entry carries no resolved Authorization header:\n${entry.slice(0, 300)}`);
+  // Folded scalars put the ">-" marker between the key and the value.
+  const bearer = entry.match(/Authorization: (?:>-\s*)?Bearer\s+([A-Za-z0-9._~+/-]+=*)/);
+  if (!bearer) {
+    // Never echo the entry itself: it would print a live token.
+    throw new Error(
+      `${target}'s profile entry carries no resolved Authorization header (entry: ${entry.replace(/Bearer\s+\S+/g, "Bearer <redacted>").slice(0, 200)})`,
+    );
+  }
 
   // The header must be the user's own stored credential — cross-check the token
   // itself against the connection's reported expiry (a token-free comparison:
