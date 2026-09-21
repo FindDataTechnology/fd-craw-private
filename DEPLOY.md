@@ -171,6 +171,17 @@ curl -s "http://103.236.89.212:31000/job/platform/lastBuild/consoleText" | tail 
 The build log's `Pushed 100.64.0.8:30880/paas_private/platform:sha-<7>` line names the tag
 to deploy next.
 
+Two things about this host. **It is the production node** — cheap-3 also runs the single
+`fd-prod` platform pod, the image registry and the proxy, so a build that exhausts its
+memory takes the site down with it: builds #14 and #16 on 2026-09-21 died that way
+(`SystemOOM` killed kubelet, registry and proxy; the site 502s until the node recovers).
+The Dockerfile therefore caps build-time memory in its builder stage
+(`NODE_OPTIONS=--max-old-space-size=1024`, `UV_THREADPOOL_SIZE=2`) — keep that cap. And the
+built-in node has **one executor**, so a trigger can wait at "Waiting for next available
+executor" behind other services' jobs; the build checks out the branch **tip at build
+start**, so the log's `Checking out Revision …` line — not the push that triggered it —
+names the commit being tagged.
+
 ### 2. Deploy it — hand commit in the GitOps repo
 
 ```bash
@@ -256,6 +267,31 @@ ASSISTANT_NAME=Your Name Here
 # then roll the pod.
 kubectl -n fd-prod rollout restart deploy/platform
 ```
+
+#### Chat fixes: pack agents on the local runtime, folded reasoning, one name — APPLIED 2026-09-22
+
+Live on `sha-a90c2b1` (`fd-prod`, `ASSISTANT_NAME=FD`). Four reported defects, one
+cause: a chat-mode catalog agent was forked to its entry's bare OpenAI endpoint, so
+the turn had no persona, no tools and no history ("the agent has no memory", "the
+conversation cannot see the marketplace MCPs"). A chat agent is now served by the
+**local runtime with a generated persona preset** (see `docs/vertical-packs.md` §6.1),
+an entry that really is a remote service opts out with `"local": false`, and the fork
+path replays the mirrored conversation. Reasoning folds when a turn completes (a
+reader who expanded it keeps it open), and `ASSISTANT_NAME` reaches the sidebar,
+turn header, composer placeholder, tab title and the built-in agent's picker row.
+
+Verify a deployment after any chat change:
+
+```bash
+node scripts/verify-live-chat-fixes.mjs          # Playwright probe; creds from .env
+# and pod-side: the newest sessions' preset, persona line and MCP tool count
+kubectl -n fd-prod exec deploy/platform -- node /app/scripts/inspect-live-session.mjs
+```
+
+Selecting a pack agent is a **preset switch** (the dsh child restarts, ~10 s; the
+composer blocks until `agent_changed`). `user_preferences.agent.preset` is what a
+restart composes — the pick made before the pack is parked under
+`agent.preset.own`, which a switch back to the built-in agent restores.
 
 ### Registry market token (live layout: `fd-prod` namespace)
 
