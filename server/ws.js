@@ -153,6 +153,9 @@ ctx.wss.on("connection", (ws, req) => {
           }
           // Set in-flight synchronously (before the first await) so a concurrent
           // prompt is rejected. agent_start sets it again later (idempotent).
+          // A stale navigation-stop marker means the old turn already settled;
+          // this new turn must own its own errors.
+          ctx.promptStoppedByNavigation = false;
           ctx.isStreaming = true;
           try {
             // Skill invocation: emit a skill_use block and suppress the raw
@@ -175,8 +178,14 @@ ctx.wss.on("connection", (ws, req) => {
             promptText = await skills.expandDocRefs(ctx, promptText);
             await ctx.session.prompt(promptText);
           } catch (err) {
-            console.error("Agent error:", err.message);
-            ctx.broadcast({ type: "error", message: err.message });
+            // The user navigated away and stopStreamingForSessionNavigation
+            // closed the child; the resulting RPC rejection is intentional.
+            const stoppedByNavigation = ctx.promptStoppedByNavigation;
+            ctx.promptStoppedByNavigation = false;
+            if (!stoppedByNavigation) {
+              console.error("Agent error:", err.message);
+              ctx.broadcast({ type: "error", message: err.message });
+            }
             // Finish the turn (reset streaming, emit done, refresh sessions) so a
             // failed turn does not wedge the UI or block model-switch/new-session.
             ctx.finishTurn();
@@ -208,6 +217,8 @@ ctx.wss.on("connection", (ws, req) => {
           // No steer mechanism through the bridge; reject concurrent prompts
           // host-side (Task 2.7) rather than queueing a second turn. Set the
           // guard before the first await so a concurrent prompt cannot enter.
+          // Same stale-marker contract as the skill branch above.
+          ctx.promptStoppedByNavigation = false;
           ctx.isStreaming = true;
           try {
             ctx.broadcast({ type: "user", text });
@@ -226,8 +237,13 @@ ctx.wss.on("connection", (ws, req) => {
               await ctx.session.prompt(promptWithDocs);
             }
           } catch (err) {
-            console.error("Agent error:", err.message);
-            ctx.broadcast({ type: "error", message: err.message });
+            // Intentional child shutdown for session navigation — not an error.
+            const stoppedByNavigation = ctx.promptStoppedByNavigation;
+            ctx.promptStoppedByNavigation = false;
+            if (!stoppedByNavigation) {
+              console.error("Agent error:", err.message);
+              ctx.broadcast({ type: "error", message: err.message });
+            }
             // Finish the turn (reset streaming, emit done, refresh sessions) so a
             // failed turn does not wedge the UI or block model-switch/new-session.
             ctx.finishTurn();

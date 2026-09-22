@@ -49,10 +49,31 @@ function bumpSessionVersion() {
   ctx.sessionVersion = (ctx.sessionVersion || 0) + 1;
 }
 
+// Leaving the live chat mid-turn must not leave the old response streaming into
+// the new transcript. dsh has no interrupt RPC, so a local turn is stopped the
+// only reliable way available: close the child (the bridge immediately respawns
+// with the same profile/MCP config). A remote-agent fork owns its fetch, so its
+// AbortController is enough. In both cases finishTurn() first releases the UI;
+// the subsequent bridge.exit then sees an idle runtime and adds no error banner.
+async function stopStreamingForSessionNavigation() {
+  if (!ctx.isStreaming) return;
+  const remoteAbort = ctx.activeRemoteTurnAbort;
+  ctx.finishTurn();
+  if (remoteAbort) {
+    remoteAbort.switchedAway = true;
+    if (ctx.activeRemoteTurnAbort === remoteAbort) ctx.activeRemoteTurnAbort = null;
+    remoteAbort.abort();
+    return;
+  }
+  ctx.promptStoppedByNavigation = true;
+  await ctx.dshBridge.restart({});
+}
+
 // Start a new chat session: create a fresh SDK session and reset the agent's
-// in-memory messages. Rejected while streaming to avoid switching mid-turn.
+// in-memory messages. A live response is stopped first — navigation must never
+// be hostage to a slow model.
 async function createNewSession() {
-  if (ctx.isStreaming) throw new Error("Cannot start a new chat while the agent is responding");
+  await stopStreamingForSessionNavigation();
   ctx.session.sessionManager.newSession();
   const id = chatHistory.currentSessionId();
   chatHistory.createSession(id);
@@ -64,9 +85,9 @@ async function createNewSession() {
 
 // Switch the live agent to an existing session by id: point the session manager at
 // that file and reload the agent's in-memory messages from it so the conversation
-// continues with full context. Rejected while streaming.
+// continues with full context. A live response is stopped after the target is
+// validated, so a bad target never costs the in-flight turn.
 async function switchToSession(id) {
-  if (ctx.isStreaming) throw new Error("Cannot switch chat while the agent is responding");
   const currentId = chatHistory.currentSessionId();
   if (id === currentId) {
     const sess = await chatHistory.getSession(id);
@@ -79,6 +100,7 @@ async function switchToSession(id) {
   const sess = await chatHistory.getSession(id);
   if (ctx.sessionVersion !== version) throw new Error("Session changed while loading");
   if (!sess) throw new Error(`session ${id} not found`);
+  await stopStreamingForSessionNavigation();
   ctx.session.sessionManager.setSessionId(id);
   bumpSessionVersion();
   return { id, title: sess.title || "Chat", messages: sess.messages || [] };
@@ -380,11 +402,18 @@ function remoteForkMessages() {
 // for (ctx.remoteChatEntryFor); an entry that has one runs on the local agent.
 async function streamRemoteChat(entry, text) {
   ctx.isStreaming = true; // set synchronously (same contract as the local prompt path)
+  // The session is captured BEFORE the fetch: navigation may switch the live
+  // chat while this request is still open, and the partial reply belongs to the
+  // session that asked, never to whichever session is on screen when it lands.
+  const sessionId = chatHistory.currentSessionId();
+  const abort = new AbortController();
+  ctx.activeRemoteTurnAbort = abort;
+  const timeout = setTimeout(() => abort.abort(), 300_000);
   ctx.broadcast({ type: "agent_start" });
   // Persist the user turn to the SQLite mirror (design D6) — closes the v1
   // ceiling where remote turns were broadcast-only and a browser close/reopen
   // left a dangling user message with no reply.
-  chatHistory.recordMessage(chatHistory.currentSessionId(), "user", text);
+  chatHistory.recordMessage(sessionId, "user", text);
   // A fork has no system prompt of its own; give it the catalog entry's identity
   // so it answers as the named agent rather than as a bare model.
   const messages = [
@@ -401,12 +430,15 @@ async function streamRemoteChat(entry, text) {
       method: "POST",
       headers,
       body: JSON.stringify({ model: entry.model, messages, stream: true }),
-      signal: AbortSignal.timeout(300_000),
+      signal: abort.signal,
     });
     if (!r.ok) throw new Error(`${entry.id} HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
     const decoder = new TextDecoder();
     let buf = "";
     for await (const chunk of r.body) {
+      // Navigation already closed this turn; a chunk that raced the abort must
+      // not leak into whichever transcript is on screen now.
+      if (abort.switchedAway) break;
       buf += decoder.decode(chunk, { stream: true });
       const lines = buf.split("\n");
       buf = lines.pop();
@@ -428,12 +460,23 @@ async function streamRemoteChat(entry, text) {
       }
     }
   } catch (err) {
-    console.error(`Remote agent '${entry.id}' error:`, err.message);
-    ctx.broadcast({ type: "error", message: err.message });
+    // Switching away aborts the fetch on purpose. The turn was already closed
+    // with `done`; a follow-up abort error would land in the NEW transcript.
+    if (!abort.switchedAway) {
+      console.error(`Remote agent '${entry.id}' error:`, err.message);
+      ctx.broadcast({ type: "error", message: err.message });
+    }
   } finally {
-    // Persist the assistant's final aggregated text (design D6).
-    if (assistantText) chatHistory.recordMessage(chatHistory.currentSessionId(), "assistant", assistantText);
-    ctx.finishTurn();
+    clearTimeout(timeout);
+    // Capture ownership BEFORE clearing the slot: a normal completion must
+    // still emit done, while a navigation-aborted run must not finish whatever
+    // new turn has taken the slot in the meantime.
+    const ownsTurn = ctx.activeRemoteTurnAbort === abort;
+    // Persist the assistant's final aggregated text (design D6), always to the
+    // session that owns this turn.
+    if (assistantText) chatHistory.recordMessage(sessionId, "assistant", assistantText);
+    if (ctx.isStreaming && ownsTurn) ctx.finishTurn();
+    if (ownsTurn) ctx.activeRemoteTurnAbort = null;
   }
 }
 

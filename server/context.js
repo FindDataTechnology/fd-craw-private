@@ -73,6 +73,15 @@ export function createAppContext(config) {
     // ── Agent session state (see agent-session.js / initDshAgent) ───────────
     session: null,
     isStreaming: false,
+    // Set only while a remote-agent fork is streaming. Session navigation can
+    // abort that fetch; a local dsh turn has no interrupt RPC and is stopped by
+    // restarting the bridge (see agent-session.js).
+    activeRemoteTurnAbort: null,
+    // One-shot: the bridge restart that navigation uses to stop a local dsh
+    // turn makes the in-flight prompt RPC reject. That turn's catch consumes
+    // the marker; prompt admission clears any stale marker so a later turn can
+    // never have a real error swallowed.
+    promptStoppedByNavigation: false,
     // Bumped after each session mutation so asynchronous session-list refreshes
     // from an older turn cannot overwrite the current sidebar state.
     sessionVersion: 0,
