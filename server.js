@@ -22,6 +22,9 @@ import { createAppContext } from "./server/context.js";
 import { registerAuth, normalizeAuthPath } from "./server/auth.js";
 import { createLogtoAuth } from "./server/logto-auth.js";
 import { resolveSessionSecret } from "./server/session.js";
+import { createMpAuth } from "./gateway/mp-auth.js";
+import { createMpBindings } from "./gateway/mp-bindings.js";
+import { storeDir } from "./paths.js";
 import { registerDocumentRoutes } from "./server/routes/documents.js";
 import { registerMiscRoutes, registerStaticAndFallback } from "./server/routes/misc.js";
 import { registerLlmRoutes } from "./server/routes/llm.js";
@@ -29,6 +32,7 @@ import { registerExtensionRoutes } from "./server/routes/extensions.js";
 import { registerChatHistoryRoutes } from "./server/routes/chat-history.js";
 import { registerTraceRoutes } from "./server/routes/trace.js";
 import { registerUserBindingRoutes } from "./server/routes/user-bindings.js";
+import { registerMpRoutes } from "./server/routes/mp.js";
 import { registerRegistryRoutes } from "./server/routes/registry.js";
 import { registerFileRoutes } from "./server/routes/files.js";
 import { registerBotRoutes, WEBHOOK_PREFIX } from "./server/routes/bots.js";
@@ -134,6 +138,22 @@ app.use((req, res, next) =>
 app.use(compression());
 
 // Forward-auth/Logto HTTP gate + ctx.requireAdmin (WS upgrade gate below).
+// Mini-program identity (openspec: miniprogram-auth) — the same bind-code
+// path the gateway serves, shared modules imported verbatim. Inert until
+// MP_APPID/MP_SECRET/MP_TOKEN_SECRET are set: login endpoints report
+// not-configured and Bearer tokens never verify, so browser flows are
+// unchanged. Bindings persist in this deployment's data dir, same file
+// format as the gateway's <CELL_DATA_ROOT>/mp-bindings.json.
+ctx.mpBindings = createMpBindings({ file: path.join(storeDir("data"), "mp-bindings.json") });
+await ctx.mpBindings.load();
+ctx.mpAuth = createMpAuth({
+  appid: process.env.MP_APPID || "",
+  mpSecret: process.env.MP_SECRET || "",
+  tokenSecret: process.env.MP_TOKEN_SECRET || "",
+  ttlHours: Number(process.env.MP_TOKEN_TTL_HOURS || 12),
+  codeUrl: process.env.MP_JS_CODE_URL || "https://api.weixin.qq.com/sns/jscode2session",
+  bindings: ctx.mpBindings,
+});
 ctx.logtoAuth = await createLogtoAuth(ctx);
 ctx.logtoAuth?.register(app);
 registerAuth(ctx);
@@ -147,6 +167,9 @@ registerExtensionRoutes(ctx);
 registerChatHistoryRoutes(ctx);
 registerTraceRoutes(ctx);
 registerUserBindingRoutes(ctx);
+// Mini-program identity endpoints (bindcode mint / login / login-bindcode /
+// unbind) — mounted with the other /api routes, before the static SPA fallback.
+registerMpRoutes(ctx);
 registerRegistryRoutes(ctx);
 // The relay must register BEFORE the bots routes: POST /api/bots/relay/send
 // would otherwise match POST /api/bots/:id/send with id = "relay", and the

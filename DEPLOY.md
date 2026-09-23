@@ -782,11 +782,15 @@ administrative group.
 
 `miniapp/` is a Taro (React) thin client — chat + session history — that speaks
 the same WS/REST contracts as the web app through the shared `packages/core`
-package. It authenticates through a second gateway identity path, WeChat
-login, instead of the Logto browser redirect.
+package. It authenticates through a second identity path, WeChat login,
+instead of the Logto browser redirect. The path exists on BOTH deployment
+shapes: the multi-tenant gateway **and** the single-process `AUTH_MODE=logto`
+server (`add-single-process-mp-auth` — same `/api/mp/*` contracts, same
+shared `gateway/mp-auth.js` / `gateway/mp-bindings.js` modules, one
+implementation).
 
-**Gateway env** (all three required to enable the path; unset = the login
-route reports "not configured" and every browser flow is unchanged):
+**Server env** (all three required to enable the path; unset = the login
+routes report "not configured" and every browser flow is unchanged):
 
 | Variable | Meaning |
 |---|---|
@@ -807,13 +811,16 @@ program):
    `POST /api/mp/login-bindcode {code, bindCode}` pairs the fresh
    `wx.login()` code (the WeChat user) with the bind code (account
    ownership) and binds the openid to the account
-   (`<CELL_DATA_ROOT>/mp-bindings.json`).
+   (`<CELL_DATA_ROOT>/mp-bindings.json` on the gateway;
+   `data/mp-bindings.json` under the single-process deployment's
+   `PLATFORM_DATA_DIR` — same file format, so a file can be carried between
+   shapes).
 3. Every later launch is silent: `wx.login()` → `POST /api/mp/login {code}`
    → `code2Session` → binding lookup → a platform JWT carrying the ACCOUNT
    email/groups, sent as `Authorization: Bearer` on REST and on the WS
    upgrade. Because the identity is the account email verbatim, the mini
-   program and the browser resolve to the SAME per-user cell (shared
-   sessions/model config).
+   program and the browser resolve to the SAME dataset (the same per-user
+   cell on the gateway; the one shared runtime single-process).
 4. `DELETE /api/mp/bind` (logout) removes the binding.
 
 `MP_TOKEN_SECRET` is deliberately separate from `CELL_GATEWAY_SECRET`.

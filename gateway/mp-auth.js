@@ -1,8 +1,11 @@
 // ── Mini-program identity path ────────────────────────────────────────────────
 //
 // WeChat mini-program clients cannot run the Logto browser redirect, so the
-// gateway offers a second identity path (openspec: miniprogram-auth) built on
-// ACCOUNT BINDING via BIND CODES:
+// platform offers a second identity path (openspec: miniprogram-auth) built
+// on ACCOUNT BINDING via BIND CODES. Dual use (add-single-process-mp-auth):
+// these modules are shared verbatim by the gateway (gateway/index.js) and the
+// single-process server (server/routes/mp.js) — one login/bind implementation,
+// two entrypoints.
 //
 //   First launch   → the user opens the WEB app in a browser (already signed
 //                    in through Logto) and fetches a 6-digit bind code from
@@ -11,10 +14,11 @@
 //                    mini-program login page; POST /api/mp/login-bindcode
 //                    pairs the fresh wx.login code (which identifies the
 //                    WeChat user) with the bind code (which proves account
-//                    ownership). The gateway BINDS openid⇄account and issues
+//                    ownership). The server BINDS openid⇄account and issues
 //                    a platform JWT carrying the ACCOUNT identity — the same
 //                    email/groups as the web session, so the user lands on
-//                    the same cell and shares data across both ends.
+//                    the same cell (gateway) or runtime (single-process) and
+//                    shares data across both ends.
 //
 //   Every launch   → wx.login() code → POST /api/mp/login → the binding
 //                    resolves the openid to the account → a fresh JWT.

@@ -22,7 +22,16 @@ import { noteOwnerGroups } from "./owner-groups.js";
 //     MCP services); authenticated by a deployment-injected bearer token
 //     compared in constant time, checked before the body is read (see
 //     server/routes/bot-relay.js). Inert (404) with no token configured.
-const AUTH_EXEMPT_PREFIXES = ["/api/bots/webhook/", "/api/bots/relay/"];
+//   /api/mp/login, /api/mp/login-bindcode — the WeChat mini program, which
+//     has no browser session to authenticate with; each call authenticates
+//     through its own wx.login code2Session exchange (plus the bind code on
+//     the -bindcode path). Inert (503 not-configured) without MP credentials.
+const AUTH_EXEMPT_PREFIXES = [
+  "/api/bots/webhook/",
+  "/api/bots/relay/",
+  "/api/mp/login",
+  "/api/mp/login-bindcode",
+];
 
 export function normalizeAuthPath(value, fallback) {
   const raw = String(value || "").trim();
@@ -77,18 +86,33 @@ export function userFromHeaders(headers, trust) {
   return { email, groups };
 }
 
+// Mini-program platform token (openspec: miniprogram-auth) — the gateway's
+// `resolveUser` Bearer branch, same shape. Returns the token-derived identity
+// or null; `mp: true` marks the door (the cell sees the email/groups either
+// way). Inert without MP credentials (verifyToken returns null). Shared with
+// the WebSocket upgrade gate (server/ws.js).
+export function mpUserFromToken(ctx, req) {
+  const auth = req.headers.authorization;
+  if (typeof auth !== "string" || !auth.startsWith("Bearer ")) return null;
+  const payload = ctx.mpAuth?.verifyToken(auth.slice(7));
+  if (!payload) return null;
+  return { email: payload.email, groups: payload.groups ?? [], mp: true };
+}
+
 // Install the HTTP auth gate. forward_auth trusts proxy-injected identity;
 // logto verifies the signed session cookie and ignores those headers.
 export function registerAuth(ctx) {
   ctx.app.use((req, res, next) => {
     const headerUser = userFromHeaders(req.headers, ctx.headerTrust);
     if (ctx.authMode === "logto") {
+      // A verified MP Bearer token is a second door into the same identity:
+      // cookie first (parity with the gateway's resolveUser), token fallback.
       if (isLogtoPublicRequest(req) || isExempt(req.path)) {
-        const user = ctx.logtoAuth?.authenticate(req, res);
+        const user = ctx.logtoAuth?.authenticate(req, res) || mpUserFromToken(ctx, req);
         if (user) req.user = user;
         return next();
       }
-      const user = ctx.logtoAuth?.authenticate(req, res);
+      const user = ctx.logtoAuth?.authenticate(req, res) || mpUserFromToken(ctx, req);
       if (!user) {
         if (req.path.startsWith("/api/")) return res.status(401).json({ error: "Authentication required" });
         if (req.accepts("html")) return res.redirect("/login");

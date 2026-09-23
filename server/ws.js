@@ -6,13 +6,20 @@ import * as chatHistory from "../chat-history.js";
 import * as cron from "../cron.js";
 import * as catalog from "../catalog.js";
 import * as skills from "./skills.js";
-import { userFromHeaders } from "./auth.js";
+import { userFromHeaders, mpUserFromToken } from "./auth.js";
+
+// Identity for a WS upgrade, logto mode: the browser's session cookie first,
+// then the mini program's platform Bearer token (openspec:
+// miniprogram-auth) — the same second door the HTTP gate admits, fixed at
+// upgrade time like every other identity source.
+const logtoUser = (ctx, req) =>
+  ctx.logtoAuth?.userFromCookie(req.headers.cookie) || mpUserFromToken(ctx, req);
 
 export function authorizeUpgrade(ctx, req) {
   return ctx.authMode === "forward_auth"
     ? Boolean(userFromHeaders(req.headers, ctx.headerTrust))
     : ctx.authMode === "logto"
-      ? Boolean(ctx.logtoAuth?.userFromCookie(req.headers.cookie))
+      ? Boolean(logtoUser(ctx, req))
       : true;
 }
 
@@ -20,7 +27,7 @@ export function userForConnection(ctx, req) {
   return ctx.authMode === "forward_auth"
     ? userFromHeaders(req.headers, ctx.headerTrust)
     : ctx.authMode === "logto"
-      ? ctx.logtoAuth?.userFromCookie(req.headers.cookie)
+      ? logtoUser(ctx, req)
       : null;
 }
 

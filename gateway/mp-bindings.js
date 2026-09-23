@@ -1,10 +1,13 @@
 // Mini-program account bindings: openid ⇄ platform (Logto) account.
 //
-// The gateway must resolve "which account does this WeChat user own" BEFORE
-// any cell exists, so this is one of the few pieces of state that lives at
-// the gateway rather than in a cell. Persisted as a JSON file with atomic
-// temp+rename writes (the project's file-persistence convention: one file,
-// serialized mutations, crash-safe rename).
+// Identity must be resolvable — "which account does this WeChat user own" —
+// before any runtime serves the caller, so this is one of the few pieces of
+// state that lives OUTSIDE a runtime: at the gateway (per-user cells ahead of
+// a cell's boot) or in a single-process deployment's data dir
+// (add-single-process-mp-auth). Shared module, same file format at both
+// entrypoints. Persisted as a JSON file with atomic temp+rename writes (the
+// project's file-persistence convention: one file, serialized mutations,
+// crash-safe rename).
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import crypto from "node:crypto";

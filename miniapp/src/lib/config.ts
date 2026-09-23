@@ -10,9 +10,15 @@ const TOKEN_KEY = "platform.mpToken";
 
 // `localhost`, not `127.0.0.1`: the dev server binds the IPv6 localhost
 // (::1) by default, and an IPv4 literal then gets connection-refused. In the
-// devtools simulator `localhost` resolves to the host machine; on a real
-// phone (真机调试) point this at the dev machine's LAN IP instead.
-const DEFAULT_BASE = "http://localhost:3000";
+// devtools simulator `localhost` resolves to the host machine. The default is
+// build-shaped: `npm run build:weapp` (production, the 体验版/正式版 upload)
+// points at the deployed platform so a fresh install works with zero setup;
+// dev builds (`--watch`) keep the local server. Per-device overrides live in
+// storage (the ⚙ server field) and win over both.
+const DEFAULT_BASE =
+  process.env.NODE_ENV === "production"
+    ? "https://craw.finddatatech.cloud"
+    : "http://localhost:3000";
 
 export function baseUrl(): string {
   return Taro.getStorageSync(BASE_KEY) || DEFAULT_BASE;

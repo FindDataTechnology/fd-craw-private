@@ -1,14 +1,18 @@
 // Mini-program identity — account-binding model (openspec: miniprogram-auth).
 //
-// First launch: the user signs in once with their platform (Logto) account
-// (username/phone + password) on the login page; the gateway verifies via
-// the password grant and BINDS this WeChat openid to that account. Every
+// Logto offers no password grant (deprecated in OAuth 2.1), so credentials
+// never enter the mini program. First launch on a device: the user opens the
+// platform in a browser (signed in) at /api/mp/bindcode and types the 6-digit
+// code here once; the server BINDS this WeChat openid to that account. Every
 // later launch is silent: a fresh wx.login code exchanges for a platform
-// JWT carrying the account identity (same cell/data as the web app).
+// token carrying the account identity (same cell/data as the web app).
 //
-// A deployment without the gateway (AUTH_MODE=none) needs no token at all —
-// `ensureAuth` probes for that. On 401 the client retries once after a
-// silent re-login; a dropped binding surfaces as a login-required event.
+// Works against both deployment shapes (add-single-process-mp-auth): the
+// multi-tenant gateway and a single-process AUTH_MODE=logto server expose the
+// same /api/mp/* contracts. A deployment with no auth (AUTH_MODE=none) needs
+// no token at all — `ensureAuth` probes for that. On 401 the client retries
+// once after a silent re-login; a dropped binding surfaces as a
+// login-required event.
 
 import Taro, { eventCenter } from "@tarojs/taro";
 import { baseUrl, clearToken, setToken, token } from "./config";
@@ -107,15 +111,20 @@ export function refreshToken(): Promise<boolean> {
   return refreshing;
 }
 
-// Boot probe: an unauthenticated /api/config tells us which world we're in.
-// 200 → no auth (local/self-host); 401 → WeChat exchange (silent when bound,
-// login page when not).
+// Boot probe: the identity endpoint tells the two deployment shapes apart —
+// `mode: "none"` means no auth (local/self-host; connect tokenless), anything
+// else means the account-binding door is the way in: `mode: "logto"` on a
+// single-process deployment (add-single-process-mp-auth) or a 401 from the
+// gateway, which rejects anonymous probes outright. /api/config cannot make
+// this call: it is public pre-login on single-process deployments (the web
+// SPA fetches it before signing in), so its 200 says nothing about auth.
 export async function ensureAuth(): Promise<"none" | "token" | "binding_required" | "failed"> {
   try {
-    const res = await Taro.request({ url: `${baseUrl()}/api/config`, method: "GET" });
-    if (res.statusCode === 200) return "none";
-    if (res.statusCode === 401) return silentLogin();
-    return "failed";
+    const res = await Taro.request({ url: `${baseUrl()}/api/auth/me`, method: "GET" });
+    if (res.statusCode === 200 && (res.data as { mode?: string } | undefined)?.mode === "none") {
+      return "none";
+    }
+    return silentLogin();
   } catch {
     return "failed";
   }
