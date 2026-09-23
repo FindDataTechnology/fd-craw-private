@@ -179,6 +179,11 @@ COPY --chown=node:node --from=builder /app/package.json /app/platform.bundle.jso
 COPY --chown=node:node --from=builder /app/market-catalog.json /app/market-catalog-skills.json ./
 COPY --chown=node:node --from=builder /app/*.js ./
 COPY --chown=node:node --from=builder /app/server ./server
+# gateway/ is imported by server.js (the mini-program identity modules,
+# add-single-process-mp-auth); /app/*.js does not descend into dirs, and a
+# missing dir here boots the image just fine until its first import — the
+# smoke test catches it as ERR_MODULE_NOT_FOUND.
+COPY --chown=node:node --from=builder /app/gateway ./gateway
 COPY --chown=node:node --from=builder /app/lib ./lib
 COPY --chown=node:node --from=builder /app/scripts ./scripts
 COPY --chown=node:node --from=builder /app/supervisor ./supervisor
