@@ -39,15 +39,22 @@ function compactParams(rec) {
   return rows.join("\n");
 }
 
+function textBlocks(lines) {
+  // The harness translates render output into tool-result content BLOCKS:
+  // plain strings are dropped (observed live: an empty tool result), only
+  // {type:"text",text} blocks reach the model.
+  return lines.map((line) => ({ type: "text", text: line }));
+}
+
 function renderResults(entries, { query, server }) {
   if (!entries.length) {
-    return [
+    return textBlocks([
       `No effective tool matches ${JSON.stringify(query || "")}` +
         (server ? ` (server: ${JSON.stringify(server)})` : "") +
         `. Search covered only the tools currently available in this session — ` +
         `nothing was called or installed. Name the exact tool you were given by the user, ` +
         `or tell the user the tool appears unavailable.`,
-    ];
+    ]);
   }
   const blocks = entries.map((entry, index) => {
     // The execute() return is already the projected entry list — `entry` IS
@@ -57,13 +64,13 @@ function renderResults(entries, { query, server }) {
     const origin = rec.origin === "mcp" ? ` (MCP server: ${rec.server}, leaf: ${rec.leaf})` : " (built-in)";
     return `${head}${origin}\n   ${rec.description || "(no description)"}\n   Parameters:\n${compactParams(rec)}`;
   });
-  return [
+  return textBlocks([
     `Found ${entries.length} callable tool(s)` +
-      (entries.length === MAX_LIMIT ? " (result limit reached — narrow the query)" : "") +
+      (entries.length >= MAX_LIMIT ? " (result limit reached — narrow the query)" : "") +
       `. Invoke ONLY with the exact name shown after "EXACT NAME". ` +
       `Nothing was executed by this search.`,
     ...blocks,
-  ];
+  ]);
 }
 
 function apply(ctx) {

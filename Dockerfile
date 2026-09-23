@@ -95,12 +95,16 @@ COPY dsh-profile-template/ ./dsh-profile-template/
 # dsh-sandbox-policy). Enumerated by a peer-deps gap analysis over the
 # installed tree; validated by booting `dsh --profile platform` and completing
 # the sdk-client initialize handshake before this change was shipped.
+# cordis-plugin-hmr is pinned deliberately: 1.0.17+ removed registerConfig,
+# which dsh-app-boot's watchUserPatches calls unconditionally — a build that
+# floats to >=1.0.17 crash-loops every dsh child at boot (2026-09-23 outage).
 RUN npm config set fetch-retries 5 fetch-retry-mintimeout 20000 fetch-retry-maxtimeout 120000 fetch-timeout 600000 legacy-peer-deps true \
     && npm install --prefix /opt/dsh \
          @deepseek-ai/dsh@0.1.1-rc.2 \
          @deepseek-ai/dsh-sdk-jsonrpc-server@0.0.1-rc.5 \
          @deepseek-ai/dsh-sdk-protocol@0.0.1-rc.5 \
          @deepseek-ai/cordis-plugin-group@1.0.2 \
+         @deepseek-ai/cordis-plugin-hmr@1.0.16 \
          @deepseek-ai/dsh-anonymous-user-id@0.1.1-rc.2 \
          @deepseek-ai/dsh-atomic-write@0.1.1-rc.2 \
          @deepseek-ai/dsh-authorization@0.1.1-rc.2 \
