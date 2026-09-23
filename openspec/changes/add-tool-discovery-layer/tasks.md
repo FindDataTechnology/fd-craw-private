@@ -28,4 +28,4 @@
 
 - [x] 5.1 Add focused tests proving discovery covers only effective tools: a disabled, role-gated, credential-omitted, or never-installed registry server does not appear, and `airegistry-tools` is neither installed nor mounted by discovery; verify the extension DB and effective MCP patch remain unchanged.
 - [ ] 5.2 Run lint, focused unit/e2e suites, and the full fast e2e suite; record any pre-existing known flakes separately from failures caused by this change.
-- [ ] 5.3 Verify live behavior after rollout: `tool_search` appears in the request roster, malformed `mcp__list_concepts` returns the expected exact candidate, an exact-name MCP call succeeds, and no marketplace/runtime mutation occurs during discovery.
+- [x] 5.3 Verify live behavior after rollout: `tool_search` appears in the request roster, malformed `mcp__list_concepts` returns the expected exact candidate, an exact-name MCP call succeeds, and no marketplace/runtime mutation occurs during discovery.
