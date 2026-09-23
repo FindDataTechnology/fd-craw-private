@@ -374,7 +374,11 @@ async function initDshAgent() {
       // machine owner (auth off).
       if (ownerEmail !== undefined) ctx.runtimeOwnerEmail = ownerEmail;
       const patchPath = await writeMcpPatch({ mcpOverlay, userGroups, ownerEmail: ctx.runtimeOwnerEmail });
-      if (hotswapEnabled && patchPath) {
+      // HMR only reaches the child if it was spawned WITH this --patch (cordis
+      // watches the file it loaded). A child booted before the first MCP server
+      // existed has no mcp patch on its command line — rewriting the file does
+      // nothing it can see, so that case must fall through to the restart path.
+      if (hotswapEnabled && patchPath && ctx.dshBridge.getMcpPatch() === patchPath) {
         // The patch file was rewritten atomically (temp+rename inside
         // writeMcpPatch); cordis' Chokidar watcher fires refresh() → dsh-mcp-client
         // hot-swaps. No RPC confirms the swap, so settle on a fixed delay — dsh's

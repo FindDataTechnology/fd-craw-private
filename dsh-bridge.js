@@ -301,6 +301,14 @@ export class DshBridge {
     return this.#cwd;
   }
 
+  // The mcp.patch.yml this child was spawned watching (null when booted with
+  // zero MCP servers). dshUpdateMcp needs it to tell "cordis is watching the
+  // file we just rewrote" (HMR works) from "the child never loaded this patch"
+  // (HMR is a silent no-op — a restart with the path is required).
+  getMcpPatch() {
+    return this.#mcpPatchPath;
+  }
+
   #requireReady() {
     if (!this.#ready || !this.#client) {
       throw new TransportClosedError("dsh runtime not ready");
