@@ -794,6 +794,46 @@ export async function writePermissionsPatch() {
   return PERMISSIONS_PATCH_PATH;
 }
 
+// ── Tool-search bridge patch (add-tool-discovery-layer) ─────────────────────
+// The read-only `tool_search` tool (search the effective roster, return exact
+// callable names) rides its own overlay: platform-tool-search-bridge.js is
+// copied into the profile dir and inserted under a fresh `tool-search-bridge`
+// row. It injects only `tools` (the dsh tool registry) and reads the calling
+// agent's schema projection per call, so no other row changes. Purely
+// additive: if the overlay is absent the roster is unchanged and chat works
+// exactly as before.
+const TOOL_SEARCH_PATCH_PATH = join(DSH_HOME, "profiles", PROFILE_NAME, "tool-search.patch.yml");
+const TOOL_SEARCH_BRIDGE_SOURCE = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "dsh-profile-template",
+  "platform-tool-search-bridge.js",
+);
+const TOOL_SEARCH_MATCHER_SOURCE = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "server",
+  "tool-discovery.js",
+);
+
+// Write the tool-search bridge + its matcher module + tool-search.patch.yml
+// into the profile dir. Returns the patch path for the --patch args.
+export function writeToolSearchPatch() {
+  mkdirSync(dirname(TOOL_SEARCH_PATCH_PATH), { recursive: true });
+  const profileDir = dirname(TOOL_SEARCH_PATCH_PATH);
+  atomicWriteTextSync(
+    join(profileDir, "platform-tool-search-bridge.js"),
+    readFileSync(TOOL_SEARCH_BRIDGE_SOURCE, "utf8"),
+  );
+  // The bridge imports `./tool-discovery.js` (no dsh imports, plain JS) —
+  // place it beside the bridge so the relative import resolves.
+  atomicWriteTextSync(join(profileDir, "tool-discovery.js"), readFileSync(TOOL_SEARCH_MATCHER_SOURCE, "utf8"));
+  const patch = [
+    { insert: [{ id: "tool-search-bridge", name: "./platform-tool-search-bridge.js" }] },
+  ];
+  atomicWriteTextSync(TOOL_SEARCH_PATCH_PATH, yaml.dump(patch));
+  console.log(`[dsh-profile] wrote tool-search bridge patch → ${TOOL_SEARCH_PATCH_PATH}`);
+  return TOOL_SEARCH_PATCH_PATH;
+}
+
 // Self-check: load .env, build the section, print it + the model list. No file
 // write (read-only) — proves the generator emits valid YAML + the expected ids.
 // Usage: node dsh-profile.js
@@ -843,6 +883,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const permissionsPatch = await writePermissionsPatch();
   console.log(`--- permissions patch (${permissionsPatch}) ---`);
   console.log(readFileSync(permissionsPatch, "utf8"));
+  // Tool-search bridge patch self-check.
+  const toolSearchPatch = writeToolSearchPatch();
+  console.log(`--- tool-search patch (${toolSearchPatch}) ---`);
+  console.log(readFileSync(toolSearchPatch, "utf8"));
   // Catalog agent preset self-check: compose one from the shipped `standard`
   // composition and prove the persona swap landed (this is what a vertical-pack
   // chat agent runs on — see writeCatalogAgentPresets).

@@ -204,7 +204,7 @@ function seedStartupMcpConfigs(mcpJsonServers) {
 // now it only emits `done` on turn completion (the 1.5 round-trip placeholder).
 async function initDshAgent() {
   const { DshBridge } = await import("./dsh-bridge.js");
-  const { writeLlmProfile, writeMcpPatch, writeSkillsPatch, writePresetsPatch, writePermissionsPatch, ensureCredentialsStore, ensureDshHome, buildScrubbedEnv, knownPresetIds, DEFAULT_AGENT_PRESET } = await import("./dsh-profile.js");
+  const { writeLlmProfile, writeMcpPatch, writeSkillsPatch, writePresetsPatch, writePermissionsPatch, writeToolSearchPatch, ensureCredentialsStore, ensureDshHome, buildScrubbedEnv, knownPresetIds, DEFAULT_AGENT_PRESET } = await import("./dsh-profile.js");
 
   // Scaffold $DSH_HOME if it is fresh — a hosted cell's per-user home always
   // is, and dsh refuses to boot a profile that was never materialized.
@@ -293,6 +293,10 @@ async function initDshAgent() {
   // selector). Static; always written — an absent permission service inside
   // the child degrades to an empty roster (picker hidden, chat unaffected).
   const permissionsPatchPath = await writePermissionsPatch();
+  // The tool-search overlay adds one read-only `tool_search` row
+  // (add-tool-discovery-layer). Static; always written — its absence merely
+  // removes the search tool, never breaks the runtime.
+  const toolSearchPatchPath = writeToolSearchPatch();
   // The selected agent mode is a persisted user preference (agent.preset);
   // `standard` until a DB row exists. Validate it BEFORE the child spawns: dsh
   // resolves a session's preset at creation (and a vertical-pack agent IS one of
@@ -349,6 +353,7 @@ async function initDshAgent() {
     skillsPatchPath,
     presetsPatchPath,
     permissionsPatchPath,
+    toolSearchPatchPath,
     agentPreset: ctx.currentPreset,
     env: dshChildEnv,
   });

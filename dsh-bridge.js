@@ -52,6 +52,7 @@ export class DshBridge {
   #skillsPatchPath;
   #presetsPatchPath;
   #permissionsPatchPath;
+  #toolSearchPatchPath;
   #agentPreset;
   #env;
   // Preset roster cache, per child generation: null until the first successful
@@ -64,7 +65,7 @@ export class DshBridge {
   #restarting = false;
   #generation = 0;
 
-  constructor({ onEvent, provider, model, cwd, mcpPatchPath, skillsPatchPath, presetsPatchPath, permissionsPatchPath, agentPreset, env } = {}) {
+  constructor({ onEvent, provider, model, cwd, mcpPatchPath, skillsPatchPath, presetsPatchPath, permissionsPatchPath, toolSearchPatchPath, agentPreset, env } = {}) {
     if (onEvent) this.#onEvent = onEvent;
     this.#provider = provider || "deepseek-official";
     this.#model = model || "deepseek-v4-flash";
@@ -73,6 +74,7 @@ export class DshBridge {
     this.#skillsPatchPath = skillsPatchPath || null;
     this.#presetsPatchPath = presetsPatchPath || null;
     this.#permissionsPatchPath = permissionsPatchPath || null;
+    this.#toolSearchPatchPath = toolSearchPatchPath || null;
     this.#agentPreset = agentPreset || null;
     // When provided, the dsh child is spawned with this env instead of the
     // inherited process env — used to scrub upstream API keys (LLM_API_KEY /
@@ -108,6 +110,9 @@ export class DshBridge {
     if (this.#skillsPatchPath) args.push("--patch", this.#skillsPatchPath);
     if (this.#presetsPatchPath) args.push("--patch", this.#presetsPatchPath);
     if (this.#permissionsPatchPath) args.push("--patch", this.#permissionsPatchPath);
+    // Purely additive tool row: order after the permission overlay (it inserts
+    // its own fresh row and touches nothing else).
+    if (this.#toolSearchPatchPath) args.push("--patch", this.#toolSearchPatchPath);
     const client = new HarnessClient({
       command: COMMAND,
       args,

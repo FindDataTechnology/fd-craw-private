@@ -37,12 +37,12 @@ description: 合同全流程审查工作流（法律-合同包入口技能）。
 
 ## 阶段 4：法条与条款库核对（需要 law-bench MCP）
 
-若已连接 law-bench 的合同工具（工具名形如 `mcp__law-bench__*`）：
+若已连接 law-bench 的合同工具（服务器名 `law-bench`，**用精确完整工具名调用**；不确定某工具是否在册时，先用 `tool_search` 查询确认）：
 
-1. 类型确认：先调 `contract_type_catalog` / `law_types` 确认该合同类型在库内的覆盖，再调 `law_info` 取该类型的两类法条调查内容、`law_references` 汇总涉及的法条清单——这是审查依据的首选来源。
-2. 条款比对：对每条可疑条款，调 `search_clauses`（自然语言检索条款库，返回排序后的条款块），对比当前文本与规范条款的差距。
-3. 风险评测：对高风险条款或整份合同，调 `rubric_list` 选合适评分维度，再调 `contract_evaluate` 做量化评测；有硬性合规疑点的调 `validation_check` 校验法律硬约束。
-4. 法条引用：优先用 law-bench 的 `law_info`/`law_references`；**补充路径**：若已连接法律法规数据工具（`mcp__fd-find-data-business-mcp__*`），用 `law_search`（`title_query` 按标题查法规，`category` 过滤类别）+ `law_read`（按 id 读全文）核对引用条文的现行有效版本（`status` 字段）。引用必须给出法律名称 + 条文号（如《民法典》第五百七十七条）。**只引用工具返回或你确定的条文；不确定时写"建议核对该条文"，禁止编造条文号或案号。**
+1. 类型确认：先调 `mcp__law-bench__contract_type_catalog` / `mcp__law-bench__law_types` 确认该合同类型在库内的覆盖，再调 `mcp__law-bench__law_info` 取该类型的两类法条调查内容、`mcp__law-bench__law_references` 汇总涉及的法条清单——这是审查依据的首选来源。
+2. 条款比对：对每条可疑条款，调 `mcp__law-bench__search_clauses`（自然语言检索条款库，返回排序后的条款块），对比当前文本与规范条款的差距。
+3. 风险评测：对高风险条款或整份合同，调 `mcp__law-bench__rubric_list` 选合适评分维度，再调 `mcp__law-bench__contract_evaluate` 做量化评测；有硬性合规疑点的调 `mcp__law-bench__validation_check` 校验法律硬约束。
+4. 法条引用：优先用 law-bench 的 `mcp__law-bench__law_info` / `mcp__law-bench__law_references`；**补充路径**：若已连接法律法规数据工具（服务器名 `fd-find-data-business-mcp`），用 `mcp__fd-find-data-business-mcp__law_search`（`title_query` 按标题查法规，`category` 过滤类别）+ `mcp__fd-find-data-business-mcp__law_read`（按 id 读全文）核对引用条文的现行有效版本（`status` 字段）。引用必须给出法律名称 + 条文号（如《民法典》第五百七十七条）。**只引用工具返回或你确定的条文；不确定时写"建议核对该条文"，禁止编造条文号或案号。**
 
 若 law-bench 未连接：跳过本阶段，在报告中注明"未连接 law-bench 条款库，以下建议基于模型内置法律知识，未经条款库比对"。
 

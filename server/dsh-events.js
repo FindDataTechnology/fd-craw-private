@@ -14,6 +14,10 @@
 
 import * as chatHistory from "../chat-history.js";
 import * as trace from "./trace.js";
+import {
+  parseToolSchemas,
+  candidateToolNames,
+} from "./tool-discovery.js";
 
 // Normalize a `todo/write` snapshot for the wire: keep only `content`/`status`,
 // drop entries with no content, coerce an unrecognized status to "pending", and
@@ -110,6 +114,21 @@ export function attachDshEvents(ctx) {
       .catch((e) => console.error("[chat-history] list after done failed:", e.message));
   };
 
+  // Per-turn tool-roster projection for UNKNOWN_TOOL candidate recovery
+  // (add-tool-discovery-layer). `request/header` carries the exact tool
+  // schemas sent to the model this turn; we project them to the matcher's
+  // metadata shape and DROP the raw header immediately — the full roster can
+  // be very large and the host has no other use for it. Bot sessions have no
+  // web transcript, so only the web path (this handler) needs it.
+  let turnToolRecords = [];
+  ctx.unknownToolCandidates = (attemptedName) => {
+    try {
+      return candidateToolNames(turnToolRecords, attemptedName);
+    } catch {
+      return [];
+    }
+  };
+
   ctx.handleDshEvent = (notif) => {
     const { method } = notif || {};
     // Trace tap first: record everything (raw), before the WS translation
@@ -165,6 +184,19 @@ export function attachDshEvents(ctx) {
     if (!ev) return;
     if (process.env.DSH_DEBUG) console.log("[dsh-debug] event:", ev.type, JSON.stringify(ev.data)?.slice(0, 600));
     switch (ev.type) {
+      case "request/header": {
+        // Project the CURRENT request's tool schemas into matcher records and
+        // drop the raw header. This is the roster the model can actually call
+        // this turn — the authoritative candidate source for unknown-tool
+        // recovery. Malformed headers degrade to an empty roster (candidates
+        // then fall back to "no suggestion", never to a wrong name).
+        try {
+          turnToolRecords = parseToolSchemas(ev.data?.header?.tools);
+        } catch {
+          turnToolRecords = [];
+        }
+        break;
+      }
       case "turn/start":
         // One agent_start per turn. isStreaming was already set synchronously at
         // prompt dispatch (see the WS prompt handler) so a concurrent prompt
@@ -235,10 +267,33 @@ export function attachDshEvents(ctx) {
         const callId =
           ev.data?.message?.source?.callId ?? ev.data?.message?.content?.[0]?.toolCallId;
         const resultBlocks = ev.data?.message?.content?.[0]?.content;
-        const resultText = Array.isArray(resultBlocks)
+        let resultText = Array.isArray(resultBlocks)
           ? resultBlocks.filter((b) => b.type === "text").map((b) => b.text).join("") || null
           : null;
         const isError = !!ev.data?.error || !!ev.data?.message?.content?.[0]?.isError;
+        // UNKNOWN_TOOL recovery (add-tool-discovery-layer): a failed call gets
+        // exact-name candidates from the CURRENT request roster, appended to
+        // the result text BEFORE broadcast and persistence — the model reads
+        // its next turn from the same text the user sees. No candidate is ever
+        // executed here; the model must issue the next (exact) call itself.
+        if (isError && resultText && ev.data?.error?.code === "UNKNOWN_TOOL") {
+          const attempted =
+            ctx.dshToolNames.get(callId) ?? /^Error: unknown tool "([^"]+)"/.exec(resultText)?.[1];
+          if (attempted) {
+            const candidates = ctx.unknownToolCandidates?.(attempted) || [];
+            resultText = candidates.length
+              ? `${resultText}\nExact effective-tool candidates:\n${candidates
+                  .map((c) => `- ${c}`)
+                  .join(
+                    "\n",
+                  )}\nRetry with one exact full name, or use tool_search to inspect the roster. No candidate was executed.`
+              : `${resultText}\nNo similar effective tool exists. Use tool_search to list what IS available — do not guess another name. Nothing was executed.`;
+            // Rewrite the wire text so model-visible transcript, WS event and
+            // persistence all carry the same enriched guidance.
+            const firstText = resultBlocks?.find?.((b) => b.type === "text");
+            if (firstText) firstText.text = resultText;
+          }
+        }
         // Fill the accumulated persistence block for this call.
         const acc = ctx.dshTurnBlocks.find((b) => b.id === callId);
         if (acc) {

@@ -19,7 +19,8 @@ description: 个股研究全流程工作流（数据-股票包入口技能）。
 
 1. 财报分析：若已安装 **`financial-statement-analysis`**（三表联动 + 比率分析 + 财务粉饰红旗），用它输出买方视角财报研究；未安装时按内置方法做核心比率速览（增长、盈利、杠杆、现金流质量）并标注红旗项。
 2. 财报事件：若已安装 **`earnings-preview` / `earnings-recap`**，按所处时点（财报前/后）选用，生成财报前瞻简报或财报解读。
-3. 若已连接金融数据 MCP（`mcp__fd-open-data-mcp__*`），用其做概念/实体维度的数据补充（行业对比、关联指标）。
+3. A股基本面补充：若已连接中国研报 MCP（服务器名 `fd-cn-report`），用精确工具名 `mcp__fd-cn-report__get_company`（解析标的）、`mcp__fd-cn-report__get_financials` / `mcp__fd-cn-report__get_financial_statements`（三表）、`mcp__fd-cn-report__get_indicator` + `mcp__fd-cn-report__list_indicators`（单指标规则集）取数。
+4. 若已连接开放数据 MCP（服务器名 `fd-open-data-mcp`），用 `mcp__fd-open-data-mcp__ai_search`（语义找概念）、`mcp__fd-open-data-mcp__get_entity`、`mcp__fd-open-data-mcp__read` / `mcp__fd-open-data-mcp__read_series` 做概念/实体维度的数据补充（行业对比、关联指标）。不确定某工具是否在册时，先用 `tool_search` 查询确认。
 
 **硬约束：财务数字必须来自工具返回或明确标注的知识截止数据；两处来源冲突时并列展示并提示核实。禁止编造财务数据、公告日期、评级。**
 
@@ -37,7 +38,7 @@ description: 个股研究全流程工作流（数据-股票包入口技能）。
 ## 阶段 4：行业与研报交叉
 
 1. 若已安装 **`sector-overview`**，生成行业格局视角（竞争位置、驱动因素、风险）。
-2. 若已连接中国研报 MCP（`mcp__fd-cn-report__*`），检索该标的所属申万行业的研报要点，与前面阶段的结论对照：一致处、矛盾处。A股标的优先用此路径补充卖方观点。
+2. 若已连接中国研报 MCP（服务器名 `fd-cn-report`），用 `mcp__fd-cn-report__search_reports` 检索该标的所属申万行业的研报要点，与前面阶段的结论对照：一致处、矛盾处。A股标的优先用此路径补充卖方观点。
 
 ## 阶段 5：研究结论
 

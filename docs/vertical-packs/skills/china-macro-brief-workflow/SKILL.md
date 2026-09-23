@@ -24,14 +24,26 @@ description: 中国宏观经济分析简报工作流（数据-中国经济包入
 
 ## 阶段 2：数据拉取
 
-若已连接开放数据 MCP（工具名形如 `mcp__fd-open-data-mcp__*`）：按"概念 + 实体"语义查询每个指标，记录数值、期数、来源。某个指标查询为空时换表述再试一次；仍为空则记录"未获取"，**禁止用编造数字或估算值补位**。
+若已连接开放数据 MCP（服务器名 `fd-open-data-mcp`），**用精确完整工具名调用**（不确定某工具是否在册时，先用 `tool_search` 查询确认，再调用）：
+
+| 用途 | 精确工具名 |
+|---|---|
+| 自然语言找概念/实体（首选入口） | `mcp__fd-open-data-mcp__ai_search` |
+| 列出概念（变量）清单 | `mcp__fd-open-data-mcp__list_concepts` |
+| 解析实体（国家=CN、省份、行业） | `mcp__fd-open-data-mcp__get_entity` |
+| 读一个概念的时序值 | `mcp__fd-open-data-mcp__read` / `mcp__fd-open-data-mcp__read_series` |
+| 数据覆盖概况 | `mcp__fd-open-data-mcp__data_stats` |
+
+国家统计局口径的宏观指标也可用中国研报 MCP：`mcp__fd-cn-report__get_nbs_stat`（按指标代码）、`mcp__fd-cn-report__list_ministries` / `mcp__fd-cn-report__get_ministry_stat`（部委统计页）。
+
+按"概念 + 实体"语义查询每个指标，记录数值、期数、来源。某个指标查询为空时换表述再试一次；仍为空则记录"未获取"，**禁止用编造数字或估算值补位**。
 
 未连接数据 MCP 时：给出基于知识截止日的数值并逐条标注截止期，显著提示"以下数据未在线核实，请连接开放数据 MCP 获取最新值"。
 
 ## 阶段 3：行业对照
 
 1. 若已安装 **`sector-overview`**，按问题所属行业生成行业格局视角，把宏观判断落到行业层面。
-2. 若已连接中国研报 MCP（`mcp__fd-cn-report__*`），检索相关申万行业的研报要点，提取卖方对宏观变量向行业传导的观点，与我方框架对照（一致/矛盾）。
+2. 若已连接中国研报 MCP（服务器名 `fd-cn-report`），用 `mcp__fd-cn-report__search_reports` 检索相关申万行业的研报要点，提取卖方对宏观变量向行业传导的观点，与我方框架对照（一致/矛盾）。
 
 ## 阶段 4：分析与交叉验证
 
