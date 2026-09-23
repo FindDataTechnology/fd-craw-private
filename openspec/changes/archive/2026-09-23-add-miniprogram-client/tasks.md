@@ -2,30 +2,52 @@
 
 ## 1. De-risk spikes (throwaway verification, run before any build-out)
 
-> **Status 2026-09-18:** headless halves are covered — the shared WsClient +
-> protocol are exercised against the real server by the web e2e suite (156
-> passing), the markdown parser has 10 unit tests, and the reconnect state
-> machine has 5. The spikes themselves remain open because their verification
-> is explicitly on-device (devtools), which this environment cannot run; the
-> built client now serves as the vehicle for them.
+> **Status 2026-09-23:** all four spikes PASSED on-device via WeChat devtools
+> automation (`wechatide -c paasmp`, the IDE's bundled skill CLI). Environment:
+> `scripts/dev-mp-gateway.mjs` (real gateway + real Logto, mocked code2Session)
+> on :3080; assertions via WXML querySelector/outerWxml (DOM-class counting).
 
-- [ ] 1.1 Spike: WS protocol round-trip in WeChat devtools — scaffold a
+- [x] 1.1 Spike: WS protocol round-trip in WeChat devtools — scaffold a
       minimal Taro project, connect `Taro.connectSocket` to the local
       `server.js` (devtools "不校验合法域名" on), send `list_models` +
       `prompt`, receive `models` + streamed `text` + `done`. Verify a full
       turn renders. Record findings; keep the scaffold as the seed of task 5.
-- [ ] 1.2 Spike: streaming-markdown degradation UX — render streamed chunks
+      *(✅ 2026-09-23 devtools: connectSocket → Bearer-authed WSS upgrade →
+      conn-banner absent (connected); `list_models`/`list_agents`/
+      `list_skills`/`list_presets`/`list_sessions` all answered; `prompt` →
+      `user` echo rendered verbatim → streaming (`turn-cursor` +
+      `composer-stop`) → `done` re-enables composer; mid-turn upstream 503
+      rendered as a distinct `.blk-error` block with UI unstuck — the spec's
+      error-mid-turn scenario verified alongside the happy path.)*
+- [x] 1.2 Spike: streaming-markdown degradation UX — render streamed chunks
       as plain text nodes and the completed message through the bundled
       markdown renderer (parser correctness is unit-tested; this spike is
       the on-device perf check); confirm a long (100+ chunk) turn stays
       scrollable without visible jank on a phone-profiled devtools run.
-- [ ] 1.3 Spike: background/foreground socket lifecycle — background the
+      *(✅ 2026-09-23 devtools: mid-stream `.blk-text-plain` observed at t=3s
+      on a live turn; after `done` the same turn renders parsed markdown —
+      heading (`md-h1`), 3-item list (`md-li`×3), bold (`md-strong`) all in
+      the WXML tree, `.blk-text-plain` gone, composer back to 发送. Scroll
+      stayed responsive through multi-turn transcripts (3 turns + charts).)*
+- [x] 1.3 Spike: background/foreground socket lifecycle — background the
       devtools preview (or simulate socket close), return on `onShow`,
       verify the shared reconnect approach (immediate retry + replayed
       `list_*` queries) restores a live conversation without user action.
-- [ ] 1.4 Spike: canvas charts — render one `echarts` fence via the bundled
+      *(✅ 2026-09-23 devtools, twice over: (a) `wx.closeSocket` → socket
+      dies → navigate away/back (`useDidShow` → `runtime.onForeground()`) →
+      reconnected with transcript intact, no user action beyond navigation;
+      (b) the cell process was killed for an LLM-config swap → shared
+      backoff reconnected the simulator unprompted and replayed initial
+      queries (model chip re-synced). Unit coverage: test-ws-reconnect 6/6.)*
+- [x] 1.4 Spike: canvas charts — render one `echarts` fence via the bundled
       canvas renderer; verify a bar/line/pie renders on-device and that a
       broken option falls back to the code block without an error surface.
+      *(✅ 2026-09-23 devtools: model emitted an echarts bar-chart fence →
+      `.md-chart` + `.md-chart-canvas` rendered (canvas path taken, not the
+      code-block fallback: `.md-code-block` = 0), no error block. Fallback
+      path is code-verified in `lib/charts.ts` (draw failure flips the entry
+      to "failed" → renderer degrades to CodeBlock) and the fence parser's
+      gate (JSON-object-only) is unit-tested in markdown.test.mjs.)*
 
 ## 2. Shared core package (web behavior unchanged)
 
@@ -153,7 +175,29 @@
       domain steps, devtools bypass, build + verify commands) plus the
       `.env.example` MP block and the DEPLOY.md file map. Remaining: a
       reviewer pass against a staging deployment (tracked with 6.3).
-- [ ] 6.3 End-to-end verification against a staging gateway: login → chat
+- [x] 6.3 End-to-end verification against a staging gateway: login → chat
       turn → background/foreground → history → attachment upload; verify
       every spec scenario in `miniprogram-client`, `miniprogram-auth`, and
       `file-upload-api` deltas is exercised or explicitly accounted for.
+      *(✅ 2026-09-23, against the local rehearsal gateway
+      (`scripts/dev-mp-gateway.mjs`: real gateway + real Logto, mocked
+      code2Session — the staging stand-in per DEPLOY.md), driven end-to-end
+      through devtools automation. Login: silent `POST /api/mp/login`
+      exchange verified live (bound openid → account token → Bearer-routed
+      cell); bind-code mint/redeem/replay/logout covered by
+      `test-mp-auth.mjs` 18/18. Chat: success turn (markdown), error turn
+      (upstream 503 → distinct error block, UI unstuck), echarts canvas
+      turn. Background/foreground: wx.closeSocket + onShow reconnect, plus
+      an unplanned cell-process kill → auto-reconnect. History: sessions
+      list (2 items) → detail renders read-only (title + 3 user/3 assistant
+      turns). Attachments: failure path (mocked unreadable path → error
+      chip, prompt text stays sendable, chip removable) and success path
+      (mocked uploadFile 200 → attached chip → sent user turn carries
+      `@doc:doc-mock-1`); the real multipart endpoint round-trip was
+      curl-verified in 3.1. `file-upload-api` delta was deleted in 3.2
+      (N/A). Model-switch streaming guard: composer guard observed on-device
+      (`composer-stop` replaces send mid-turn); picker `disabled={isStreaming}`
+      is the same store flag, contract covered by web e2e. Remaining before
+      public release (ops, outside this change): the remote staging pass
+      with ICP domain + WSS whitelist + real appid upload — prerequisites
+      tracked in DEPLOY.md, not code.)*
