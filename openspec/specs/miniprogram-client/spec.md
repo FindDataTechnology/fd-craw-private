@@ -51,14 +51,25 @@ never crash the message list.
 
 ### Requirement: Session history is browsable
 
-The client SHALL list past chat sessions with title and recency, and opening
-one SHALL display its persisted messages read-only. Session metadata SHALL
-come from the existing chat-history REST endpoints.
+The client SHALL list past chat sessions with title and recency from the
+existing chat-history REST endpoints. Tapping a session row SHALL continue
+that conversation in the live chat: the client SHALL send `switch_session`
+for the row's id and land the user on the chat page, where the session's
+turns render through the SAME transcript renderer as live chat. A dedicated
+read-only session viewer SHALL NOT exist. Each row SHALL offer a share
+affordance (the ↗ icon, consistent with the chat header): tapping it SHALL
+create a share token for that session and prompt the forward-card flow, and
+SHALL NOT open the session.
 
 #### Scenario: opening a past session
 
-- **WHEN** the user opens a listed session
-- **THEN** its full message history renders read-only, and returning to the list preserves scroll position of the list
+- **WHEN** the user taps a session row in the history list
+- **THEN** the live chat switches to that session (`switch_session` → the chat page renders its turns through the shared transcript renderer), the user lands on the chat page ready to type, and returning to the list preserves the list's scroll position
+
+#### Scenario: the row share icon shares instead of opening
+
+- **WHEN** the user taps a row's ↗ affordance
+- **THEN** a share token is created for that session with a forward-card toast, and the session does not open
 
 ### Requirement: Model and agent selection work and respect the streaming guard
 
@@ -137,15 +148,21 @@ the text of the prompt.
 
 The chat page header SHALL present three affordances: a history entry that
 opens the sessions page, the combined agent·model entry (per the selection
-requirement), and a new-session action. The header SHALL NOT contain the
-server-address setting; that setting SHALL be reachable from the sessions
-(history) page. The connection banner (connecting / disconnected / retry)
-SHALL keep appearing above the header independently of this layout.
+requirement), and a new-session action. The collapsed combined entry SHALL
+show the active agent's name only; the active model SHALL be visible inside
+the selection panel rather than in the collapsed label. The header SHALL NOT
+contain the server-address setting; that setting SHALL be reachable from the
+sessions (history) page.
 
 #### Scenario: header renders the three zones
 
 - **WHEN** the chat page is mounted
-- **THEN** the header shows a history entry, one combined agent·model entry, and a new-session action, and no server-setting control
+- **THEN** the header shows a history entry, one combined agent·model entry labeled with the active agent's name, and a new-session action, and no server-setting control
+
+#### Scenario: the model is chosen from the panel
+
+- **WHEN** the user opens the combined entry
+- **THEN** the panel shows the active model alongside the agent and preset choices, and picking a model updates it without changing the collapsed label's agent name
 
 #### Scenario: server address is set from the history page
 
@@ -176,15 +193,42 @@ SHALL keep the card visible above the keyboard.
 
 ### Requirement: The empty-session welcome offers suggested prompts that prefill the draft
 
-When the session has no turns, the chat page SHALL present a centered welcome
-containing a greeting and four suggested-prompt cards. Tapping a card SHALL
-prefill the draft with the prompt text; it SHALL NOT send. The welcome SHALL
-also offer a link to the sessions (history) page.
+When the session has no turns, the chat page SHALL present a welcome that
+showcases the product and offers quick-start paths, in this order: a
+positioning line, an agent-card grid for every chat-mode agent in the current
+roster (each card showing the agent's name and description, tapping it SHALL
+switch to that agent without leaving the page), a general-chat quick start,
+the suggested-prompt cards, and a recent-sessions strip listing the most
+recent sessions from the store's session list (tapping one SHALL load it).
+When the roster contains no agents beyond the built-in one, the welcome SHALL
+fall back to a prompts-and-recent layout without the card grid. The welcome
+SHALL also offer a link to the sessions (history) page.
+
+For a bound (signed-in or demo) user, tapping a suggested-prompt card SHALL
+prefill the draft with the prompt text; it SHALL NOT send. For an unbound
+user on a non-demo deployment, tapping a suggested-prompt card SHALL enter
+the demo sandbox directly, carrying that prompt into the demo draft, and
+SHALL NOT send.
+
+#### Scenario: the showcase renders from the live roster
+
+- **WHEN** the session has no turns and the roster holds the pack agents
+- **THEN** the welcome shows a positioning line, one card per chat agent (name + description), a general-chat start, the suggested prompts, and a recent-sessions strip
 
 #### Scenario: tapping a suggested prompt prefills without sending
 
-- **WHEN** the welcome is showing and the user taps a suggested-prompt card
+- **WHEN** a bound user taps a suggested-prompt card on the welcome
 - **THEN** the composer draft contains that prompt text and no prompt message is sent
+
+#### Scenario: an unbound user's prompt tap starts the demo with context
+
+- **WHEN** an unbound user on a non-demo deployment taps a suggested-prompt card
+- **THEN** the client enters the demo sandbox and the demo draft is prefilled with that prompt — no prompt is sent from the account deployment
+
+#### Scenario: roster-empty fallback
+
+- **WHEN** the deployment exposes only the built-in agent
+- **THEN** the welcome omits the card grid and still offers the prompts and the recent-sessions strip
 
 ### Requirement: Assistant turns expose copy and regenerate actions
 
@@ -205,3 +249,69 @@ on a non-latest assistant turn or when no user turn precedes it.
 
 - **WHEN** the user taps regenerate on the latest assistant turn while nothing is streaming
 - **THEN** the last user prompt is re-sent as a new prompt and a new user+assistant turn pair is appended — the previous turns are unchanged
+
+### Requirement: History secondary surfaces live in collapsed groups
+
+The history page SHALL organize secondary surfaces below the session list as
+collapsed-by-default groups: the user's active shares (count on the header;
+expanding lists tokens with a revoke action), the scheduled-task entry (count
+on the header; the unread indication for unseen task output lives on this
+group's header and clears by the existing seen-marking rules), and the
+server/advanced settings. The session list itself SHALL remain the primary
+surface above the groups. No secondary section SHALL render expanded without
+a user tap.
+
+#### Scenario: groups render collapsed with counts
+
+- **WHEN** the history list page is shown
+- **THEN** the session list renders first, followed by collapsed group headers for shares, scheduled tasks, and server settings, each carrying its count where one exists
+
+#### Scenario: unseen task output marks the group
+
+- **WHEN** a scheduled task produced unseen output
+- **THEN** the scheduled-task group header shows the unread indication until the session is viewed by the existing rules
+
+### Requirement: The new-session action answers every tap
+
+The new-session action SHALL give feedback on every activation: starting a
+fresh session SHALL confirm it (e.g. 「已开启新对话」), and activating it while
+the current session is already blank SHALL say so (「已是新对话」) instead of
+silently doing nothing.
+
+#### Scenario: new session from an active conversation
+
+- **WHEN** the user taps ＋ while a conversation with turns is open
+- **THEN** a fresh session starts and a confirmation toast appears
+
+#### Scenario: new session on the welcome state
+
+- **WHEN** the user taps ＋ while the current session is already blank
+- **THEN** a 「已是新对话」 toast appears and no duplicate session is created
+
+### Requirement: Status and sign-in affordances occupy one quiet area
+
+The chat page SHALL NOT stack multiple full-width banners. The unbound state
+(loading required on a non-demo deployment) SHALL be presented inside the
+welcome as its primary call-to-action — enter-demo first, sign-in secondary —
+instead of a standalone banner. While on the demo origin, a single
+lightweight notice line SHALL identify the demo environment and offer the
+exit. Connection trouble (connecting / disconnected) SHALL render as a slim
+top indicator with a tap-to-retry affordance, not a full banner row; the
+indicator SHALL disappear when connected. These affordances SHALL preserve
+the sign-in contract: nothing navigates to the login page without a user
+tap, and no authorization popup may ever appear.
+
+#### Scenario: an unbound first-open shows the showcase with inline CTAs
+
+- **WHEN** an unbound user opens the app on a non-demo deployment
+- **THEN** the first screen is the showcase welcome carrying the demo entry as the primary action and sign-in as the secondary action — no stacked banners, no forced navigation
+
+#### Scenario: connection trouble is a slim indicator
+
+- **WHEN** the connection is connecting or disconnected
+- **THEN** a slim indicator with retry appears at the top and no full-width banner row is shown
+
+#### Scenario: the demo notice is one line
+
+- **WHEN** the client is on the demo origin
+- **THEN** one notice line identifies the demo environment with an exit affordance, and no other status banners are stacked above the welcome

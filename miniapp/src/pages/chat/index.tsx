@@ -10,6 +10,7 @@ import Taro, { eventCenter, useDidShow, useShareAppMessage } from "@tarojs/taro"
 import { createShare, useChatStore } from "@platform/core";
 import { OutlineRail, type OutlineEntry } from "@/components/OutlineRail";
 import { SelectionPanel, type PanelPickKind, type PanelRow } from "@/components/SelectionPanel";
+import { recentStrip, relativeTime, showcaseCards } from "@/lib/showcase";
 import { TurnView } from "@/components/TurnView";
 import { authHeaders, isDemoAccount, LOGIN_REQUIRED_EVENT, recordEmail } from "@/lib/auth";
 import { clearToken, enterDemoBase, exitDemoBase, isDemoBase } from "@/lib/config";
@@ -47,6 +48,7 @@ export default function ChatPage() {
   const currentAgent = useChatStore((s) => s.currentAgent);
   const presets = useChatStore((s) => s.presets);
   const currentPreset = useChatStore((s) => s.currentPreset);
+  const currentSessionId = useChatStore((s) => s.currentSessionId);
   const sessions = useChatStore((s) => s.sessions);
   // 入口浮现(spec: scheduled-task-notifications):任何会话有未看新内容时,
   // ☰ 上点亮红点。lastSeen 随 sessions 变化重读(点开会话后 sessions 广播
@@ -294,9 +296,11 @@ export default function ChatPage() {
 
   // ── header + selection panel ──────────────────────────────────────────
 
-  const modelName = models.find((m) => m.id === currentModel)?.name || "模型";
   const agentName = agents.find((a) => a.id === currentAgent)?.name;
-  const chipLabel = agentName ? `${agentName} · ${modelName}` : modelName;
+  // Agent-first label (openspec: redesign-mp-home): the collapsed chip names
+  // WHO you're talking to; the model stays inside the selection panel
+  // (modelRows already carries it there).
+  const chipLabel = agentName || "FD";
 
   const modelRows: PanelRow[] = models.map((m) => ({ id: m.id, label: m.name || m.id }));
   const agentRows: PanelRow[] = agents.map((a) => ({ id: a.id, label: a.name || a.id }));
@@ -356,46 +360,47 @@ export default function ChatPage() {
         }
       : undefined;
 
+  // ── home showcase (openspec: redesign-mp-home) ────────────────────────
+  const cards = useMemo(() => showcaseCards(agents), [agents]);
+  const recent = useMemo(() => recentStrip(sessions, currentSessionId), [sessions, currentSessionId]);
+
+  // A bound user's prompt tap prefills; an unbound user's tap is the one-hop
+  // try-out — enter the demo with the prompt carried into the draft (the
+  // page stays mounted across the base switch, so setState carries it over).
+  const handlePromptTap = (text: string) => {
+    setDraft(text);
+    if (runtime.loginRequiredNow()) enterDemo();
+  };
+
   return (
     <View className="chat-page">
+      {/* One quiet status area (openspec: redesign-mp-home): connection
+          trouble is a slim tap-to-retry line, the demo origin is one notice
+          line — never stacked full-width banners. The unbound sign-in
+          affordance lives INSIDE the welcome as its CTA. */}
       {status !== "connected" ? (
-        <View className="conn-banner">
-          <Text className="conn-text">{status === "connecting" ? "连接中…" : "已断开"}</Text>
-          <Text
-            className="conn-retry"
-            onClick={() => {
-              runtime.reconnectNow();
-            }}
-          >
-            重试
+        <View className="conn-line" onClick={() => runtime.reconnectNow()}>
+          <Text className="conn-line-dot" />
+          <Text className="conn-line-text">
+            {status === "connecting" ? "连接中…" : "已断开 · 点击重试"}
           </Text>
         </View>
       ) : null}
 
-      {unbound && status !== "connected" ? (
-        <View className="auth-banner">
-          <Text className="auth-banner-text">登录后开始使用</Text>
-          <View className="auth-banner-actions">
-            <Text className="auth-banner-link" onClick={goLogin}>
-              去登录 ›
-            </Text>
-            <Text className="auth-banner-link" onClick={enterDemo}>
-              先体验 ›
-            </Text>
-          </View>
-        </View>
-      ) : demo ? (
+      {demo && status === "connected" ? (
         isDemoBase() ? (
-          <View className="demo-banner">
-            <Text className="demo-banner-text">演示环境 · 数据定期清空</Text>
-            <Text className="demo-banner-link" onClick={exitDemo}>
+          <View className="demo-line">
+            <Text className="demo-line-text">演示环境 · 数据定期清空</Text>
+            <Text className="demo-line-link" onClick={exitDemo}>
               退出演示 ›
             </Text>
           </View>
         ) : (
-          <View className="demo-banner" onClick={goLogin}>
-            <Text className="demo-banner-text">体验模式 · 额度有限</Text>
-            <Text className="demo-banner-link">绑定账号解锁完整功能 ›</Text>
+          <View className="demo-line">
+            <Text className="demo-line-text">体验模式 · 额度有限</Text>
+            <Text className="demo-line-link" onClick={goLogin}>
+              绑定账号解锁完整功能 ›
+            </Text>
           </View>
         )
       ) : null}
@@ -411,7 +416,7 @@ export default function ChatPage() {
             ☰{historyUnread ? <Text className="hd-unread-dot" /> : null}
           </Text>
           <Text className="hd-btn" onClick={() => void handleShare()}>
-            分享
+            ↗
           </Text>
         </View>
         <View
@@ -425,8 +430,16 @@ export default function ChatPage() {
           <Text
             className="hd-btn"
             onClick={() => {
+              // Every tap answers (openspec: revise-mp-history-ux): the
+              // button must never read as broken. Blank-session taps stay
+              // idempotent (no duplicate session) — they just say so now.
+              if (turns.length === 0) {
+                Taro.showToast({ title: "已是新对话", icon: "none" });
+                return;
+              }
               useChatStore.getState().clearView();
               runtime.send({ type: "new_session" });
+              Taro.showToast({ title: "已开启新对话", icon: "none" });
             }}
           >
             ＋
@@ -443,14 +456,41 @@ export default function ChatPage() {
       >
         {turns.length === 0 ? (
           <View className="welcome">
-            <Text className="welcome-title">今天我可以帮你什么？</Text>
+            <Text className="welcome-brand">FD · 你的行业 AI 助手</Text>
+
+            {unbound && status !== "connected" ? (
+              <View className="welcome-cta">
+                <View className="cta-primary" onClick={enterDemo}>
+                  <Text className="cta-primary-text">先体验 · 免登录直接对话</Text>
+                </View>
+                <Text className="cta-secondary" onClick={goLogin}>
+                  已有平台账号？去登录 ›
+                </Text>
+              </View>
+            ) : null}
+
+            {cards.length > 0 ? (
+              <View className="showcase-grid">
+                {cards.map((c) => (
+                  <View
+                    key={c.id}
+                    className={`showcase-card${c.general ? " showcase-card-general" : ""}`}
+                    onClick={() => handlePick("agent", c.id)}
+                  >
+                    <Text className="showcase-card-name">{c.name}</Text>
+                    {c.description ? <Text className="showcase-card-desc">{c.description}</Text> : null}
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
             <View className="welcome-cards">
               {PROMPTS.map((p) => (
                 <View
                   key={p.title}
                   className="welcome-card"
                   onClick={() => {
-                    setDraft(p.text);
+                    handlePromptTap(p.text);
                   }}
                 >
                   <Text className="welcome-card-title">{p.title}</Text>
@@ -458,6 +498,22 @@ export default function ChatPage() {
                 </View>
               ))}
             </View>
+
+            {recent.length > 0 ? (
+              <View className="recent-strip">
+                {recent.map((s) => (
+                  <View
+                    key={s.id}
+                    className="recent-item"
+                    onClick={() => runtime.send({ type: "switch_session", id: s.id })}
+                  >
+                    <Text className="recent-title">{s.title || "新对话"}</Text>
+                    <Text className="recent-time">{relativeTime(s.updatedAt ?? s.createdAt)}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
             <Text
               className="welcome-history"
               onClick={() => {

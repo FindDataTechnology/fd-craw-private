@@ -285,13 +285,19 @@ page {
   flex-direction: column;
   align-items: center;
   gap: 32px;
-  padding: 24vh 40px 0;
+  padding: 8vh 40px 0;
 }
 
-.welcome-title {
-  font-size: 40px;
-  font-weight: 600;
+/* Showcase header (openspec: redesign-mp-home) — positioning line. */
+.welcome-brand {
+  font-size: 36px;
+  font-weight: 700;
   color: #111827;
+}
+
+.welcome-brand-sub {
+  font-size: 24px;
+  color: #6b7280;
 }
 
 .welcome-cards {
@@ -776,11 +782,6 @@ page {
 }
 
 .sessions-list,
-.sessions-detail {
-  flex: 1;
-  overflow: hidden;
-}
-
 .session-item {
   padding: 22px 24px;
   background: #fff;
@@ -812,19 +813,6 @@ page {
 
 .sessions-error {
   color: #b91c1c;
-}
-
-.sessions-back {
-  padding: 16px 24px;
-  color: #2563eb;
-  background: #fff;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.sessions-detail-title {
-  padding: 16px 24px 0;
-  font-size: 32px;
-  font-weight: 600;
 }
 
 /* ── login page ────────────────────────────────────────────────────────── */
@@ -1069,34 +1057,6 @@ page {
 /* Header share entry rides the existing .hd-btn; the rest is the read-only
    shared-session page and the sessions-page share manager. */
 
-.sessions-detail-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px 0;
-}
-
-.session-share-btn {
-  flex-shrink: 0;
-  font-size: 24px;
-  color: #2563eb;
-  padding: 8px 12px;
-}
-
-.share-manage {
-  margin: 16px 24px;
-  padding: 16px 20px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-}
-
-.share-manage-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: #111827;
-}
-
 .share-row {
   display: flex;
   align-items: center;
@@ -1163,10 +1123,17 @@ page {
   color: #6b7280;
 }
 
+/* Horizontal padding lives on the CHILDREN, not the scroll-view: WeChat's
+   scroll-view drops side paddings (the chat page pads .turn-wrap for the
+   same reason), which is why the turns hugged the screen edges. */
 .share-body {
   flex: 1;
   min-height: 0;
-  padding: 16px 24px 0;
+  padding: 16px 0 0;
+}
+
+.share-body .turn {
+  padding: 0 24px;
 }
 
 .share-title {
@@ -1174,7 +1141,7 @@ page {
   font-size: 30px;
   font-weight: 600;
   color: #111827;
-  padding: 8px 0 16px;
+  padding: 8px 24px 16px;
 }
 
 /* ── 定时任务页 + 对话内任务卡片(scheduled-tasks-ui / agent-scheduling-tools)── */
@@ -1415,15 +1382,6 @@ page {
   flex-shrink: 0;
 }
 
-.sessions-cron-entry {
-  padding: 12px 32px 0;
-}
-
-.sessions-cron-link {
-  font-size: 26px;
-  color: #2563eb;
-}
-
 .hd-unread-dot {
   display: inline-block;
   width: 12px;
@@ -1487,4 +1445,224 @@ page {
 
 .blk-cron-danger {
   color: #dc2626;
+}
+
+/* ── home showcase (openspec: redesign-mp-home) ─────────────────────────── */
+
+/* Unbound CTA lives inside the welcome: demo first, sign-in secondary. */
+.welcome-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.cta-primary {
+  width: 100%;
+  padding: 22px 0;
+  border-radius: 48px;
+  background: #1d4ed8;
+  text-align: center;
+}
+
+.cta-primary-text {
+  color: #fff;
+  font-size: 30px;
+  font-weight: 600;
+}
+
+.cta-secondary {
+  font-size: 24px;
+  color: #6b7280;
+}
+
+.showcase-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  width: 100%;
+}
+
+.showcase-card {
+  width: calc(50% - 9px);
+  box-sizing: border-box;
+  min-height: 140px;
+  padding: 22px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.showcase-card-general {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.showcase-card-name {
+  font-size: 28px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.showcase-card-desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 22px;
+  color: #6b7280;
+}
+
+.recent-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  border-top: 1px solid #f3f4f6;
+  padding-top: 12px;
+}
+
+.recent-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 8px;
+}
+
+.recent-title {
+  flex: 1;
+  font-size: 26px;
+  color: #111827;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.recent-time {
+  font-size: 22px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+/* One quiet status area: slim connection line + one-line demo notice. */
+.conn-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 0;
+  background: #f9fafb;
+}
+
+.conn-line-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.conn-line-text {
+  font-size: 22px;
+  color: #6b7280;
+}
+
+.demo-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 24px;
+  background: #f0fdf4;
+}
+
+.demo-line-text {
+  font-size: 22px;
+  color: #15803d;
+}
+
+.demo-line-link {
+  font-size: 22px;
+  font-weight: 600;
+  color: #15803d;
+}
+
+/* ── history groups + row share (revise-mp-history-ux) ─────────────────── */
+
+.session-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.session-share-icon {
+  padding: 8px 4px 8px 24px;
+  font-size: 28px;
+  color: #6b7280;
+}
+
+.grp-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 16px;
+}
+
+.grp-sec {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.grp-sec-hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px;
+}
+
+.grp-sec-title {
+  flex: 1;
+  font-size: 26px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.grp-sec-count {
+  min-width: 36px;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 22px;
+  text-align: center;
+}
+
+.grp-sec-caret {
+  font-size: 22px;
+  color: #9ca3af;
+}
+
+.grp-sec-body {
+  padding: 0 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.grp-sec-empty {
+  font-size: 24px;
+  color: #9ca3af;
+}
+
+.grp-sec-link {
+  padding: 12px 0;
+  font-size: 26px;
+  color: #2563eb;
 }

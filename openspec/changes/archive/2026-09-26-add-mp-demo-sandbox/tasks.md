@@ -27,7 +27,7 @@
 
 ## 5. Go-live (operator checklist — needs the user)
 
-- [ ] 5.1 DNS A record `demo.finddatatech.cloud` → entry IP; Safeline site + cert for the hostname (console) → verify `curl -I https://demo.finddatatech.cloud/healthz`-equivalent answers the pod
-- [ ] 5.2 WeChat console: add `https://demo.finddatatech.cloud` to request + socket legal domains
-- [ ] 5.3 Trigger the Jenkins platform build; bump both deployment tags + demo replicas to 1 in one GitOps commit; ArgoCD sync; live probe: fresh WeChat account taps 先体验 → chats with no popup; cap + wipe observed on the pod
-- [ ] 5.4 Upload the new client version and resubmit for review with the demo-flow explanation + screenshots
+- [x] 5.1 DNS A record `demo.finddatatech.cloud` → entry IP (user); Safeline site + cert (user); chain verified end-to-end
+- [x] 5.2 WeChat console: add `https://demo.finddatatech.cloud` to request + socket legal domains (user confirmed 2026-09-25)
+- [x] 5.3 Builds #24/#25 (sha-3d68a79 → sha-0ccd811 after the Dockerfile hmr-pin fix), GitOps rolls, live probe GREEN: 3-min stable 200s through Safeline→Caddy→NodePort, real chat (user→agent_start→text deltas→done), upload 403. Go-live debugging found and fixed: emptyDir shadowing the baked dsh home; cordis-plugin-hmr floating to 1.0.19 in the profile tree; LLM route must be the sub2api ClusterIP. Also rescued a cluster incident mid-go-live (cheap-4 containerd restart GC'd harbor's own images → registry/sub2api outage; images re-imported via the daocloud mirror relay, harbor + sub2api restored)
+- [ ] 5.4 Upload the new client version and resubmit for review with the demo-flow explanation + screenshots — client upload ready via wechatide (needs IDE approval); console resubmission is the user's

@@ -1,26 +1,20 @@
-// Session history: a list from the chat-history REST endpoints and a
-// read-only viewer for one session. REST (not the socket) so the page works
-// even while the chat connection is down. Also hosts the server-address
-// setting (moved here from the chat header by redesign-mp-chat-layout) —
-// saving reconnects the shared runtime singleton, so the chat page follows.
-// Session sharing (openspec: add-session-share): the viewer gets a share
-// action (token + WeChat forward card); the list gets a share-manager section
-// (list own tokens, revoke).
+// Session history (revise-mp-history-ux): the list is a SWITCHER — tapping
+// a row continues that conversation in the live chat (switch_session +
+// navigate back); the old in-page read-only viewer is retired, so live and
+// past transcripts share the chat page's single renderer. Secondary surfaces
+// (share tokens, scheduled tasks, server settings) live in collapsed groups
+// under the list. REST (not the socket) still feeds the LIST itself, so the
+// page works while the chat connection is down.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Input, ScrollView, Text, View } from "@tarojs/components";
 import Taro, { useShareAppMessage } from "@tarojs/taro";
-import { createShare, getChatSession, listChatSessions, listShares, revokeShare, type ChatMessage, type SessionMeta, type ShareInfo } from "@platform/core";
-import { Markdown } from "@/components/Markdown";
+import { createShare, listChatSessions, listShares, revokeShare, useCronStore, type SessionMeta, type ShareInfo } from "@platform/core";
 import { baseUrl, setBaseUrl } from "@/lib/config";
 import { runtime } from "@/lib/runtime";
 import { getLastSeen, markSessionSeen, isSessionUnseen } from "@/lib/unread";
 
-type ViewState =
-  | { kind: "list" }
-  | { kind: "loading" }
-  | { kind: "session"; id: string; title?: string; messages: ChatMessage[] }
-  | { kind: "error"; message: string };
+type ViewState = { kind: "list" } | { kind: "loading" } | { kind: "error"; message: string };
 
 function when(meta: SessionMeta): string {
   const raw = meta.updatedAt ?? meta.createdAt;
@@ -32,20 +26,48 @@ function when(meta: SessionMeta): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// Collapsed-by-default section under the session list (design D3). Header
+// carries the optional count and unread badge; the body renders on expand.
+// Collapse state is per-page-visit — nothing persists.
+function Group({
+  title,
+  count,
+  badge,
+  children,
+}: {
+  title: string;
+  count?: number;
+  badge?: boolean;
+  children?: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View className="grp-sec">
+      <View className="grp-sec-hd" onClick={() => setOpen((v) => !v)}>
+        {badge ? <View className="session-unread-dot" /> : null}
+        <Text className="grp-sec-title">{title}</Text>
+        {typeof count === "number" && count > 0 ? <Text className="grp-sec-count">{count}</Text> : null}
+        <Text className="grp-sec-caret">{open ? "▾" : "▸"}</Text>
+      </View>
+      {open ? <View className="grp-sec-body">{children}</View> : null}
+    </View>
+  );
+}
+
 export default function SessionsPage() {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [view, setView] = useState<ViewState>({ kind: "loading" });
   const [serverDraft, setServerDraft] = useState(baseUrl());
   // Share state (openspec: add-session-share). tokens: the owner's active
-  // shares for the manager section; shareTokenRef: the token the forward
-  // card should carry (created when the user taps 分享; the WeChat hook reads
-  // it via ref because onShareAppMessage fires when the sheet opens, not on
-  // tap).
+  // shares for the 我的分享 group; shareTokenRef: the token the forward card
+  // should carry (created on a row's ↗ tap; the WeChat hook reads it via ref
+  // because onShareAppMessage fires when the sheet opens, not on tap).
   const [shares, setShares] = useState<ShareInfo[] | null>(null);
   const shareTokenRef = useRef<string | null>(null);
   // 每会话上次查看时间(spec: scheduled-task-notifications 的未读推导)。
-  // 打开会话即标记;定时任务在别处产出时,这里点亮红点。
+  // 打开会话即标记;定时任务在别处产出时,组头/☰ 点亮红点。
   const [lastSeen, setLastSeen] = useState<Record<string, string>>(() => getLastSeen());
+  const cronJobs = useCronStore((s) => s.jobs);
 
   useShareAppMessage(() => ({
     title: "会话分享",
@@ -108,15 +130,16 @@ export default function SessionsPage() {
     refreshShares();
   }, [refreshShares]);
 
-  const open = async (id: string) => {
+  // Tap-to-continue (route B): one action views AND continues the past. The
+  // WS switch drives the chat store; the chat page renders the loaded turns
+  // with the live transcript renderer. Navigating back lands the user there
+  // with the composer ready.
+  const open = (id: string) => {
     setLastSeen(markSessionSeen(id));
-    setView({ kind: "loading" });
-    try {
-      const session = await getChatSession(id);
-      setView({ kind: "session", id: session.id, title: session.title, messages: session.messages });
-    } catch (err) {
-      setView({ kind: "error", message: (err as Error).message });
-    }
+    runtime.send({ type: "switch_session", id });
+    Taro.navigateBack({
+      fail: () => Taro.reLaunch({ url: "/pages/chat/index" }),
+    });
   };
 
   const saveServer = () => {
@@ -128,44 +151,7 @@ export default function SessionsPage() {
     runtime.reconnectNow();
   };
 
-  if (view.kind === "session") {
-    return (
-      <View className="sessions-page">
-        <View className="sessions-back" onClick={() => setView({ kind: "list" })}>
-          <Text>‹ 返回列表</Text>
-        </View>
-        <View className="sessions-detail-head">
-          {view.title ? <Text className="sessions-detail-title">{view.title}</Text> : null}
-          <Text
-            className="session-share-btn"
-            onClick={() => {
-              void handleShare(view.id);
-            }}
-          >
-            分享此会话
-          </Text>
-        </View>
-        <ScrollView scrollY className="sessions-detail">
-          {view.messages.map((m, i) =>
-            m.role === "user" ? (
-              <View key={i} className="turn turn-user">
-                <Text className="turn-user-text" selectable userSelect>
-                  {m.content}
-                </Text>
-              </View>
-            ) : (
-              <View key={i} className="turn turn-assistant">
-                <View className="blk blk-text">
-                  <Markdown text={m.content} />
-                </View>
-              </View>
-            ),
-          )}
-          <View className="msg-bottom" />
-        </ScrollView>
-      </View>
-    );
-  }
+  const unseenCount = sessions.filter((s) => isSessionUnseen(s, lastSeen)).length;
 
   return (
     <View className="sessions-page">
@@ -187,14 +173,25 @@ export default function SessionsPage() {
             data-testid="mp-session-item"
             data-unseen={isSessionUnseen(s, lastSeen) ? "true" : "false"}
             onClick={() => {
-              void open(s.id);
+              open(s.id);
             }}
           >
             <View className="session-title-row">
               {isSessionUnseen(s, lastSeen) ? <View className="session-unread-dot" /> : null}
               <Text className="session-title">{s.title || "未命名会话"}</Text>
             </View>
-            <Text className="session-when">{when(s)}</Text>
+            <View className="session-meta-row">
+              <Text className="session-when">{when(s)}</Text>
+              <Text
+                className="session-share-icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleShare(s.id);
+                }}
+              >
+                ↗
+              </Text>
+            </View>
           </View>
         ))}
         {view.kind === "list" && sessions.length === 0 ? (
@@ -202,41 +199,52 @@ export default function SessionsPage() {
             <Text>还没有历史会话</Text>
           </View>
         ) : null}
-        {view.kind === "list" && shares !== null && shares.length > 0 ? (
-          <View className="share-manage">
-            <Text className="share-manage-title">共享链接（点击撤销）</Text>
-            {shares.map((s) => (
-              <View
-                key={s.token}
-                className="share-row"
-                onClick={() => {
-                  void handleRevoke(s.token);
-                }}
-              >
-                <Text className="share-row-title">{s.title || s.sessionId}</Text>
-                <Text className="share-row-revoke">撤销</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
+
+        <View className="grp-groups">
+          <Group title="我的分享" count={shares?.length ?? 0}>
+            {shares !== null && shares.length > 0 ? (
+              shares.map((s) => (
+                <View
+                  key={s.token}
+                  className="share-row"
+                  onClick={() => {
+                    void handleRevoke(s.token);
+                  }}
+                >
+                  <Text className="share-row-title">{s.title || s.sessionId}</Text>
+                  <Text className="share-row-revoke">撤销</Text>
+                </View>
+              ))
+            ) : (
+              <Text className="grp-sec-empty">暂无分享链接</Text>
+            )}
+          </Group>
+          <Group title="⏰ 定时任务" count={cronJobs.length} badge={unseenCount > 0}>
+            <View
+              className="grp-sec-link"
+              onClick={() => Taro.navigateTo({ url: "/pages/cron/index" })}
+            >
+              <Text>打开定时任务 ›</Text>
+            </View>
+          </Group>
+          <Group title="服务器与高级设置">
+            <View className="sessions-server">
+              <Text className="server-label">服务器</Text>
+              <Input
+                className="server-input"
+                value={serverDraft}
+                onInput={(e) => setServerDraft(e.detail.value)}
+                placeholder="http://localhost:3080"
+                placeholderClass="login-placeholder"
+              />
+              <Text className="picker-link" onClick={saveServer}>
+                保存
+              </Text>
+            </View>
+          </Group>
+        </View>
         <View className="msg-bottom" />
       </ScrollView>
-      <View className="sessions-cron-entry" onClick={() => Taro.navigateTo({ url: "/pages/cron/index" })}>
-        <Text className="sessions-cron-link">⏰ 定时任务 ›</Text>
-      </View>
-      <View className="sessions-server">
-        <Text className="server-label">服务器</Text>
-        <Input
-          className="server-input"
-          value={serverDraft}
-          onInput={(e) => setServerDraft(e.detail.value)}
-          placeholder="http://localhost:3080"
-          placeholderClass="login-placeholder"
-        />
-        <Text className="picker-link" onClick={saveServer}>
-          保存
-        </Text>
-      </View>
     </View>
   );
 }
