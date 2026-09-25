@@ -31,9 +31,14 @@ const GATEWAY_PORT = Number(process.env.GATEWAY_PORT || 3080);
 const mockWechat = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   if (url.pathname.endsWith("/sns/jscode2session")) {
-    console.log(`[mp-mock] code2Session code=${url.searchParams.get("js_code")} → fixed dev openid`);
+    const code = url.searchParams.get("js_code") || "";
+    // Codes shaped `openid-<suffix>` mint distinct openids, so a rehearsal can
+    // exercise multi-user paths (fresh demo identities, per-user cells);
+    // everything else maps to the one fixed devtools user as before.
+    const openid = code.startsWith("openid-") ? `o-MOCK-${code.slice(7)}` : "o-DEVTOOLS-LOCAL-USER";
+    console.log(`[mp-mock] code2Session code=${code} → ${openid}`);
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ openid: "o-DEVTOOLS-LOCAL-USER", session_key: "mock" }));
+    res.end(JSON.stringify({ openid, session_key: "mock" }));
     return;
   }
   res.statusCode = 404;

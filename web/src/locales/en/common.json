@@ -15,7 +15,8 @@
     "agents": "Agents",
     "bots": "Bots",
     "trace": "Trace",
-    "openMenu": "Open navigation menu"
+    "openMenu": "Open navigation menu",
+    "tasks": "Tasks"
   },
   "trace": {
     "title": "Trace",
@@ -61,7 +62,8 @@
     "showMore": "Show {{count}} more",
     "showLess": "Show less",
     "newWorkspace": "New workspace",
-    "closeSearch": "Close search"
+    "closeSearch": "Close search",
+    "unread": "New activity"
   },
   "modelsPage": {
     "title": "Models",
@@ -235,12 +237,21 @@
     "connectionLost": "Connection lost — reconnecting…",
     "ariaStreaming": "Generating answer…",
     "ariaDone": "Answer complete",
-    "retry": "Retry"
+    "retry": "Retry",
+    "outlineLabel": "Conversation outline",
+    "outlineCollapse": "Collapse outline",
+    "outlineJump": "Jump to this question"
   },
   "turn": {
     "assistantName": "{{assistant}}",
     "thinkingStreaming": "Thinking…",
     "thinking": "Thinking",
+    "activityThinking": "Thinking…",
+    "activityRunning": "Working on step {{step}}…",
+    "activityDoneTimed": "Thought for {{seconds}}s · took {{count}} steps",
+    "activityThought": "Thought for {{seconds}}s",
+    "activityDone": "Took {{count}} steps",
+    "activityErrored": "Ran into a problem · {{count}} steps taken",
     "statusRunning": "running…",
     "statusError": "error",
     "statusDone": "done",
@@ -594,5 +605,86 @@
     "openInDrawer": "Preview",
     "noRenderer": "No preview available for this file type.",
     "downloadName": "Download {{name}}"
+  },
+  "share": {
+    "banner": "Shared session — read-only, shared by its owner",
+    "loading": "Loading shared session…",
+    "unavailable": "This shared session is no longer available.",
+    "menuItem": "Share",
+    "copied": "Link copied to clipboard",
+    "failed": "Share failed: {{error}}",
+    "manage": "Shared links…",
+    "dialogTitle": "Shared links",
+    "dialogHint": "Anyone with a link can view the session. Revoke to cut access.",
+    "none": "No active shared links.",
+    "revoke": "Revoke"
+  },
+  "tasks": {
+    "title": "Scheduled Tasks",
+    "empty": "No scheduled tasks yet — create one to run a prompt on a schedule.",
+    "status": {
+      "scheduled": "Scheduled",
+      "running": "Running",
+      "paused": "Paused",
+      "completed": "Completed",
+      "expired": "Expired",
+      "error": "Error"
+    },
+    "actions": {
+      "pause": "Pause",
+      "resume": "Resume",
+      "runNow": "Run now",
+      "delete": "Delete",
+      "deleteConfirm": "Delete this scheduled task?",
+      "output": "Output"
+    },
+    "fields": {
+      "agent": "Agent",
+      "nextRun": "Next run",
+      "lastRun": "Last run",
+      "never": "never ran",
+      "missedRuns": "missed {{count}} run(s)",
+      "missedTotal": "{{count}} missed",
+      "lastOk": "ok",
+      "lastFailed": "failed"
+    },
+    "schedule": {
+      "daily": "daily at {{time}}",
+      "weekdays": "weekdays at {{time}}",
+      "weeklyOn": "weekly on {{days}} at {{time}}",
+      "everyNMinutes": "every {{n}} minutes",
+      "everyMinute": "every minute",
+      "custom": "cron “{{expr}}”",
+      "once": "once at {{when}}"
+    },
+    "form": {
+      "title": "New task",
+      "close": "Close",
+      "submit": "Create task",
+      "mode": {
+        "recurring": "Recurring",
+        "once": "One-shot"
+      },
+      "freq": {
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "custom": "Custom cron"
+      },
+      "cronPlaceholder": "Cron expression, e.g. */15 * * * *",
+      "namePlaceholder": "Name (optional) — becomes the session title",
+      "promptPlaceholder": "What should the agent do on this schedule?",
+      "tz": "Timezone",
+      "errors": {
+        "prompt": "A prompt is required",
+        "weekday": "Pick at least one weekday",
+        "cron": "Enter a cron expression",
+        "when": "Pick a date and time"
+      }
+    },
+    "tool": {
+      "title": "Scheduled task",
+      "created": "Task created from chat",
+      "notFound": "Job state unavailable — open the Tasks page."
+    }
   }
 }

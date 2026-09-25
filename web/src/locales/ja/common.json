@@ -15,7 +15,8 @@
     "agents": "エージェント",
     "bots": "ボット",
     "trace": "トレース",
-    "openMenu": "ナビゲーションメニューを開く"
+    "openMenu": "ナビゲーションメニューを開く",
+    "tasks": "タスク"
   },
   "trace": {
     "title": "トレース",
@@ -61,7 +62,8 @@
     "showMore": "さらに {{count}} 件表示",
     "showLess": "折りたたむ",
     "newWorkspace": "新しいワークスペース",
-    "closeSearch": "検索を閉じる"
+    "closeSearch": "検索を閉じる",
+    "unread": "新着あり"
   },
   "modelsPage": {
     "title": "モデル",
@@ -235,12 +237,21 @@
     "connectionLost": "接続が切断されました。自動的に再接続しています…",
     "ariaStreaming": "回答を生成中…",
     "ariaDone": "回答が完了しました",
-    "retry": "再試行"
+    "retry": "再試行",
+    "outlineLabel": "会話アウトライン",
+    "outlineCollapse": "アウトラインを折りたたむ",
+    "outlineJump": "この質問へ移動"
   },
   "turn": {
     "assistantName": "{{assistant}}",
     "thinkingStreaming": "考え中…",
     "thinking": "思考",
+    "activityThinking": "思考中…",
+    "activityRunning": "ステップ {{step}} を実行中…",
+    "activityDoneTimed": "{{seconds}} 秒思考 · {{count}} ステップ実行",
+    "activityThought": "{{seconds}} 秒思考",
+    "activityDone": "{{count}} ステップ実行",
+    "activityErrored": "問題が発生しました · {{count}} ステップ実行済み",
     "statusRunning": "実行中…",
     "statusError": "エラー",
     "statusDone": "完了",
@@ -594,5 +605,86 @@
     "openInDrawer": "プレビュー",
     "noRenderer": "このファイル形式のプレビューはありません。",
     "downloadName": "{{name}} をダウンロード"
+  },
+  "share": {
+    "banner": "共有セッション — 所有者が共有した閲覧専用ビュー",
+    "loading": "共有セッションを読み込み中…",
+    "unavailable": "この共有セッションは利用できなくなりました。",
+    "menuItem": "共有",
+    "copied": "リンクをクリップボードにコピーしました",
+    "failed": "共有に失敗しました: {{error}}",
+    "manage": "共有リンク…",
+    "dialogTitle": "共有リンク",
+    "dialogHint": "リンクを知っている人は誰でもセッションを閲覧できます。取り消すとアクセスできなくなります。",
+    "none": "有効な共有リンクはありません。",
+    "revoke": "取り消す"
+  },
+  "tasks": {
+    "title": "定期タスク",
+    "empty": "定期タスクはまだありません。スケジュールでプロンプトを実行するタスクを作成しましょう。",
+    "status": {
+      "scheduled": "予約済み",
+      "running": "実行中",
+      "paused": "一時停止",
+      "completed": "完了",
+      "expired": "期限切れ",
+      "error": "エラー"
+    },
+    "actions": {
+      "pause": "一時停止",
+      "resume": "再開",
+      "runNow": "今すぐ実行",
+      "delete": "削除",
+      "deleteConfirm": "この定期タスクを削除しますか?",
+      "output": "出力"
+    },
+    "fields": {
+      "agent": "エージェント",
+      "nextRun": "次回実行",
+      "lastRun": "前回実行",
+      "never": "未実行",
+      "missedRuns": "{{count}} 回スキップ",
+      "missedTotal": "合計 {{count}} 回スキップ",
+      "lastOk": "成功",
+      "lastFailed": "失敗"
+    },
+    "schedule": {
+      "daily": "毎日 {{time}}",
+      "weekdays": "平日 {{time}}",
+      "weeklyOn": "毎週 {{days}} {{time}}",
+      "everyNMinutes": "{{n}} 分ごと",
+      "everyMinute": "毎分",
+      "custom": "cron「{{expr}}」",
+      "once": "{{when}} に 1 回"
+    },
+    "form": {
+      "title": "新規タスク",
+      "close": "閉じる",
+      "submit": "作成",
+      "mode": {
+        "recurring": "繰り返し",
+        "once": "単発"
+      },
+      "freq": {
+        "daily": "毎日",
+        "weekly": "毎週",
+        "custom": "カスタム cron"
+      },
+      "cronPlaceholder": "cron 式(例: */15 * * * *)",
+      "namePlaceholder": "名前(任意)— セッションのタイトルになります",
+      "promptPlaceholder": "このスケジュールでエージェントに何をさせますか?",
+      "tz": "タイムゾーン",
+      "errors": {
+        "prompt": "プロンプトを入力してください",
+        "weekday": "曜日を 1 つ以上選んでください",
+        "cron": "cron 式を入力してください",
+        "when": "日時を選択してください"
+      }
+    },
+    "tool": {
+      "title": "定期タスク",
+      "created": "チャットから作成されたタスク",
+      "notFound": "タスク状態を取得できません。タスクページを開いてください。"
+    }
   }
 }

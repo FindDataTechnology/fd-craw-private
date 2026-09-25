@@ -15,6 +15,9 @@ const server = http.createServer((req, res) => {
       stub: true,
       method: req.method,
       url: req.url,
+      // Which cell instance answered (tests assert two identities got two
+      // distinct cells, and that a reaped cell cold-started a new one).
+      port,
       email: req.headers["x-forwarded-email"] ?? null,
       groups: req.headers["x-forwarded-groups"] ?? null,
       hasGatewaySecret: Boolean(req.headers[GATEWAY_SECRET_HEADER]),

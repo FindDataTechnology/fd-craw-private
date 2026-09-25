@@ -12,6 +12,7 @@ import * as documents from "./documents.js";
 import * as db from "./db.js";
 import * as trace from "./server/trace.js";
 import * as bots from "./server/bots.js";
+import { attachCronRunner } from "./server/cron-runner.js";
 import * as migrate from "./migrate.js";
 import * as cron from "./cron.js";
 import * as extensionStore from "./extension-store.js";
@@ -32,6 +33,7 @@ import { registerExtensionRoutes } from "./server/routes/extensions.js";
 import { registerChatHistoryRoutes } from "./server/routes/chat-history.js";
 import { registerTraceRoutes } from "./server/routes/trace.js";
 import { registerUserBindingRoutes } from "./server/routes/user-bindings.js";
+import { registerCronRoutes } from "./server/routes/cron.js";
 import { registerMpRoutes } from "./server/routes/mp.js";
 import { registerRegistryRoutes } from "./server/routes/registry.js";
 import { registerFileRoutes } from "./server/routes/files.js";
@@ -95,6 +97,12 @@ const ctx = createAppContext({
   // CLOUD_MODE / CELL_GATEWAY_SECRET in .env.example).
   CLOUD_MODE: process.env.CLOUD_MODE === "1" || process.env.CLOUD_MODE === "true",
   CELL_GATEWAY_SECRET: process.env.CELL_GATEWAY_SECRET || "",
+  // Accountless demo sandbox (openspec: mp-demo-sandbox): a dedicated
+  // deployment-wide mode — every connection is demo-capped, uploads are
+  // rejected and chat sessions are wiped periodically. Never set on the
+  // account deployment.
+  DEMO_SANDBOX: process.env.DEMO_SANDBOX === "true",
+  DEMO_SANDBOX_WIPE_SECS: Number(process.env.DEMO_SANDBOX_WIPE_SECS || 7200),
   AUTH_LOGIN_PATH: normalizeAuthPath(process.env.AUTH_LOGIN_PATH, "/oauth2/start"),
   AUTH_LOGOUT_PATH: normalizeAuthPath(process.env.AUTH_LOGOUT_PATH, "/oauth2/sign_out"),
   PAAS_BASE_URL: process.env.PAAS_BASE_URL || "",
@@ -153,6 +161,11 @@ ctx.mpAuth = createMpAuth({
   ttlHours: Number(process.env.MP_TOKEN_TTL_HOURS || 12),
   codeUrl: process.env.MP_JS_CODE_URL || "https://api.weixin.qq.com/sns/jscode2session",
   bindings: ctx.mpBindings,
+  // Demo mode stays gateway-only even if MP_DEMO_MODE leaks into this env: a
+  // single-process deployment has ONE shared runtime, so an anonymous demo
+  // identity would land in the owner's data (openspec: mp-demo-mode —
+  // self-hosted deployments never serve anonymous WeChat users).
+  demoMode: false,
 });
 ctx.logtoAuth = await createLogtoAuth(ctx);
 ctx.logtoAuth?.register(app);
@@ -167,6 +180,8 @@ registerExtensionRoutes(ctx);
 registerChatHistoryRoutes(ctx);
 registerTraceRoutes(ctx);
 registerUserBindingRoutes(ctx);
+// Cron REST bridge (loopback MCP child; clients use the WS cron_* messages).
+registerCronRoutes(ctx);
 // Mini-program identity endpoints (bindcode mint / login / login-bindcode /
 // unbind) — mounted with the other /api routes, before the static SPA fallback.
 registerMpRoutes(ctx);
@@ -189,6 +204,27 @@ attachRuntimeBindings(ctx);
 attachAgentSession(ctx);
 // WebSocket upgrade gate + connection handler.
 attachWebSocket(ctx);
+
+// Demo sandbox only (openspec: mp-demo-sandbox): periodically wipe the shared
+// conversation state so visitors never see each other's sessions. The timer
+// never interrupts a streaming turn (wipeSandboxSessions skips while busy).
+if (ctx.DEMO_SANDBOX) {
+  const { wipeSandboxSessions } = await import("./server/sandbox.js");
+  const everyMs = Math.max(60, ctx.DEMO_SANDBOX_WIPE_SECS) * 1000;
+  const wipe = () =>
+    wipeSandboxSessions({
+      isStreaming: () => ctx.isStreaming,
+      listSessions: () => chatHistory.listSessions(),
+      deleteSession: (id) => chatHistory.deleteSession(id),
+      startNewSession: () => ctx.startNewSession(),
+      currentSessionId: () => chatHistory.currentSessionId(),
+    })
+      .then((r) => {
+        if (r.wiped) console.log(`[sandbox] wiped ${r.wiped} session(s)${r.failed ? ` (${r.failed} failed)` : ""}`);
+      })
+      .catch((e) => console.warn(`[sandbox] session wipe failed: ${e.message}`));
+  setInterval(wipe, everyMs).unref();
+}
 
 // ── Agent session ────────────────────────────────────────────────────────────
 
@@ -518,6 +554,10 @@ ctx.onDshReady?.();
 // arrives before there is an agent to answer it; inert with no bots configured.
 bots.initBots(ctx);
 
+// Cron turn executor: mounted before cron.initCron loads jobs, so a restored
+// job that comes due immediately finds its runner attached.
+attachCronRunner(ctx);
+
 // One-time import of legacy file stores (documents-store/, sessions-store/,
 // chat-history-store/) into the SQLite database. Runs only on a fresh database;
 // idempotent; never deletes the legacy stores. migrate.js reads both legacy
@@ -538,12 +578,10 @@ await Promise.all([
   }),
   cron.initCron({
     broadcast: ctx.broadcast,
-    sessionPrompt: async (prompt) => {
-      if (ctx.session) {
-        return ctx.session.prompt(prompt);
-      }
-    },
-    isStreaming: () => ctx.isStreaming,
+    // The runner (server/cron-runner.js) executes one bound-session turn:
+    // wait-for-idle, preset switch, collector-prompted exchange, persistence.
+    runJobTurn: (job, opts) => ctx.runCronJobTurn(job, opts),
+    isBusy: () => ctx.isStreaming,
   }),
 ]);
 console.log("Platform fully initialized");

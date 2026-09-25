@@ -19,6 +19,32 @@ import { baseUrl, clearToken, setToken, token } from "./config";
 
 export const LOGIN_REQUIRED_EVENT = "platform:login-required";
 
+// The identity email of the last successful login (persisted so a relaunch
+// knows demo-ness before the first silent exchange completes). Demo-enabled
+// deployments mint demo-<hash>@demo.invalid for unbound openids (openspec:
+// mp-demo-mode); the suffix is the client-side demo marker.
+const EMAIL_KEY = "platform:login-email";
+let lastEmail = "";
+try {
+  lastEmail = Taro.getStorageSync(EMAIL_KEY) || "";
+} catch {
+  /* storage unavailable — demo detection just waits for the next login */
+}
+
+export function recordEmail(email?: string) {
+  lastEmail = typeof email === "string" ? email : "";
+  try {
+    if (lastEmail) Taro.setStorageSync(EMAIL_KEY, lastEmail);
+    else Taro.removeStorageSync(EMAIL_KEY);
+  } catch {
+    /* best effort */
+  }
+}
+
+export function isDemoAccount(): boolean {
+  return lastEmail.endsWith("@demo.invalid");
+}
+
 export function authHeaders(): Record<string, string> {
   const t = token();
   return t ? { Authorization: `Bearer ${t}` } : {};
@@ -46,9 +72,10 @@ async function silentLogin(): Promise<LoginOutcome> {
   }
   try {
     const res = await postJson("/api/mp/login", { code });
-    const body = res.data as { token?: string; error?: string } | undefined;
+    const body = res.data as { token?: string; email?: string; error?: string } | undefined;
     if (res.statusCode === 200 && body?.token) {
       setToken(body.token);
+      recordEmail(body.email);
       return "token";
     }
     if (res.statusCode === 404 && body?.error === "binding_required") return "binding_required";
@@ -64,9 +91,10 @@ async function silentLogin(): Promise<LoginOutcome> {
 export async function loginWithBindCode(bindCode: string): Promise<void> {
   const { code } = await Taro.login();
   const res = await postJson("/api/mp/login-bindcode", { code, bindCode });
-  const body = res.data as { token?: string; error?: string } | undefined;
+  const body = res.data as { token?: string; email?: string; error?: string } | undefined;
   if (res.statusCode === 200 && body?.token) {
     setToken(body.token);
+    recordEmail(body.email);
     return;
   }
   throw new Error(body?.error || `登录失败 (${res.statusCode})`);
@@ -77,6 +105,7 @@ export async function loginWithBindCode(bindCode: string): Promise<void> {
 export async function logout(): Promise<void> {
   const t = token();
   clearToken();
+  recordEmail("");
   if (!t) return;
   try {
     await Taro.request({

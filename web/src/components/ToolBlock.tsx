@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useChatStore, type Block } from "@platform/core";
 import { usePreviewStore } from "@/hooks/usePreviewStore";
+import { CronToolCard } from "@/components/CronToolCard";
 import { baseName, fileUrl, findFilePath, resolveRef } from "@/lib/file-preview";
 import { memo, useId } from "react";
 
@@ -38,6 +39,14 @@ function ToolBlockBase({ block, onToggle }: Props) {
   const { t } = useTranslation();
   const { name, args, state, result, partial, open } = block;
   const bodyId = useId();
+
+  // Agent-created scheduled tasks render as job cards, not raw tool output
+  // (spec: agent-scheduling-tools). Only the creation call is card-worthy;
+  // list/pause/delete keep the generic block.
+  if (name.endsWith("__cron_create")) {
+    return <CronToolCard block={block} />;
+  }
+
   const openPreview = usePreviewStore((s) => s.open);
   // Subscribed (not read by getState) so a later workspace switch re-resolves
   // the file reference against the root the server would now serve from.

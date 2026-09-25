@@ -313,9 +313,13 @@ test.describe("composer hardening: IME, stop, disconnect", () => {
         ],
       });
     });
+    // The replayed machinery folds into a collapsed activity group; expand
+    // it, then the tool name survives the reload behind it.
+    const groupHeader = page.locator('[data-testid="activity-group"] > button');
+    await expect(groupHeader).toBeVisible();
+    await groupHeader.click();
     await expect(page.getByTestId("tool-block")).toBeVisible();
     await expect(page.getByTestId("tool-block")).toHaveAttribute("data-tool-state", "done");
-    // The tool name survives the reload (collapsed by default).
     await expect(page.getByTestId("tool-block")).toContainText("mcp__search__web");
     await expect(page.getByTestId("turn-assistant").last()).toContainText("查完了。");
   });

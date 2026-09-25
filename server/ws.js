@@ -15,6 +15,35 @@ import { userFromHeaders, mpUserFromToken } from "./auth.js";
 const logtoUser = (ctx, req) =>
   ctx.logtoAuth?.userFromCookie(req.headers.cookie) || mpUserFromToken(ctx, req);
 
+// Demo prompt budget (openspec: mp-demo-mode). The cell learns "demo" from
+// the identity the gateway injects (x-forwarded-groups → ws.user.groups), and
+// counts turns for its own process lifetime: the gateway reaps a demo cell —
+// and deletes its data — shortly after idle, so the counter resets with it.
+// Account users pass through untouched. `everyone` (openspec:
+// mp-demo-sandbox) counts EVERY identity — the accountless demo pod applies
+// one budget per WS CONNECTION, so each visitor gets their own allowance.
+export function createDemoBudget(limit, { everyone = false } = {}) {
+  let used = 0;
+  return {
+    take(user) {
+      if (!everyone && !user?.groups?.includes?.("demo")) return true;
+      if (used >= limit) return false;
+      used += 1;
+      return true;
+    },
+  };
+}
+
+export const DEMO_LIMIT_REPLY = {
+  type: "error",
+  message: "体验额度已用完。在登录页输入绑定码，绑定你的平台账号即可解锁完整功能。",
+};
+
+export const SANDBOX_LIMIT_REPLY = {
+  type: "error",
+  message: "演示额度已用完（每次连接 20 条）。断开重连可继续体验。",
+};
+
 export function authorizeUpgrade(ctx, req) {
   return ctx.authMode === "forward_auth"
     ? Boolean(userFromHeaders(req.headers, ctx.headerTrust))
@@ -34,6 +63,14 @@ export function userForConnection(ctx, req) {
 export function attachWebSocket(ctx) {
   // noServer + manual handleUpgrade so WS upgrades pass the same forward-auth
   // gate as HTTP requests (missing identity ⇒ handshake rejected with 401).
+  const demoLimit = Number(process.env.MP_DEMO_MSG_LIMIT || 20);
+  const demoBudget = createDemoBudget(demoLimit);
+  // One guard for both demo shapes: the gateway path checks the shared
+  // per-cell budget against the identity's demo group; the sandbox pod gives
+  // EVERY connection its own budget (openspec: mp-demo-sandbox).
+  const takeBudget = (ws) =>
+    ctx.DEMO_SANDBOX ? ws.sandboxBudget.take(null) : demoBudget.take(ws.user);
+  const budgetReply = () => (ctx.DEMO_SANDBOX ? SANDBOX_LIMIT_REPLY : DEMO_LIMIT_REPLY);
   ctx.server.on("upgrade", (req, socket, head) => {
     if (!authorizeUpgrade(ctx, req)) {
       socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
@@ -93,6 +130,8 @@ ctx.wss.on("connection", (ws, req) => {
   // Identity is fixed at upgrade time (v1 ceiling: no re-auth mid-connection).
   ws.user = userForConnection(ctx, req);
   ws.identity = ctx.authEnabled ? ws.user : (ctx.ssoEnabled ? userFromHeaders(req.headers, ctx.headerTrust) : null);
+  // Sandbox pod: this connection's own prompt allowance (fresh per reconnect).
+  if (ctx.DEMO_SANDBOX) ws.sandboxBudget = createDemoBudget(demoLimit, { everyone: true });
   ctx.clients.add(ws);
   console.log(`Client connected (${ctx.clients.size} total)`);
 
@@ -158,6 +197,10 @@ ctx.wss.on("connection", (ws, req) => {
             ws.send(JSON.stringify({ type: "error", message: "The agent is still responding" }));
             break;
           }
+          if (!takeBudget(ws)) {
+            ws.send(JSON.stringify(budgetReply()));
+            break;
+          }
           // Set in-flight synchronously (before the first await) so a concurrent
           // prompt is rejected. agent_start sets it again later (idempotent).
           // A stale navigation-stop marker means the old turn already settled;
@@ -218,6 +261,10 @@ ctx.wss.on("connection", (ws, req) => {
           const entry = ctx.remoteChatEntryFor(ctx.currentAgentId);
           if (ctx.currentAgentId !== "local" && !entry && !catalog.getAgentEntry(ctx.currentAgentId)) {
             ws.send(JSON.stringify({ type: "error", message: `Unknown agent: ${ctx.currentAgentId}` }));
+            break;
+          }
+          if (!takeBudget(ws)) {
+            ws.send(JSON.stringify(budgetReply()));
             break;
           }
 
@@ -390,10 +437,17 @@ ctx.wss.on("connection", (ws, req) => {
 
       case "cron_add": {
         try {
-          const job = await cron.addJob({ cron: data.cron, when: data.when, prompt: data.prompt });
+          const job = await cron.addJob({
+            cron: data.cron,
+            when: data.when,
+            prompt: data.prompt,
+            preset: data.preset,
+            tz: data.tz,
+            sessionTitle: data.sessionTitle,
+          });
           ws.send(JSON.stringify({ type: "cron_added", job }));
         } catch (err) {
-          ws.send(JSON.stringify({ type: "error", message: err.message }));
+          ws.send(JSON.stringify({ type: "cron_error", action: "cron_add", message: err.message }));
         }
         break;
       }

@@ -43,7 +43,9 @@ test.describe("Plan progress (live model)", () => {
     await expect(page.getByTestId("plan-count")).toHaveText("0/3");
     await expect(panel).toContainText("alpha");
 
-    // The transcript carries the compact summary line, not raw JSON.
+    // The transcript carries the compact summary line, not raw JSON. The
+    // tool blocks live inside the activity group; expand them first.
+    await page.evaluate(() => window.__chatStore.getState().toggleAllGroups());
     const planBlock = page.locator('[data-testid="tool-block"][data-tool-name="todo_write"]');
     await expect(planBlock).toContainText("Updated the plan (0/3)");
 

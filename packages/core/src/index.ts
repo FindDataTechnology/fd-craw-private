@@ -14,11 +14,18 @@ export type { WsStatus, SocketFactory, SocketHandle, WsClientOptions } from "./w
 // Chat state machine + wiring seams (platform UI injects the sink).
 export { useChatStore, setChatErrorSink, setStoreExposer } from "./store/chat-store";
 export type { ConnStatus, Block, Turn } from "./store/chat-store";
+// Activity-group derivation for the master collapse (shared by web + MP).
+export { groupTurnBlocks, isGroupOpen, groupHasError } from "./store/activity-groups";
+export type { ActivityGroup, AssistantTurn } from "./store/activity-groups";
+// Scheduled-task store (owns the cron_* events; commands go out via the page's send).
+export { useCronStore } from "./store/cron-store";
 
 // REST clients.
 export * from "./api/bindings-api";
 export * from "./api/bots-api";
 export * from "./api/chat-history";
+export * from "./api/share-api";
+export { httpPublic } from "./api/http";
 export * from "./api/documents-api";
 export * from "./api/extensions-api";
 export * from "./api/llm-api";

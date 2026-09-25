@@ -15,7 +15,8 @@
     "agents": "Agents",
     "bots": "Bots",
     "trace": "Traçage",
-    "openMenu": "Ouvrir le menu de navigation"
+    "openMenu": "Ouvrir le menu de navigation",
+    "tasks": "Tâches"
   },
   "trace": {
     "title": "Traçage",
@@ -61,7 +62,8 @@
     "showMore": "Afficher {{count}} de plus",
     "showLess": "Afficher moins",
     "newWorkspace": "Nouvel espace",
-    "closeSearch": "Fermer la recherche"
+    "closeSearch": "Fermer la recherche",
+    "unread": "Nouveautés"
   },
   "modelsPage": {
     "title": "Modèles",
@@ -235,12 +237,21 @@
     "connectionLost": "Connexion perdue — reconnexion en cours…",
     "ariaStreaming": "Génération de la réponse…",
     "ariaDone": "Réponse terminée",
-    "retry": "Réessayer"
+    "retry": "Réessayer",
+    "outlineLabel": "Plan de la conversation",
+    "outlineCollapse": "Réduire le plan",
+    "outlineJump": "Aller à cette question"
   },
   "turn": {
     "assistantName": "{{assistant}}",
     "thinkingStreaming": "Réflexion…",
     "thinking": "Réflexion",
+    "activityThinking": "Réflexion…",
+    "activityRunning": "Étape {{step}} en cours…",
+    "activityDoneTimed": "A réfléchi pendant {{seconds}} s · {{count}} étapes",
+    "activityThought": "A réfléchi pendant {{seconds}} s",
+    "activityDone": "A fait {{count}} étapes",
+    "activityErrored": "Un problème est survenu · {{count}} étapes effectuées",
     "statusRunning": "en cours…",
     "statusError": "erreur",
     "statusDone": "terminé",
@@ -594,5 +605,86 @@
     "openInDrawer": "Aperçu",
     "noRenderer": "Aucun aperçu disponible pour ce type de fichier.",
     "downloadName": "Télécharger {{name}}"
+  },
+  "share": {
+    "banner": "Session partagée — lecture seule, partagée par son propriétaire",
+    "loading": "Chargement de la session partagée…",
+    "unavailable": "Cette session partagée n'est plus disponible.",
+    "menuItem": "Partager",
+    "copied": "Lien copié dans le presse-papiers",
+    "failed": "Échec du partage : {{error}}",
+    "manage": "Liens partagés…",
+    "dialogTitle": "Liens partagés",
+    "dialogHint": "Toute personne disposant du lien peut voir la session. Révoquez pour couper l'accès.",
+    "none": "Aucun lien partagé actif.",
+    "revoke": "Révoquer"
+  },
+  "tasks": {
+    "title": "Tâches planifiées",
+    "empty": "Aucune tâche planifiée — créez-en une pour exécuter un message selon un horaire.",
+    "status": {
+      "scheduled": "Planifiée",
+      "running": "En cours",
+      "paused": "En pause",
+      "completed": "Terminée",
+      "expired": "Expirée",
+      "error": "Erreur"
+    },
+    "actions": {
+      "pause": "Pause",
+      "resume": "Reprendre",
+      "runNow": "Exécuter",
+      "delete": "Supprimer",
+      "deleteConfirm": "Supprimer cette tâche planifiée ?",
+      "output": "Résultat"
+    },
+    "fields": {
+      "agent": "Agent",
+      "nextRun": "Prochaine exécution",
+      "lastRun": "Dernière exécution",
+      "never": "jamais exécutée",
+      "missedRuns": "manquée {{count}} fois",
+      "missedTotal": "{{count}} manquées",
+      "lastOk": "réussie",
+      "lastFailed": "échouée"
+    },
+    "schedule": {
+      "daily": "chaque jour à {{time}}",
+      "weekdays": "jours ouvrés à {{time}}",
+      "weeklyOn": "chaque {{days}} à {{time}}",
+      "everyNMinutes": "toutes les {{n}} minutes",
+      "everyMinute": "chaque minute",
+      "custom": "cron « {{expr}} »",
+      "once": "une fois, {{when}}"
+    },
+    "form": {
+      "title": "Nouvelle tâche",
+      "close": "Fermer",
+      "submit": "Créer la tâche",
+      "mode": {
+        "recurring": "Récurrente",
+        "once": "Unique"
+      },
+      "freq": {
+        "daily": "Quotidienne",
+        "weekly": "Hebdomadaire",
+        "custom": "Cron personnalisé"
+      },
+      "cronPlaceholder": "Expression cron, ex. */15 * * * *",
+      "namePlaceholder": "Nom (facultatif) — deviendra le titre de la session",
+      "promptPlaceholder": "Que doit faire l'agent à cet horaire ?",
+      "tz": "Fuseau horaire",
+      "errors": {
+        "prompt": "Un message est requis",
+        "weekday": "Choisissez au moins un jour",
+        "cron": "Saisissez une expression cron",
+        "when": "Choisissez date et heure"
+      }
+    },
+    "tool": {
+      "title": "Tâche planifiée",
+      "created": "Tâche créée depuis le chat",
+      "notFound": "État de la tâche indisponible — ouvrez la page Tâches."
+    }
   }
 }

@@ -824,6 +824,52 @@ program):
 4. `DELETE /api/mp/bind` (logout) removes the binding.
 
 `MP_TOKEN_SECRET` is deliberately separate from `CELL_GATEWAY_SECRET`.
+
+**Demo mode (openspec: mp-demo-mode; gateway only)** — set on the PROD
+gateway's env when enabling:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MP_DEMO_MODE` | `0` | unbound openids get a demo identity instead of `binding_required` (the WeChat-reviewer path: open, chat, zero popups) |
+| `MP_DEMO_MAX_CELLS` | `3` | concurrent demo cells; beyond, a friendly busy `503 {"code":"demo_capacity"}` |
+| `MP_DEMO_IDLE_SECS` | `900` | idle demo cells are stopped and their data dir deleted (account cells unaffected) |
+| `MP_DEMO_MSG_LIMIT` | `20` | prompts answered per demo cell before the bind-your-account reply |
+
+Demo identities are `demo-<hash>@demo.invalid` (reserved TLD — can never
+collide with a real account), group `demo`, one isolated cell per openid.
+Ignored by the single-process server on purpose (one shared runtime would
+expose the owner's data). Rollback: unset `MP_DEMO_MODE` — leftover demo
+cells reap themselves away. `/api/gateway/status` reports `demoCells` for
+monitoring.
+
+**Demo sandbox pod (openspec: mp-demo-sandbox)** — the fd-prod answer for
+"reviewer must chat for real", since that deployment runs single-process and
+cannot host cells. A dedicated accountless twin (`platform-demo`, manifest
+`fd-infra-deploy/all-services/prod/platform-demo.yaml`, NodePort 31871):
+`AUTH_MODE=none` + `DEMO_SANDBOX=true` (per-connection `MP_DEMO_MSG_LIMIT`
+budget, uploads 403, sessions wiped every `DEMO_SANDBOX_WIPE_SECS`), emptyDir
+data, anti-affinity with the account pod, LLM via the sub2api NodePort. The
+mini program's unbound banner carries a 先体验 entry that switches the client
+to `https://demo.finddatatech.cloud` (persisted base; 退出演示 restores).
+
+Go-live checklist (operator, in order):
+1. DNS A record `demo.finddatatech.cloud` → the entry IP (same as craw).
+2. Safeline console: add site `demo.finddatatech.cloud` → `127.0.0.1:8080`
+   + certificate (mirrors the craw site).
+3. WeChat console → 开发管理 → 服务器域名: add
+   `https://demo.finddatatech.cloud` to request **and** socket 合法域名.
+4. Trigger the Jenkins `platform` image build (manual webhook as usual).
+5. One GitOps commit: bump BOTH `platform` and `platform-demo` image tags to
+   the new sha AND set platform-demo `replicas: 1`; ArgoCD syncs. The Caddy
+   block (`demo.…:8080 → 127.0.0.1:31871`) is already in place and inert
+   until this step.
+6. Probe: fresh WeChat account → 先体验 → chats with zero popups; the cap
+   replies after the budget; `/api/documents` 403s; sessions wipe on the
+   timer. Then upload the new client version and resubmit for review.
+
+Rollback: platform-demo `replicas: 0` (one commit) — nothing else holds
+state; the client's demo entry then shows the sandbox unavailable and the
+normal sign-in flow is untouched.
 **Local rehearsal without the real MP AppSecret:**
 `node scripts/dev-mp-gateway.mjs` — the real gateway + real Logto from
 `.env`, with a mock code2Session that maps every wx.login code to one dev

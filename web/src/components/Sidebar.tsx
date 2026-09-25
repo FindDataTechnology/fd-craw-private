@@ -24,6 +24,7 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  Clock,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -38,6 +39,7 @@ import {
 import { useChatStore } from "@platform/core";
 import type { ClientMessage, SessionMeta } from "@platform/core";
 import { cn } from "@/lib/utils";
+import { getLastSeen, markSessionSeen, isSessionUnseen } from "@/lib/unread";
 import { ChatSessionMenu } from "@/components/ChatSessionMenu";
 import { useBranding } from "@/hooks/useAppConfig";
 import { settingsPath } from "@/components/settings/sections";
@@ -60,6 +62,7 @@ const NAV_BASE = [
   { to: "/agents", key: "nav.agents", testId: "nav-agents", icon: Sparkles },
   { to: "/bots", key: "nav.bots", testId: "nav-bots", icon: Bot },
   { to: "/trace", key: "nav.trace", testId: "nav-trace", icon: Waypoints },
+  { to: "/tasks", key: "nav.tasks", testId: "nav-tasks", icon: Clock },
 ];
 
 // Sessions whose workspace stamp is missing (rows written before the
@@ -88,9 +91,13 @@ export function Sidebar({ send, onNavigate, onCollapse }: Props) {
   const location = useLocation();
 
   // Right-click context menu on session rows: one trigger ref per row, one
-  // popover anchored to the row that fired the event.
+  // popover anchored to the row that fired it.
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
   const [menuTarget, setMenuTarget] = useState<{ id: string; el: HTMLElement } | null>(null);
+
+  // Per-session last-viewed stamps (client-side unread: updatedAt > lastSeen).
+  // Marked on open; a scheduled task's output in another session shows the dot.
+  const [lastSeen, setLastSeen] = useState(() => getLastSeen());
 
   // ── Workspaces section state ─────────────────────────────────────────────
   // Search is a transient lens (component state, not the store/URL): an
@@ -470,6 +477,7 @@ export function Sidebar({ send, onNavigate, onCollapse }: Props) {
                         key={s.id}
                         session={s}
                         isCurrent={s.id === currentSessionId}
+                        unseen={s.id !== currentSessionId && isSessionUnseen(s, lastSeen)}
                         onNavigate={onNavigate}
                         registerRef={(el) => {
                           if (el) rowRefs.current.set(s.id, el);
@@ -481,6 +489,7 @@ export function Sidebar({ send, onNavigate, onCollapse }: Props) {
                           // keep place.
                           navigate(`/chat/${s.id}`);
                           if (s.id !== currentSessionId) send({ type: "switch_session", id: s.id });
+                          setLastSeen(markSessionSeen(s.id));
                           onNavigate?.();
                         }}
                         onContextMenu={(el) => setMenuTarget({ id: s.id, el })}
@@ -557,12 +566,14 @@ export function Sidebar({ send, onNavigate, onCollapse }: Props) {
 function SessionRow({
   session: s,
   isCurrent,
+  unseen,
   registerRef,
   onOpen,
   onContextMenu,
 }: {
   session: SessionMeta;
   isCurrent: boolean;
+  unseen?: boolean;
   onNavigate?: () => void;
   registerRef: (el: HTMLElement | null) => void;
   onOpen: () => void;
@@ -575,6 +586,7 @@ function SessionRow({
       data-testid="session-row"
       data-session-id={s.id}
       data-current={isCurrent ? "true" : "false"}
+      data-unseen={unseen ? "true" : "false"}
       onClick={onOpen}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -591,7 +603,16 @@ function SessionRow({
         isCurrent && "bg-muted",
       )}
     >
-      <span className="truncate text-foreground">{s.title || t("sidebar.untitled")}</span>
+      <span className="flex items-center gap-1.5">
+        {unseen && (
+          <span
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
+            data-testid="session-unread-dot"
+            aria-label={t("sidebar.unread")}
+          />
+        )}
+        <span className="truncate text-foreground">{s.title || t("sidebar.untitled")}</span>
+      </span>
       {s.updatedAt && (
         <span className="text-[10px] text-muted-foreground">
           {new Date(s.updatedAt).toLocaleString(i18n.language)}

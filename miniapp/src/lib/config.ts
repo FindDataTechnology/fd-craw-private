@@ -28,6 +28,33 @@ export function setBaseUrl(url: string) {
   Taro.setStorageSync(BASE_KEY, String(url).replace(/\/+$/, ""));
 }
 
+// The accountless demo sandbox origin (openspec: mp-demo-sandbox): an
+// auth-free deployment where unbound reviewers chat for real. Entered from
+// the unbound banner's 先体验 affordance; the previous origin is remembered
+// so 退出演示 restores it.
+export const DEMO_BASE =
+  process.env.NODE_ENV === "production"
+    ? "https://demo.finddatatech.cloud"
+    : "http://localhost:3000";
+
+const PRE_DEMO_KEY = "platform.preDemoBase";
+
+export function isDemoBase(): boolean {
+  return baseUrl() === DEMO_BASE;
+}
+
+export function enterDemoBase(): void {
+  const current = baseUrl();
+  if (current !== DEMO_BASE) Taro.setStorageSync(PRE_DEMO_KEY, current);
+  setBaseUrl(DEMO_BASE);
+}
+
+export function exitDemoBase(): void {
+  const saved = String(Taro.getStorageSync(PRE_DEMO_KEY) || "");
+  setBaseUrl(saved && saved !== DEMO_BASE ? saved : DEFAULT_BASE);
+  Taro.removeStorageSync(PRE_DEMO_KEY);
+}
+
 export function token(): string {
   return Taro.getStorageSync(TOKEN_KEY) || "";
 }

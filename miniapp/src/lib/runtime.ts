@@ -10,7 +10,7 @@
 // never spawn a second.
 
 import { eventCenter } from "@tarojs/taro";
-import { WsClient, useChatStore, type ClientMessage, type ServerMessage } from "@platform/core";
+import { WsClient, useChatStore, useCronStore, type ClientMessage, type ServerMessage } from "@platform/core";
 import { ensureAuth, LOGIN_REQUIRED_EVENT } from "./auth";
 import { baseUrl } from "./config";
 import { installHttp } from "./taro-http";
@@ -28,43 +28,64 @@ const INITIAL_QUERIES = [
   "list_skills",
   "list_presets",
   "list_sessions",
+  "cron_list",
 ] as const;
 
 let client: WsClient | null = null;
 let starting: Promise<void> | null = null;
 let authFailed = false;
+// Bumped by switchBase(): an in-flight start() from before the switch must
+// not install its (stale-auth, old-base) client after the reset.
+let bootGen = 0;
+// Whether the current boot stopped at "no bound account" (binding_required).
+// The chat page renders a user-initiated sign-in affordance for this state —
+// NEVER an automatic jump to the login page (openspec: mp-demo-mode;
+// WeChat rejects forced login before the user has browsed).
+let loginRequired = false;
+
+export function loginRequiredNow(): boolean {
+  return loginRequired;
+}
 
 function send(msg: ClientMessage) {
   client?.send(JSON.stringify(msg));
 }
 
 async function start(): Promise<void> {
+  const gen = bootGen;
   if (client || authFailed) {
     if (authFailed) useChatStore.getState().setStatus("disconnected");
     return;
   }
   installHttp();
   const auth = await ensureAuth();
+  if (gen !== bootGen) return;
   if (auth === "failed") {
     authFailed = true;
     useChatStore.getState().setStatus("disconnected");
     return;
   }
   if (auth === "binding_required") {
-    // Not an error: this WeChat user has no bound platform account yet. The
-    // login page answers the event; after a successful sign-in the page's
+    // Not an error: this WeChat user has no bound platform account yet and
+    // the deployment has no demo mode. The page shows a "登录后开始使用"
+    // banner (user-initiated sign-in); after a successful sign-in the page's
     // foreground hook re-boots us with the fresh token.
+    loginRequired = true;
     useChatStore.getState().setStatus("disconnected");
     eventCenter.trigger(LOGIN_REQUIRED_EVENT);
     return;
   }
+  loginRequired = false;
   // A concurrent start() may have won the race while we probed auth.
   if (client) return;
   client = new WsClient({
     url: wsUrl,
     factory: taroSocketFactory,
     onStatus: (s) => useChatStore.getState().setStatus(s),
-    onMessage: (m) => useChatStore.getState().apply(m as ServerMessage),
+    onMessage: (m) => {
+      useChatStore.getState().apply(m as ServerMessage);
+      useCronStore.getState().apply(m as ServerMessage);
+    },
     onOpen: () => {
       for (const type of INITIAL_QUERIES) send({ type } as ClientMessage);
     },
@@ -73,6 +94,24 @@ async function start(): Promise<void> {
 }
 
 export const runtime = {
+  // Whether the current boot stopped at "no bound account" — the chat page's
+  // sign-in banner and send guard key off this.
+  loginRequiredNow,
+
+  // Base switch (openspec: mp-demo-sandbox): final-close the one client,
+  // reset boot state, and boot fresh — the new persisted base drives both the
+  // auth probe and the next WS url. Used by 先体验/退出演示.
+  switchBase(): Promise<void> {
+    bootGen += 1;
+    client?.close();
+    client = null;
+    starting = null;
+    authFailed = false;
+    loginRequired = false;
+    useChatStore.getState().setStatus("disconnected");
+    return this.boot();
+  },
+
   // Single-flight boot; concurrent callers await the same start. Once a
   // client exists, later boot() calls are a no-op (start re-checks).
   boot(): Promise<void> {

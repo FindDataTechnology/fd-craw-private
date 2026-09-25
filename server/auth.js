@@ -58,6 +58,17 @@ const isLogtoPublicRequest = (req) => {
 
 const isExempt = (p) => AUTH_EXEMPT_PREFIXES.some((prefix) => p.startsWith(prefix));
 
+// Loopback caller check for the in-cell internal bridge. The cron MCP child
+// (stdio, spawned by the dsh runtime inside this cell) drives the engine over
+// /api/cron; it has no session cookie and no gateway secret, so loopback is
+// its credential. Any non-loopback caller still faces the full auth gate —
+// the exemption never widens beyond the cell's own node.
+const isLoopback = (addr) =>
+  addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+const isInternalCronBridge = (req) =>
+  (req.path === "/api/cron" || req.path.startsWith("/api/cron/")) &&
+  isLoopback(req.socket?.remoteAddress);
+
 // The header the gateway injects alongside the identity headers in hosted mode.
 export const GATEWAY_SECRET_HEADER = "x-cloud-gateway-secret";
 
@@ -103,6 +114,10 @@ export function mpUserFromToken(ctx, req) {
 // logto verifies the signed session cookie and ignores those headers.
 export function registerAuth(ctx) {
   ctx.app.use((req, res, next) => {
+    if (isInternalCronBridge(req)) {
+      req.user = { email: "cron@internal", internal: true };
+      return next();
+    }
     const headerUser = userFromHeaders(req.headers, ctx.headerTrust);
     if (ctx.authMode === "logto") {
       // A verified MP Bearer token is a second door into the same identity:

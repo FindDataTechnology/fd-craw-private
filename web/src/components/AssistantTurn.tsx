@@ -8,10 +8,10 @@ import { memo, useState } from "react";
 // lucide throughout — no emoji as an icon system (DESIGN.md).
 import { useTranslation } from "react-i18next";
 import { Check, Copy, RefreshCw, Terminal, TriangleAlert } from "lucide-react";
-import { useChatStore } from "@platform/core";
-import type { Turn } from "@platform/core";
+import { groupTurnBlocks, useChatStore, type Turn } from "@platform/core";
 import { useBranding } from "@/hooks/useAppConfig";
 import { Markdown } from "@/components/Markdown";
+import { ActivityGroup } from "@/components/ActivityGroup";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { ToolBlock } from "@/components/ToolBlock";
 import { SkillBlock } from "@/components/SkillBlock";
@@ -48,6 +48,74 @@ function AssistantTurnBase({
       /* clipboard unavailable (permissions); the button stays honest */
     }
   };
+
+  // The inner-block renderer, shared by the group body and the two block
+  // kinds that never group (text, error). Index is the ABSOLUTE block index —
+  // `toggleBlock` addresses the turn's flat list, group membership is purely
+  // a rendering derivation.
+  const renderInnerBlock = (b: (typeof turn.blocks)[number], i: number) => {
+    const key = `${turn.id}-${i}`;
+    const toggle = () => toggleBlock(turn.id, i);
+    switch (b.kind) {
+      case "text":
+        return <Markdown key={key} text={b.text} />;
+      case "thinking":
+        return <ThinkingBlock key={key} text={b.text} open={b.open} onToggle={toggle} />;
+      case "tool":
+        return <ToolBlock key={key} block={b} onToggle={toggle} />;
+      case "skill":
+        return (
+          <SkillBlock
+            key={key}
+            name={b.name}
+            args={b.args}
+            open={b.open}
+            onToggle={toggle}
+          />
+        );
+      case "command":
+        return (
+          <div
+            key={key}
+            className="rounded-md border border-border bg-muted px-3 py-2 text-xs"
+          >
+            <div className="flex items-center gap-1.5 font-mono text-muted-foreground">
+              <Terminal className="h-3 w-3 shrink-0" />
+              /{b.name}
+              {b.args ? ` ${b.args}` : ""}
+            </div>
+            {b.message && (
+              <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">
+                {b.message}
+              </pre>
+            )}
+          </div>
+        );
+      case "error":
+        return (
+          <div
+            key={key}
+            data-testid="turn-error-block"
+            className="flex items-start gap-1.5 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
+            <span className="min-w-0 break-words">{b.message}</span>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // Master collapse: consecutive machinery blocks fold under one group whose
+  // header is the only thing visible by default (see chat-activity-collapse).
+  // Text/error blocks stay outside; groups are keyed by their start index.
+  const groups = groupTurnBlocks(turn.blocks);
+  const groupByStart = new Map(groups.map((g) => [g.startIndex, g]));
+  const grouped = new Set<number>();
+  for (const g of groups) {
+    for (let i = g.startIndex + 1; i < g.startIndex + g.blocks.length; i++) grouped.add(i);
+  }
 
   return (
     <article
@@ -93,57 +161,19 @@ function AssistantTurnBase({
       </div>
       <div className="flex flex-col gap-2 border-l border-border pl-4">
         {turn.blocks.map((b, i) => {
-          const key = `${turn.id}-${i}`;
-          const toggle = () => toggleBlock(turn.id, i);
-          switch (b.kind) {
-            case "text":
-              return <Markdown key={key} text={b.text} />;
-            case "thinking":
-              return <ThinkingBlock key={key} text={b.text} open={b.open} onToggle={toggle} />;
-            case "tool":
-              return <ToolBlock key={key} block={b} onToggle={toggle} />;
-            case "skill":
-              return (
-                <SkillBlock
-                  key={key}
-                  name={b.name}
-                  args={b.args}
-                  open={b.open}
-                  onToggle={toggle}
-                />
-              );
-            case "command":
-              return (
-                <div
-                  key={key}
-                  className="rounded-md border border-border bg-muted px-3 py-2 text-xs"
-                >
-                  <div className="flex items-center gap-1.5 font-mono text-muted-foreground">
-                    <Terminal className="h-3 w-3 shrink-0" />
-                    /{b.name}
-                    {b.args ? ` ${b.args}` : ""}
-                  </div>
-                  {b.message && (
-                    <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">
-                      {b.message}
-                    </pre>
-                  )}
-                </div>
-              );
-            case "error":
-              return (
-                <div
-                  key={key}
-                  data-testid="turn-error-block"
-                  className="flex items-start gap-1.5 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-xs text-destructive"
-                >
-                  <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span className="min-w-0 break-words">{b.message}</span>
-                </div>
-              );
-            default:
-              return null;
+          if (grouped.has(i)) return null;
+          const group = groupByStart.get(i);
+          if (group) {
+            return (
+              <ActivityGroup
+                key={`${turn.id}-group-${group.startIndex}`}
+                turn={turn}
+                group={group}
+                renderBlock={renderInnerBlock}
+              />
+            );
           }
+          return renderInnerBlock(b, i);
         })}
         {turn.streaming && turn.blocks.length === 0 && (
           <div className="text-xs text-muted-foreground">{t("turn.thinkingStreaming")}</div>

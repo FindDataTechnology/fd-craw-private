@@ -35,7 +35,16 @@ const MCP_CONFIG_PATH = resolve(process.env.MCP_CONFIG_PATH || "mcp.json");
 
 // token.finddatatech.cloud gateway model catalog (IDs verified against
 // GET /v1/models 2026-09-02; date-suffixed ids are the gateway's real ids).
+// 2026-09-25: the gateway moved to OpenRouter-style ids — the old date-suffixed
+// ids now answer model_not_found. deepseek-v4.1-flash is the agreed rehearsal
+// lane (2026-09-24 user decision; tools verified, maxTokens 32768 — 8192
+// truncates full workflow reports) and sits FIRST because dshModels[0] is the
+// fallback default when no DEFAULT_MODEL binding applies. nex-n2.5-mini is the
+// verified-live free fallback; the rest of the old list is retained until
+// each id is re-verified.
 const VOLCES_MODELS = [
+  { id: "deepseek/deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", contextWindow: 128000, maxTokens: 32768 },
+  { id: "nex-agi/nex-n2.5-mini:free", name: "Nex N2.5 Mini (free)", contextWindow: 128000, maxTokens: 8192 },
   { id: "deepseek-v4-flash-0731", name: "DeepSeek V4 Flash", contextWindow: 128000, maxTokens: 8192 },
   { id: "deepseek-v4-pro-0813", name: "DeepSeek V4 Pro", contextWindow: 128000, maxTokens: 8192 },
   { id: "glm-5.3", name: "GLM 5.3", contextWindow: 128000, maxTokens: 8192 },
@@ -67,7 +76,12 @@ const VOLCES_MODELS = [
 const IDENTITY_EFFORTS = { low: "low", medium: "medium", high: "high" };
 
 function declaredEfforts(modelId) {
-  return modelId.startsWith("deepseek-v4") ? IDENTITY_EFFORTS : false;
+  // `deepseek-v4*` (old date-suffixed ids) and `deepseek/deepseek-v4*`
+  // (2026-09-25 OpenRouter-style ids, reasoning field verified live) are the
+  // reasoning families.
+  return modelId.startsWith("deepseek-v4") || modelId.startsWith("deepseek/deepseek-v4")
+    ? IDENTITY_EFFORTS
+    : false;
 }
 
 // The selectable level names for a `reasoningEfforts` declaration (`false` =

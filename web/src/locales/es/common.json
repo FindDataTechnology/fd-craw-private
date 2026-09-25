@@ -15,7 +15,8 @@
     "agents": "Agentes",
     "bots": "Bots",
     "trace": "Traza",
-    "openMenu": "Abrir menú de navegación"
+    "openMenu": "Abrir menú de navegación",
+    "tasks": "Tareas"
   },
   "trace": {
     "title": "Traza",
@@ -61,7 +62,8 @@
     "showMore": "Mostrar {{count}} más",
     "showLess": "Mostrar menos",
     "newWorkspace": "Nuevo espacio",
-    "closeSearch": "Cerrar búsqueda"
+    "closeSearch": "Cerrar búsqueda",
+    "unread": "Novedades"
   },
   "modelsPage": {
     "title": "Modelos",
@@ -235,12 +237,21 @@
     "connectionLost": "Conexión perdida — reconectando…",
     "ariaStreaming": "Generando respuesta…",
     "ariaDone": "Respuesta completa",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "outlineLabel": "Esquema de la conversación",
+    "outlineCollapse": "Contraer esquema",
+    "outlineJump": "Saltar a esta pregunta"
   },
   "turn": {
     "assistantName": "{{assistant}}",
     "thinkingStreaming": "Pensando…",
     "thinking": "Pensando",
+    "activityThinking": "Pensando…",
+    "activityRunning": "Trabajando en el paso {{step}}…",
+    "activityDoneTimed": "Pensó durante {{seconds}} s · hizo {{count}} pasos",
+    "activityThought": "Pensó durante {{seconds}} s",
+    "activityDone": "Hizo {{count}} pasos",
+    "activityErrored": "Se produjo un problema · {{count}} pasos realizados",
     "statusRunning": "ejecutando…",
     "statusError": "error",
     "statusDone": "listo",
@@ -594,5 +605,86 @@
     "openInDrawer": "Previsualizar",
     "noRenderer": "No hay vista previa para este tipo de archivo.",
     "downloadName": "Descargar {{name}}"
+  },
+  "share": {
+    "banner": "Sesión compartida — solo lectura, compartida por su propietario",
+    "loading": "Cargando sesión compartida…",
+    "unavailable": "Esta sesión compartida ya no está disponible.",
+    "menuItem": "Compartir",
+    "copied": "Enlace copiado al portapapeles",
+    "failed": "Error al compartir: {{error}}",
+    "manage": "Enlaces compartidos…",
+    "dialogTitle": "Enlaces compartidos",
+    "dialogHint": "Cualquiera con el enlace puede ver la sesión. Revoca para cortar el acceso.",
+    "none": "No hay enlaces compartidos activos.",
+    "revoke": "Revocar"
+  },
+  "tasks": {
+    "title": "Tareas programadas",
+    "empty": "Aún no hay tareas programadas: crea una para ejecutar un mensaje con horario.",
+    "status": {
+      "scheduled": "Programada",
+      "running": "Ejecutando",
+      "paused": "En pausa",
+      "completed": "Completada",
+      "expired": "Caducada",
+      "error": "Error"
+    },
+    "actions": {
+      "pause": "Pausar",
+      "resume": "Reanudar",
+      "runNow": "Ejecutar ahora",
+      "delete": "Eliminar",
+      "deleteConfirm": "¿Eliminar esta tarea programada?",
+      "output": "Resultado"
+    },
+    "fields": {
+      "agent": "Agente",
+      "nextRun": "Próxima ejecución",
+      "lastRun": "Última ejecución",
+      "never": "nunca ejecutada",
+      "missedRuns": "omitida {{count}} vez/veces",
+      "missedTotal": "{{count}} omitidas",
+      "lastOk": "correcto",
+      "lastFailed": "fallido"
+    },
+    "schedule": {
+      "daily": "cada día a las {{time}}",
+      "weekdays": "días laborables a las {{time}}",
+      "weeklyOn": "cada {{days}} a las {{time}}",
+      "everyNMinutes": "cada {{n}} minutos",
+      "everyMinute": "cada minuto",
+      "custom": "cron “{{expr}}”",
+      "once": "una vez, {{when}}"
+    },
+    "form": {
+      "title": "Nueva tarea",
+      "close": "Cerrar",
+      "submit": "Crear tarea",
+      "mode": {
+        "recurring": "Periódica",
+        "once": "Única"
+      },
+      "freq": {
+        "daily": "Diaria",
+        "weekly": "Semanal",
+        "custom": "Cron personalizado"
+      },
+      "cronPlaceholder": "Expresión cron, p. ej. */15 * * * *",
+      "namePlaceholder": "Nombre (opcional) — será el título de la sesión",
+      "promptPlaceholder": "¿Qué debe hacer el agente en este horario?",
+      "tz": "Zona horaria",
+      "errors": {
+        "prompt": "Se necesita un mensaje",
+        "weekday": "Elige al menos un día",
+        "cron": "Escribe una expresión cron",
+        "when": "Elige fecha y hora"
+      }
+    },
+    "tool": {
+      "title": "Tarea programada",
+      "created": "Tarea creada desde el chat",
+      "notFound": "Estado de la tarea no disponible: abre la página de Tareas."
+    }
   }
 }

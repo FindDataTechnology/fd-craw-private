@@ -56,3 +56,10 @@ export function http(path: string, init?: HttpInit): Promise<HttpResponse> {
   const headers = { ...config.headers(), ...(init?.headers ?? {}) };
   return config.transport(config.baseUrl + path, init ? { ...init, headers } : { headers });
 }
+
+// Same transport, but without the configured auth headers — for the share
+// endpoints' public read, where a stale mini-program token must never gate a
+// recipient's view (the gateway route is public by design).
+export function httpPublic(path: string, init?: HttpInit): Promise<HttpResponse> {
+  return config.transport(config.baseUrl + path, init ? { ...init, headers: init.headers ?? {} } : { headers: {} });
+}

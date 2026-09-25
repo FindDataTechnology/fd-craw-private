@@ -74,6 +74,13 @@ export default function LoginPage() {
           <Text className="login-submit-text">{busy ? "绑定中…" : "绑定当前微信"}</Text>
         </View>
 
+        <Text
+          className="login-skip"
+          onClick={() => Taro.navigateBack({ fail: () => Taro.reLaunch({ url: "/pages/chat/index" }) })}
+        >
+          暂不登录，先看看 ›
+        </Text>
+
         <Text className="login-unbind" onClick={() => setShowServer((v) => !v)}>
           服务器地址：{currentBaseUrl()}
         </Text>

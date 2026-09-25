@@ -39,15 +39,18 @@ export type ServerMessage =
   | { type: "session_changed"; id: string }
   | { type: "session_loaded"; id: string; title?: string; messages: ChatMessage[] }
   | { type: "session_renamed"; id: string; title: string }
-  | { type: "cron_jobs"; jobs: unknown[] }
-  | { type: "cron_status"; job: unknown }
+  | { type: "cron_jobs"; jobs: CronJob[] }
+  | { type: "cron_status"; job: CronJob }
   | { type: "cron_removed"; id: string }
   | { type: "cron_fired"; id: string; prompt: string }
-  | { type: "cron_completed"; id: string; success?: boolean }
-  | { type: "cron_added"; job: unknown }
+  | { type: "cron_completed"; id: string; success?: boolean; error?: string; completedAt?: string }
+  | { type: "cron_added"; job: CronJob }
   | { type: "cron_paused"; jobId: string; success: boolean }
   | { type: "cron_resumed"; jobId: string; success: boolean }
   | { type: "cron_run_started"; jobId: string; success: boolean }
+  // Rejected cron action (e.g. invalid cron expression in cron_add) — scoped
+  // to the action so it can render in the owning view instead of a toast.
+  | { type: "cron_error"; action: string; message: string }
   | { type: "dashboard_update"; state: unknown }
   | { type: "dashboard_state"; state: unknown }
   | { type: "extensions_changed"; resource: string; action: string; name: string; enabled?: boolean }
@@ -214,4 +217,45 @@ export type ClientMessage =
   | { type: "list_sessions" }
   | { type: "new_session" }
   | { type: "switch_session"; id: string }
-  | { type: "rename_session"; id: string; title: string };
+  | { type: "rename_session"; id: string; title: string }
+  // Scheduled tasks (spec: cron-module). The client-facing job shape mirrors
+  // cron.js clientShape().
+  | { type: "cron_list" }
+  | { type: "cron_add"; cron?: string; when?: string; prompt: string; preset?: string | null; tz?: string | null; sessionTitle?: string | null }
+  | { type: "cron_remove"; jobId: string }
+  | { type: "cron_pause"; jobId: string }
+  | { type: "cron_resume"; jobId: string }
+  | { type: "cron_run"; jobId: string };
+
+// ── Scheduled tasks ─────────────────────────────────────────────────────────
+
+export interface CronJobHistoryEntry {
+  time: string;
+  duration?: number;
+  success: boolean | null;
+  error?: string;
+  /** Present on downtime markers: occurrences missed while the cell was down. */
+  missed?: number;
+}
+
+export interface CronJob {
+  id: string;
+  type: "recurring" | "once";
+  cron: string | null;
+  when: string | null;
+  prompt: string;
+  /** Persona preset the job runs under (null = legacy job, runs under the live preset). */
+  preset: string | null;
+  /** Dedicated session the job's output lands in. */
+  sessionId: string | null;
+  sessionTitle: string | null;
+  /** IANA timezone the cron expression is evaluated in (null = cell-local). */
+  tz: string | null;
+  status: "scheduled" | "running" | "paused" | "completed" | "expired" | "error";
+  paused: boolean;
+  createdAt: string;
+  lastRun: string | null;
+  nextRun: string | null;
+  missed: number;
+  history: CronJobHistoryEntry[];
+}

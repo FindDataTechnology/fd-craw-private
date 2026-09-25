@@ -10,7 +10,7 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { createServer, connect } from "node:net";
 import path from "node:path";
 
@@ -60,7 +60,21 @@ function waitForPort(port, timeoutMs, isDead) {
 }
 
 export function createCellRegistry(config) {
-  const { dataRoot, secret, startTimeoutMs, idleReapSecs, serverEntry, cwd, env: baseEnv } = config;
+  const {
+    dataRoot,
+    secret,
+    startTimeoutMs,
+    idleReapSecs,
+    serverEntry,
+    cwd,
+    env: baseEnv,
+    // Demo-cell bounds (openspec: mp-demo-mode). Demo cells are bounded in
+    // both directions account cells are not: at most demoMaxCells running at
+    // once, and a short demoIdleReapSecs idle window that applies regardless
+    // of the deployment-wide reap setting.
+    demoMaxCells = 3,
+    demoIdleReapSecs = 900,
+  } = config;
   const cells = new Map();
   let shuttingDown = false;
   let reaper = null;
@@ -70,15 +84,25 @@ export function createCellRegistry(config) {
     return cells.get(userId);
   }
 
+  function runningDemoCount() {
+    let n = 0;
+    for (const c of cells.values()) {
+      if (c.demo && (c.state === "running" || c.state === "starting")) n++;
+    }
+    return n;
+  }
+
   function spawnCell(user) {
     const userId = userIdFor(user.email);
     const root = path.join(dataRoot, userId);
+    const demo = Boolean(user.groups?.includes?.("demo"));
     return (async () => {
       const port = await freePort();
       await mkdir(root, { recursive: true });
       const cell = {
         userId,
         email: user.email,
+        demo,
         state: "starting",
         port,
         pid: null,
@@ -112,6 +136,16 @@ export function createCellRegistry(config) {
         // A cell that exits unexpectedly is marked so its user's next traffic
         // respawns it; other users' cells are untouched.
         if (cells.get(userId) !== cell) return;
+        // Demo state is discardable by definition (openspec: mp-demo-mode):
+        // whether stopped on purpose or crashed, its data root goes with the
+        // process so curious traffic cannot accumulate garbage. The guard
+        // above already ensures a respawned cell's fresh directory is never
+        // the one deleted here.
+        if (cell.demo) {
+          void rm(root, { recursive: true, force: true }).catch((e) =>
+            console.warn(`[gateway] demo cell ${userId} data cleanup failed: ${e.message}`)
+          );
+        }
         if (cell.state === "stopping") {
           cells.delete(userId);
           return;
@@ -140,6 +174,15 @@ export function createCellRegistry(config) {
       return Promise.resolve(existing);
     }
     if (existing?.starting) return existing.starting;
+    // Demo pool bound (openspec: mp-demo-mode): a full pool is an expected,
+    // friendly condition, so the error carries a machine-readable code and a
+    // user-facing message rather than a raw spawn failure.
+    if (user.groups?.includes?.("demo") && runningDemoCount() >= demoMaxCells) {
+      const err = new Error("demo capacity reached");
+      err.code = "demo_capacity";
+      err.friendly = "当前体验人数较多，请稍后再试";
+      return Promise.reject(err);
+    }
     const started = spawnCell(user).finally(() => {
       const cell = cells.get(userId);
       if (cell) delete cell.starting;
@@ -173,9 +216,19 @@ export function createCellRegistry(config) {
 
   async function reapIdle() {
     if (shuttingDown) return;
-    const cutoff = Date.now() - idleReapSecs * 1000;
+    const accountCutoff = Date.now() - idleReapSecs * 1000;
+    const demoCutoff = Date.now() - demoIdleReapSecs * 1000;
     for (const cell of [...cells.values()]) {
-      if (cell.state !== "running" || cell.lastTraffic > cutoff) continue;
+      if (cell.state !== "running") continue;
+      // Demo cells: bounded lifetime regardless of the deployment-wide reap
+      // setting and regardless of the scheduled-job exemption — a demo cell
+      // has nothing of the user's worth preserving (openspec: mp-demo-mode).
+      // stop() runs the exit handler, which deletes the demo data root.
+      if (cell.demo) {
+        if (cell.lastTraffic <= demoCutoff) stop(cell.userId, "demo idle");
+        continue;
+      }
+      if (idleReapSecs <= 0 || cell.lastTraffic > accountCutoff) continue;
       let work;
       try {
         work = await enabledScheduledWork(cell);
@@ -191,8 +244,14 @@ export function createCellRegistry(config) {
     }
   }
 
-  if (idleReapSecs > 0) {
-    const everyMs = Math.max(5000, Math.min(60_000, (idleReapSecs * 1000) / 4));
+  // The reaper runs when EITHER window is configured: demo cells need reaping
+  // even on deployments that keep account cells resident forever.
+  if (idleReapSecs > 0 || demoIdleReapSecs > 0) {
+    const fastest = Math.min(
+      idleReapSecs > 0 ? idleReapSecs : Infinity,
+      demoIdleReapSecs > 0 ? demoIdleReapSecs : Infinity,
+    );
+    const everyMs = Math.max(5000, Math.min(60_000, fastest * 250));
     reaper = setInterval(() => { reapIdle().catch((e) => console.warn(`[gateway] reaper failed: ${e.message}`)); }, everyMs);
     reaper.unref();
   }
@@ -201,6 +260,7 @@ export function createCellRegistry(config) {
     return [...cells.values()].map((cell) => ({
       user: cell.email,
       userId: cell.userId,
+      demo: Boolean(cell.demo),
       state: cell.state,
       pid: cell.pid,
       port: cell.port,
@@ -221,5 +281,13 @@ export function createCellRegistry(config) {
     }
   }
 
-  return { ensure, record, status, stop, shutdown, cells };
+  // Forget a cell record without stopping anything: for a process that died
+  // out from under the gateway (crash, SIGKILL), where the stale "running"
+  // record would otherwise send every future ensure() to a dead port. The
+  // next ensure() spawns fresh. A no-op when the user has no record.
+  function drop(userId) {
+    return cells.delete(userId);
+  }
+
+  return { ensure, record, status, stop, drop, shutdown, cells };
 }

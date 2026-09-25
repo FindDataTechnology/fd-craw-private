@@ -11,6 +11,7 @@
 // visual problem the vanilla app has.
 
 import { create } from "zustand";
+import { groupTurnBlocks, isGroupOpen } from "./activity-groups";
 import type {
   AgentInfo,
   BindingModel,
@@ -41,7 +42,7 @@ export function setChatErrorSink(fn: (message: string) => void) {
 
 export type Block =
   | { kind: "text"; text: string }
-  | { kind: "thinking"; text: string; open: boolean; autoOpen?: boolean }
+  | { kind: "thinking"; text: string; open: boolean }
   | {
       kind: "tool";
       id: string;
@@ -58,7 +59,24 @@ export type Block =
 
 export type Turn =
   | { id: string; role: "user"; text: string }
-  | { id: string; role: "assistant"; blocks: Block[]; streaming: boolean; interrupted?: boolean };
+  | {
+      id: string;
+      role: "assistant";
+      blocks: Block[];
+      streaming: boolean;
+      interrupted?: boolean;
+      // User overrides per activity group (key = the group's start block
+      // index; see activity-groups.ts). Absent = the derived default
+      // (collapsed, except a group holding an errored tool). Ephemeral UI
+      // state — never persisted.
+      groupState?: Record<number, boolean>;
+      // Client-side activity clock: set when the first non-text block is
+      // pushed, closed when the first text block lands or the turn finalizes.
+      // Powers the group header's duration; history-loaded turns have neither
+      // and render the step count only.
+      activityStartedAt?: number;
+      activityEndedAt?: number;
+    };
 
 interface State {
   status: ConnStatus;
@@ -131,7 +149,8 @@ interface State {
   addUserTurnOptimistic: (text: string) => void;
   clearView: () => void;
   renameSession: (id: string, title: string) => void;
-  toggleAllThinking: () => void;
+  toggleAllGroups: () => void;
+  toggleGroup: (turnId: string, startIndex: number) => void;
   toggleBlock: (turnId: string, index: number) => void;
   // Release an in-flight run locally: finalize the open turn, give the
   // composer back, and swallow the run's remaining events until its `done`.
@@ -160,6 +179,16 @@ function currentAssistant(turns: Turn[]): Turn & { role: "assistant" } {
   return fresh;
 }
 
+// The activity clock: opens when the first non-text block lands on the turn,
+// closes at the first text block (the answer started) or at turn finalization.
+function markActivityStart(a: { activityStartedAt?: number }) {
+  a.activityStartedAt ??= Date.now();
+}
+
+function markActivityEnd(a: { activityEndedAt?: number }) {
+  a.activityEndedAt ??= Date.now();
+}
+
 // Append a text delta to the LAST text block on the current assistant turn,
 // or create one. Thinking/tool/skill blocks in between force a fresh text
 // block on the next text delta — matches server contract (text streams in
@@ -170,6 +199,7 @@ function appendText(turns: Turn[], delta: string) {
   if (last?.kind === "text") {
     last.text += delta;
   } else {
+    markActivityEnd(a);
     a.blocks.push({ kind: "text", text: delta });
   }
 }
@@ -180,7 +210,8 @@ function appendThinking(turns: Turn[], delta: string) {
   if (last?.kind === "thinking") {
     last.text += delta;
   } else {
-    a.blocks.push({ kind: "thinking", text: delta, open: true, autoOpen: true });
+    markActivityStart(a);
+    a.blocks.push({ kind: "thinking", text: delta, open: true });
   }
 }
 
@@ -253,7 +284,12 @@ const RUN_EVENT_TYPES = new Set([
 // Close every open assistant turn. Returns a NEW array (no in-place mutation —
 // callers run inside set()).
 function finalizeOpenTurns(turns: Turn[]): Turn[] {
-  return turns.map((t) => (t.role === "assistant" && t.streaming ? { ...t, streaming: false } : t));
+  const now = Date.now();
+  return turns.map((t) =>
+    t.role === "assistant" && t.streaming
+      ? { ...t, streaming: false, activityEndedAt: t.activityEndedAt ?? now }
+      : t,
+  );
 }
 
 export const useChatStore = create<State>((set) => ({
@@ -306,7 +342,9 @@ export const useChatStore = create<State>((set) => ({
       // a finished one before this).
       discardDeltas();
       const turns = state.turns.map((t) =>
-        t.role === "assistant" && t.streaming ? { ...t, streaming: false, interrupted: true } : t,
+        t.role === "assistant" && t.streaming
+          ? { ...t, streaming: false, interrupted: true, activityEndedAt: t.activityEndedAt ?? Date.now() }
+          : t,
       );
       return {
         status: s,
@@ -347,6 +385,7 @@ export const useChatStore = create<State>((set) => ({
 
         case "tool_start": {
           const a = currentAssistant(turns);
+          markActivityStart(a);
           a.blocks.push({
             kind: "tool",
             id: m.toolCallId,
@@ -377,18 +416,31 @@ export const useChatStore = create<State>((set) => ({
           if (b) {
             b.state = m.isError ? "error" : "done";
             b.result = m.result;
-            if (m.isError) b.open = true;
+            if (m.isError) {
+              b.open = true;
+              // The enclosing activity group must not hide the failure: mark
+              // it open (an explicit user collapse later still wins, since
+              // this writes the same override it reads).
+              const idx = a.blocks.indexOf(b);
+              const containing = groupTurnBlocks(a.blocks).find(
+                (g) => g.startIndex <= idx && idx < g.startIndex + g.blocks.length,
+              );
+              if (containing) a.groupState = { ...a.groupState, [containing.startIndex]: true };
+            }
           }
           return { turns };
         }
 
         case "skill_use": {
           const a = currentAssistant(turns);
+          markActivityStart(a);
           a.blocks.push({ kind: "skill", name: m.name, args: m.args, open: false });
           return { turns };
         }
 
         case "command_use": {
+          // A command echo is the user-invoked action's whole feedback — it
+          // renders outside activity groups and opens no activity clock.
           const a = currentAssistant(turns);
           a.blocks.push({
             kind: "command",
@@ -405,18 +457,8 @@ export const useChatStore = create<State>((set) => ({
           // Clone (not mutate): the finalized turn needs a new reference so
           // the memoized <AssistantTurn> re-renders its closed state.
           if (tail && tail.role === "assistant" && tail.streaming) {
-            // Fold the reasoning away as the answer lands. A thinking block
-            // streams open (it is the only sign of life before the first token),
-            // but leaving every pass expanded buries the reply it produced — the
-            // transcript should read as answers, with reasoning one click away.
-            // Only blocks the stream opened itself are folded: a reader who
-            // expanded one is reading it, and the CLI's Ctrl+O state survives.
-            const blocks = tail.blocks.some((b) => b.kind === "thinking" && b.open && b.autoOpen)
-              ? tail.blocks.map((b) =>
-                  b.kind === "thinking" && b.open && b.autoOpen ? { ...b, open: false, autoOpen: false } : b,
-                )
-              : tail.blocks;
-            turns[turns.length - 1] = { ...tail, blocks, streaming: false };
+            markActivityEnd(tail);
+            turns[turns.length - 1] = { ...tail, streaming: false };
           }
           // The dismissed run (if any) has ended; stop swallowing events.
           return { turns, isStreaming: false, suppressed: false };
@@ -636,29 +678,39 @@ export const useChatStore = create<State>((set) => ({
     });
   },
 
-  toggleAllThinking: () =>
+  toggleAllGroups: () =>
     set((state) => {
-      // Flip all thinking blocks to the OPPOSITE of the majority state.
-      // (Matches vanilla: if any is closed, opening all reads as the natural intent.)
+      // Flip all activity groups to the OPPOSITE of the majority state (if
+      // any is closed, opening all reads as the natural intent). The inner
+      // per-block collapse states are not touched — the shortcut drives the
+      // master fold only.
       let anyClosed = false;
-      for (const t of state.turns) {
-        if (t.role !== "assistant") continue;
-        for (const b of t.blocks) if (b.kind === "thinking" && !b.open) anyClosed = true;
-      }
-      const target = anyClosed; // open them if any is closed; else close all
-      const turns = state.turns.map((t) => {
-        if (t.role !== "assistant") return t;
-        return {
-          ...t,
-          // The reader is driving now: `autoOpen: false` keeps turn completion
-          // from folding these back up.
-          blocks: t.blocks.map((b) =>
-            b.kind === "thinking" ? { ...b, open: target, autoOpen: false } : b,
-          ),
-        };
+      const groupsByTurn = state.turns.map((t) => {
+        if (t.role !== "assistant") return null;
+        const gs = groupTurnBlocks(t.blocks);
+        for (const g of gs) if (!isGroupOpen(t, g)) anyClosed = true;
+        return gs;
+      });
+      const target = anyClosed;
+      const turns = state.turns.map((t, i) => {
+        const gs = groupsByTurn[i];
+        if (t.role !== "assistant" || !gs || gs.length === 0) return t;
+        const groupState = { ...t.groupState };
+        for (const g of gs) groupState[g.startIndex] = target;
+        return { ...t, groupState };
       });
       return { turns };
     }),
+
+  toggleGroup: (turnId, startIndex) =>
+    set((state) => ({
+      turns: state.turns.map((t) => {
+        if (t.id !== turnId || t.role !== "assistant") return t;
+        const group = groupTurnBlocks(t.blocks).find((g) => g.startIndex === startIndex);
+        if (!group) return t;
+        return { ...t, groupState: { ...t.groupState, [startIndex]: !isGroupOpen(t, group) } };
+      }),
+    })),
 
   toggleBlock: (turnId, index) =>
     set((state) => ({
@@ -669,8 +721,6 @@ export const useChatStore = create<State>((set) => ({
           blocks: t.blocks.map((b, i) => {
             if (i !== index) return b;
             if (b.kind === "text" || b.kind === "error") return b;
-            // An explicit toggle answers the "was this opened for me?" question.
-            if (b.kind === "thinking") return { ...b, open: !b.open, autoOpen: false };
             return { ...b, open: !b.open };
           }),
         };

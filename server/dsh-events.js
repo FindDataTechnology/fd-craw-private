@@ -146,6 +146,10 @@ export function attachDshEvents(ctx) {
     // web turn when the child exits before it can emit session.status idle.
     if (method === "bridge.exit" || method === "_bridge_crash") {
       ctx.ready.dsh = false;
+      // A restart kills any in-flight scheduled-task turn too: its collector
+      // sits on a session that will never report idle, which would wedge the
+      // cron engine's serialized queue for the full turn timeout.
+      ctx.abortCronTurns?.("the agent runtime restarted mid-turn");
       if (ctx.isStreaming) {
         ctx.broadcast({ type: "error", message: "Agent runtime exited unexpectedly" });
         ctx.finishTurn();

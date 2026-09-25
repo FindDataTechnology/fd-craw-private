@@ -11,6 +11,12 @@ export function registerDocumentRoutes(ctx) {
   const { app, db, documents, collections, upload } = ctx;
 
   app.post("/api/documents", upload.single("file"), async (req, res) => {
+    // The accountless demo pod accepts no uploads (openspec: mp-demo-sandbox):
+    // anonymous visitors must not be able to fill the ephemeral disk, and the
+    // prompt cap cannot bound upload traffic. Chat and agents stay open.
+    if (ctx.DEMO_SANDBOX) {
+      return res.status(403).json({ error: "演示环境不支持上传文档；绑定账号后可在完整平台使用" });
+    }
     if (!db.isDbReady()) {
       return res.status(503).json({ error: "Document collection is disabled (database unavailable)" });
     }

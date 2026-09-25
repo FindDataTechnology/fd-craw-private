@@ -44,6 +44,19 @@ import crypto from "node:crypto";
 
 const B64 = "base64url";
 
+// Demo identities (openspec: mp-demo-mode). `.invalid` is a reserved TLD, so
+// a derived demo email can never collide with a real account email; the
+// sha256 prefix keeps the raw openid out of emails and filesystem paths while
+// staying deterministic — the same WeChat user resolves to the same demo
+// dataset across launches. Exported for tests and for the client's
+// "@demo.invalid means demo" convention.
+export const DEMO_EMAIL_DOMAIN = "demo.invalid";
+
+export function demoEmailFor(openid) {
+  const hash = crypto.createHash("sha256").update(String(openid)).digest("hex").slice(0, 8);
+  return `demo-${hash}@${DEMO_EMAIL_DOMAIN}`;
+}
+
 function hmacBuf(signingInput, secret) {
   return crypto.createHmac("sha256", secret).update(signingInput).digest();
 }
@@ -84,7 +97,7 @@ export function verifyMpJwt(token, secret) {
 }
 
 export function createMpAuth(config) {
-  const { appid, mpSecret, tokenSecret, ttlHours, codeUrl, bindings } = config;
+  const { appid, mpSecret, tokenSecret, ttlHours, codeUrl, bindings, demoMode = false } = config;
   const configured = Boolean(appid && mpSecret && tokenSecret);
 
   async function code2Session(code) {
@@ -110,15 +123,23 @@ export function createMpAuth(config) {
     return signMpJwt({ sub: openid, email, groups, iat: now, exp: now + ttlHours * 3600 }, tokenSecret);
   }
 
-  // Silent login. Not-yet-bound openids are NOT an error — the client needs
-  // to be told to show the login page for a bind code.
+  // Silent login. Not-yet-bound openids: without demo mode NOT an error — the
+  // client needs to be told to show the login page for a bind code. With demo
+  // mode on (openspec: mp-demo-mode), an unbound openid instead gets a
+  // demo-scoped token: a deterministic demo identity carrying the `demo`
+  // group, so the gateway routes it to a bounded demo cell and the cell
+  // applies demo limits. The reviewer path needs no bind code and no UI.
   async function login(code) {
     if (!configured) return { ok: false, status: 503, error: "Mini-program login is not configured" };
     if (typeof code !== "string" || !code.trim()) return { ok: false, status: 400, error: "Missing code" };
     const session = await code2Session(code);
     if (!session.ok) return session;
     const binding = bindings.get(session.openid);
-    if (!binding) return { ok: false, status: 404, error: "binding_required" };
+    if (!binding) {
+      if (!demoMode) return { ok: false, status: 404, error: "binding_required" };
+      const email = demoEmailFor(session.openid);
+      return { ok: true, token: mintToken(session.openid, email, ["demo"]), email };
+    }
     return {
       ok: true,
       token: mintToken(session.openid, binding.email, binding.groups),

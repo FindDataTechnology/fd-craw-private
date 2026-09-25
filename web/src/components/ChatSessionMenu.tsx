@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { createShare, listShares, revokeShare, type ShareInfo } from "@platform/core";
 import { useChatStore } from "@platform/core";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,11 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Share states (openspec: add-session-share): inline create+copy feedback,
+  // and a management dialog listing this user's active shares.
+  const [shareNote, setShareNote] = useState<string | null>(null);
+  const [sharesOpen, setSharesOpen] = useState(false);
+  const [shares, setShares] = useState<ShareInfo[] | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,15 +49,15 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
   }, [triggerRef]);
 
   useEffect(() => {
-    // While the confirm dialog is open, the dialog's own overlay/Escape
-    // handling dismisses it — an outside click here must not unmount the
-    // component out from under the dialog.
+    // While the confirm dialog or the shares dialog is open, the dialog's own
+    // overlay/Escape handling dismisses it — an outside click here must not
+    // unmount the component out from under the dialog.
     const onDown = (e: MouseEvent) => {
-      if (confirmOpen) return;
+      if (confirmOpen || sharesOpen) return;
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (confirmOpen) return;
+      if (confirmOpen || sharesOpen) return;
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("mousedown", onDown);
@@ -60,7 +66,7 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [onClose, confirmOpen]);
+  }, [onClose, confirmOpen, sharesOpen]);
 
   if (!pos) return null;
 
@@ -91,6 +97,38 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
       setError((e as Error).message);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  // Create a share for this session and put the public URL on the clipboard.
+  const handleShare = async () => {
+    setShareNote(null);
+    try {
+      const { token } = await createShare(sessionId);
+      const url = `${window.location.origin}/share/${token}`;
+      await navigator.clipboard.writeText(url);
+      setShareNote(t("share.copied"));
+    } catch (e) {
+      setShareNote(t("share.failed", { error: (e as Error).message }));
+    }
+  };
+
+  const openShares = async () => {
+    setShares(null);
+    setSharesOpen(true);
+    try {
+      setShares(await listShares());
+    } catch {
+      setShares([]);
+    }
+  };
+
+  const handleRevoke = async (token: string) => {
+    try {
+      await revokeShare(token);
+      setShares((s) => s?.filter((x) => x.token !== token) ?? null);
+    } catch {
+      // Leave the row; the dialog is a convenience view, the next open heals.
     }
   };
 
@@ -140,8 +178,66 @@ export function ChatSessionMenu({ sessionId, isCurrent, onDelete, triggerRef, on
         >
           {t("sessionMenu.delete")}
         </button>
+        <div className="border-t border-border" />
+        <button
+          type="button"
+          role="menuitem"
+          data-testid="session-menu-share"
+          onClick={handleShare}
+          className="block w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted"
+        >
+          {t("share.menuItem")}
+        </button>
+        {shareNote ? (
+          <div data-testid="session-menu-share-note" className="px-3 py-1.5 text-xs text-muted-foreground">
+            {shareNote}
+          </div>
+        ) : null}
+        <button
+          type="button"
+          role="menuitem"
+          data-testid="session-menu-manage-shares"
+          onClick={() => {
+            void openShares();
+          }}
+          className="block w-full px-3 py-1.5 text-left text-xs text-foreground hover:bg-muted"
+        >
+          {t("share.manage")}
+        </button>
       </div>
       )}
+
+      <Dialog open={sharesOpen} onOpenChange={setSharesOpen}>
+        <DialogContent data-testid="share-manage-dialog">
+          <DialogHeader>
+            <DialogTitle>{t("share.dialogTitle")}</DialogTitle>
+            <DialogDescription>{t("share.dialogHint")}</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-64 overflow-y-auto" data-testid="share-manage-list">
+            {shares === null ? (
+              <p className="py-3 text-xs text-muted-foreground">{t("share.loading")}</p>
+            ) : shares.length === 0 ? (
+              <p className="py-3 text-xs text-muted-foreground">{t("share.none")}</p>
+            ) : (
+              shares.map((s) => (
+                <div key={s.token} className="flex items-center justify-between gap-2 py-1.5 text-xs">
+                  <span className="min-w-0 flex-1 truncate text-foreground" title={s.title}>
+                    {s.title || s.sessionId}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="share-revoke-btn"
+                    onClick={() => void handleRevoke(s.token)}
+                    className="shrink-0 rounded border border-border px-2 py-0.5 text-xs text-destructive hover:bg-muted"
+                  >
+                    {t("share.revoke")}
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmOpen} onOpenChange={(o) => { if (!o) closeConfirm(); }}>
         <DialogContent data-testid="session-delete-dialog">

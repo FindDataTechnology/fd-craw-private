@@ -6,7 +6,7 @@
 // models, skills, and sessions.
 
 import { useEffect, useRef } from "react";
-import { WsClient, useChatStore, type ClientMessage, type ServerMessage } from "@platform/core";
+import { WsClient, useChatStore, useCronStore, type ClientMessage, type ServerMessage } from "@platform/core";
 import { useExtensionsStore } from "@/hooks/useExtensionsStore";
 import { browserSocketFactory } from "@/lib/browser-socket";
 
@@ -32,6 +32,7 @@ export function useWebSocket(enabled: boolean, identityKey = "") {
   const setStatus = useChatStore((s) => s.setStatus);
   const apply = useChatStore((s) => s.apply);
   const applyExtensions = useExtensionsStore((s) => s.applyEvent);
+  const applyCron = useCronStore((s) => s.apply);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +50,7 @@ export function useWebSocket(enabled: boolean, identityKey = "") {
       onMessage: (msg) => {
         apply(msg as ServerMessage);
         applyExtensions(msg as ServerMessage);
+        applyCron(msg as ServerMessage);
       },
       // The protocol's initial state queries, replayed on every reconnect so
       // a resumed socket re-syncs rosters and the session list.
@@ -61,6 +63,7 @@ export function useWebSocket(enabled: boolean, identityKey = "") {
           "list_permissions",
           "list_sessions",
           "list_workspaces",
+          "cron_list",
         ] as const) {
           client.send(JSON.stringify({ type } satisfies ClientMessage));
         }
@@ -91,7 +94,7 @@ export function useWebSocket(enabled: boolean, identityKey = "") {
       window.removeEventListener("platform:reconnect", onManualReconnect);
       client.close();
     };
-  }, [apply, applyExtensions, enabled, identityKey, setStatus]);
+  }, [apply, applyCron, applyExtensions, enabled, identityKey, setStatus]);
 
   return { send: (msg: ClientMessage) => sendRef.current(msg) };
 }

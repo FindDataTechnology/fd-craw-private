@@ -36,6 +36,8 @@ const TracePage = lazy(() => import("@/pages/TracePage").then((m) => ({ default:
 const TraceDetailPage = lazy(() =>
   import("@/pages/TracePage").then((m) => ({ default: m.TraceDetailPage })),
 );
+const SharePage = lazy(() => import("@/pages/SharePage").then((m) => ({ default: m.SharePage })));
+const TasksPage = lazy(() => import("@/pages/TasksPage").then((m) => ({ default: m.TasksPage })));
 const ExternalServicePage = lazy(() =>
   import("@/pages/EmbeddedServicePages").then((m) => ({ default: m.ExternalServicePage })),
 );
@@ -64,7 +66,7 @@ export default function App() {
     identityKey,
   );
   const { t } = useTranslation();
-  const toggleAllThinking = useChatStore((s) => s.toggleAllThinking);
+  const toggleAllGroups = useChatStore((s) => s.toggleAllGroups);
   const previewOpen = usePreviewStore((s) => s.target !== null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -100,7 +102,8 @@ export default function App() {
     });
   }, []);
 
-  // Ctrl/Cmd + O toggles all thinking blocks (foldable-observation-shortcut).
+  // Ctrl/Cmd + O toggles all activity groups (the master collapse; was
+  // thinking blocks — see chat-activity-collapse).
   // Ctrl/Cmd + , opens Settings — the universal shortcut for it.
   // Ctrl/Cmd + B toggles the desktop nav rail (the convention most tools share).
   useEffect(() => {
@@ -108,7 +111,7 @@ export default function App() {
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.key.toLowerCase() === "o") {
         e.preventDefault();
-        toggleAllThinking();
+        toggleAllGroups();
       } else if (e.key === ",") {
         e.preventDefault();
         // Already open? The modal owns its section state; do not stack.
@@ -121,7 +124,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleAllThinking, navigate, location, toggleNavCollapsed]);
+  }, [toggleAllGroups, navigate, location, toggleNavCollapsed]);
 
   if (!authReady) {
     return (
@@ -145,6 +148,19 @@ export default function App() {
           </button>
         </div>
       </div>
+    );
+  }
+
+  // The public share view is exempt from EVERY auth posture: an anonymous
+  // recipient opening /share/:token must land on the shared session whether
+  // the deployment gates logins or not (openspec: add-session-share). It
+  // renders standalone — no rail, no websocket — and talks only to the
+  // gateway's public share endpoint.
+  if (authReady && location.pathname.startsWith("/share/")) {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <SharePage />
+      </Suspense>
     );
   }
 
@@ -226,6 +242,7 @@ export default function App() {
             <Route path="/bots" element={<BotsPage />} />
             <Route path="/trace" element={<TracePage />} />
             <Route path="/trace/:turnId" element={<TraceDetailPage />} />
+            <Route path="/tasks" element={<TasksPage send={send} />} />
 
             <Route path="/documents" element={<Navigate to="/knowledge" replace />} />
             <Route path="/external/:appId" element={<ExternalServicePage />} />

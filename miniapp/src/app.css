@@ -16,6 +16,9 @@ page {
   flex-direction: column;
   height: 100vh;
   box-sizing: border-box;
+  /* Anchors the outline rail (add-chat-outline), which floats over the
+     transcript's right edge above the composer. */
+  position: relative;
 }
 
 .conn-banner {
@@ -35,28 +38,109 @@ page {
   font-size: 24px;
 }
 
-.picker-row {
+/* ── sign-in / demo banners (openspec: mp-demo-mode) ───────────────────── */
+
+.auth-banner {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: #eff6ff;
+}
+
+.auth-banner-text {
+  color: #1d4ed8;
+  font-size: 26px;
+}
+
+.auth-banner-link {
+  color: #1d4ed8;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.auth-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.demo-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 24px;
+  background: #f0fdf4;
+}
+
+.demo-banner-text {
+  color: #15803d;
+  font-size: 24px;
+}
+
+.demo-banner-link {
+  color: #15803d;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+/* ── chat header (three zones) ─────────────────────────────────────────── */
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 12px 20px;
   background: #fff;
   border-bottom: 1px solid #e5e7eb;
 }
 
-.picker-chip {
-  max-width: 220px;
+.hd-side {
+  display: flex;
+  align-items: center;
+  min-width: 88px;
+}
+
+.hd-side-right {
+  justify-content: flex-end;
+}
+
+.hd-btn {
+  font-size: 40px;
+  line-height: 1;
+  color: #111827;
+  padding: 6px 8px;
+}
+
+.hd-chip {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 440px;
+  margin: 0 auto;
   padding: 8px 18px;
   border-radius: 999px;
   background: #f3f4f6;
 }
 
-.picker-chip-text {
-  font-size: 24px;
+.hd-chip-disabled {
+  opacity: 0.5;
+}
+
+.hd-chip-text {
+  font-size: 26px;
   color: #374151;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  max-width: 380px;
+}
+
+.hd-chip-caret {
+  font-size: 20px;
+  color: #9ca3af;
 }
 
 .picker-link {
@@ -64,6 +148,130 @@ page {
   color: #2563eb;
   font-size: 26px;
   padding: 8px 6px;
+}
+
+/* ── selection panel (half-screen sheet) ───────────────────────────────── */
+
+.sel-root {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 1000;
+  visibility: hidden;
+  transition: visibility 0s linear 0.25s;
+}
+
+.sel-root-open {
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.sel-mask {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(17, 24, 39, 0.45);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.sel-root-open .sel-mask {
+  opacity: 1;
+}
+
+.sel-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 75vh;
+  background: #fff;
+  border-radius: 24px 24px 0 0;
+  transform: translateY(100%);
+  transition: transform 0.25s;
+}
+
+.sel-root-open .sel-panel {
+  transform: translateY(0);
+}
+
+.sel-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 28px 8px;
+}
+
+.sel-panel-title {
+  font-size: 30px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.sel-panel-close {
+  font-size: 30px;
+  color: #6b7280;
+  padding: 4px 8px;
+}
+
+.sel-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 0 12px calc(env(safe-area-inset-bottom) + 24px);
+  box-sizing: border-box;
+}
+
+.sel-section {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px 0;
+}
+
+.sel-section-title {
+  font-size: 24px;
+  color: #9ca3af;
+  margin-bottom: 8px;
+}
+
+.sel-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 16px;
+  border-radius: 16px;
+}
+
+.sel-option-active {
+  background: #eff6ff;
+}
+
+.sel-option-disabled {
+  opacity: 0.5;
+}
+
+.sel-option-label {
+  flex: 1;
+  font-size: 28px;
+  color: #111827;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sel-option-active .sel-option-label {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.sel-check {
+  font-size: 28px;
+  color: #2563eb;
 }
 
 .msg-list {
@@ -76,19 +284,54 @@ page {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 160px;
-  gap: 12px;
+  gap: 32px;
+  padding: 24vh 40px 0;
 }
 
 .welcome-title {
-  font-size: 36px;
+  font-size: 40px;
   font-weight: 600;
   color: #111827;
 }
 
-.welcome-sub {
+.welcome-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  width: 100%;
+}
+
+.welcome-card {
+  width: calc(50% - 10px);
+  box-sizing: border-box;
+  padding: 20px 22px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+}
+
+.welcome-card-title {
+  display: block;
   font-size: 26px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 8px;
+}
+
+.welcome-card-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: 24px;
   color: #6b7280;
+  word-break: break-word;
+}
+
+.welcome-history {
+  font-size: 26px;
+  color: #2563eb;
+  padding: 8px;
 }
 
 .turn-wrap {
@@ -132,6 +375,19 @@ page {
 .turn-interrupted {
   font-size: 22px;
   color: #9ca3af;
+}
+
+.turn-actions {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  margin-top: 4px;
+}
+
+.turn-action {
+  font-size: 24px;
+  color: #6b7280;
+  padding: 6px 0;
 }
 
 .blk {
@@ -215,6 +471,51 @@ page {
 .blk-error-text {
   color: #b91c1c;
   font-size: 25px;
+}
+
+/* ── activity group (the master collapse) ──────────────────────────────── */
+
+.blk-group {
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.blk-group-error {
+  border-color: #fecaca;
+}
+
+/* The group owns the border; the header row inside stays bare. */
+.blk-group .blk-head {
+  border: none;
+  background: transparent;
+}
+
+.grp-title {
+  flex: 1;
+  font-size: 25px;
+  color: #6b7280;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.grp-title-live {
+  color: #2563eb;
+}
+
+.grp-title-error {
+  color: #dc2626;
+}
+
+.grp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
 }
 
 /* ── markdown ──────────────────────────────────────────────────────────── */
@@ -364,14 +665,12 @@ page {
   height: 220px;
 }
 
-/* ── composer ──────────────────────────────────────────────────────────── */
+/* ── composer (one card) ───────────────────────────────────────────────── */
 
 .chips {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  padding: 10px 20px 0;
-  background: #fff;
 }
 
 .chip {
@@ -401,49 +700,71 @@ page {
 }
 
 .composer {
-  padding: 12px 20px 24px;
+  padding: 12px 20px calc(env(safe-area-inset-bottom) + 20px);
+  background: transparent;
+}
+
+.composer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 20px;
   background: #fff;
-  border-top: 1px solid #e5e7eb;
+  border: 1px solid #e5e7eb;
+  border-radius: 24px;
 }
 
 .composer-input {
   width: 100%;
-  min-height: 72px;
+  min-height: 56px;
   max-height: 240px;
   box-sizing: border-box;
-  padding: 14px 16px;
-  background: #f3f4f6;
-  border-radius: 12px;
+  padding: 0;
+  background: transparent;
   font-size: 28px;
 }
 
 .composer-actions {
   display: flex;
   align-items: center;
-  margin-top: 12px;
 }
 
 .composer-attach {
   font-size: 40px;
-  padding: 4px 10px;
+  padding: 4px 10px 4px 0;
 }
 
 .composer-send,
 .composer-stop {
   margin-left: auto;
-  padding: 10px 36px;
-  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
   background: #2563eb;
   color: #fff;
-  font-size: 26px;
+}
+
+.composer-send-glyph {
+  font-size: 36px;
+  line-height: 1;
+  color: #fff;
 }
 
 .composer-stop {
   background: #dc2626;
 }
 
+.composer-stop-glyph {
+  font-size: 24px;
+  line-height: 1;
+  color: #fff;
+}
+
 .composer-send-disabled {
-  opacity: 0.5;
+  opacity: 0.3;
 }
 
 /* ── sessions page ─────────────────────────────────────────────────────── */
@@ -590,6 +911,16 @@ page {
   text-decoration: underline;
 }
 
+/* The "browse first, sign in later" exit — WeChat's forced-login rule means
+   the login page must never be a dead end (openspec: mp-demo-mode). */
+.login-skip {
+  display: block;
+  margin-top: 28px;
+  text-align: center;
+  font-size: 26px;
+  color: #2563eb;
+}
+
 .login-code-input {
   text-align: center;
   font-size: 44px;
@@ -597,15 +928,15 @@ page {
   font-weight: 600;
 }
 
-/* ── chat page server-address row ──────────────────────────────────────── */
+/* ── sessions page server-address row ──────────────────────────────────── */
 
-.server-row {
+.sessions-server {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 20px;
+  padding: 12px 20px calc(env(safe-area-inset-bottom) + 12px);
   background: #fff;
-  border-bottom: 1px solid #e5e7eb;
+  border-top: 1px solid #e5e7eb;
 }
 
 .server-label {
@@ -619,4 +950,541 @@ page {
   background: #f3f4f6;
   border-radius: 8px;
   font-size: 24px;
+}
+
+/* ── conversation outline rail (add-chat-outline) ───────────────────────── */
+/* Collapsed: a small tab hugging the right edge. Expanded: a card listing
+   every user turn (first line, CSS-ellipsized). Mirrors the web rail; the
+   tap-for-everything translation of hover (see OutlineRail.tsx). */
+
+.outline-rail {
+  position: absolute;
+  right: 0;
+  top: 30%;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.outline-edge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 56px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+  box-shadow: -2px 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.outline-edge-glyph {
+  font-size: 22px;
+  color: #6b7280;
+  line-height: 1;
+}
+
+.outline-card {
+  display: flex;
+  flex-direction: column;
+  width: 60vw;
+  max-width: 320px;
+  max-height: 52vh;
+  margin-right: 8px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.outline-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 8px;
+}
+
+.outline-card-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.outline-collapse {
+  font-size: 24px;
+  color: #6b7280;
+  padding: 0 6px;
+}
+
+.outline-card-list {
+  flex: 1;
+  min-height: 0;
+  max-height: 46vh;
+}
+
+.outline-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 16px;
+}
+
+.outline-entry-idx {
+  flex-shrink: 0;
+  font-size: 20px;
+  color: #9ca3af;
+  line-height: 32px;
+}
+
+.outline-entry-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 24px;
+  color: #374151;
+  line-height: 32px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Jump flash on the target turn wrap (same contract as the web rail's
+   outline-jump-flash): a primary-tinted wash fading out over ~1.2s. */
+@keyframes turn-flash-kf {
+  from {
+    background-color: rgba(59, 130, 246, 0.14);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.turn-flash {
+  animation: turn-flash-kf 1.2s ease-out 1;
+  border-radius: 12px;
+}
+
+/* ── session share (add-session-share) ──────────────────────────────────── */
+/* Header share entry rides the existing .hd-btn; the rest is the read-only
+   shared-session page and the sessions-page share manager. */
+
+.sessions-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px 0;
+}
+
+.session-share-btn {
+  flex-shrink: 0;
+  font-size: 24px;
+  color: #2563eb;
+  padding: 8px 12px;
+}
+
+.share-manage {
+  margin: 16px 24px;
+  padding: 16px 20px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+
+.share-manage-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.share-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.share-row:last-child {
+  border-bottom: none;
+}
+
+.share-row-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 24px;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.share-row-revoke {
+  flex-shrink: 0;
+  font-size: 24px;
+  color: #dc2626;
+}
+
+/* Read-only shared-session page (recipient side, reached via forward card). */
+.share-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-sizing: border-box;
+  background: #f9fafb;
+}
+
+.share-banner {
+  padding: 16px 24px;
+  background: #eef2ff;
+}
+
+.share-banner-text {
+  font-size: 22px;
+  color: #4338ca;
+}
+
+.share-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  color: #6b7280;
+}
+
+.share-unavailable {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  color: #6b7280;
+}
+
+.share-body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 24px 0;
+}
+
+.share-title {
+  display: block;
+  font-size: 30px;
+  font-weight: 600;
+  color: #111827;
+  padding: 8px 0 16px;
+}
+
+/* ── 定时任务页 + 对话内任务卡片(scheduled-tasks-ui / agent-scheduling-tools)── */
+
+.cron-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f3f4f6;
+}
+
+.cron-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 32px 8px;
+}
+
+.cron-count {
+  font-size: 26px;
+  color: #6b7280;
+}
+
+.cron-list {
+  flex: 1;
+  min-height: 0;
+  padding: 0 24px;
+}
+
+.cron-form {
+  margin: 8px 24px 16px;
+  padding: 20px;
+  border-radius: 16px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cron-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.cron-seg {
+  padding: 8px 20px;
+  border-radius: 999px;
+  font-size: 26px;
+  color: #6b7280;
+  background: #f3f4f6;
+}
+
+.cron-seg-on {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+  font-weight: 600;
+}
+
+.cron-day {
+  width: 64px;
+  height: 56px;
+  line-height: 56px;
+  text-align: center;
+  border-radius: 12px;
+  font-size: 24px;
+  color: #6b7280;
+  background: #f3f4f6;
+}
+
+.cron-day-on {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+  font-weight: 600;
+}
+
+.cron-input {
+  padding: 14px 20px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  font-size: 26px;
+  background: #fff;
+}
+
+.cron-picker {
+  color: #111827;
+}
+
+.cron-textarea {
+  min-height: 140px;
+  padding: 14px 20px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  font-size: 26px;
+  background: #fff;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.cron-tz-row {
+  justify-content: flex-start;
+}
+
+.cron-tz-label {
+  font-size: 24px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.cron-tz-input {
+  flex: 1;
+}
+
+.cron-error {
+  font-size: 24px;
+  color: #dc2626;
+}
+
+.cron-submit {
+  align-self: flex-start;
+  padding: 12px 32px;
+  border-radius: 12px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 28px;
+}
+
+.cron-card {
+  margin-bottom: 16px;
+  padding: 20px;
+  border-radius: 16px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cron-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cron-chip {
+  padding: 4px 16px;
+  border-radius: 999px;
+  font-size: 22px;
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+}
+
+.cron-chip-paused,
+.cron-chip-completed {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.cron-chip-running {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+}
+
+.cron-chip-expired {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+
+.cron-chip-error {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
+}
+
+.cron-card-schedule {
+  font-size: 26px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.cron-card-prompt {
+  font-size: 24px;
+  color: #374151;
+}
+
+.cron-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.cron-card-meta-item {
+  font-size: 22px;
+  color: #6b7280;
+}
+
+.cron-card-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.cron-card-btn {
+  padding: 6px 20px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  font-size: 24px;
+  color: #374151;
+}
+
+.cron-card-danger {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.35);
+}
+
+.cron-viewer-title {
+  display: block;
+  font-size: 30px;
+  font-weight: 600;
+  color: #111827;
+  padding: 8px 32px 12px;
+}
+
+/* 会话列表未读红点 + 会话页定时任务入口(scheduled-task-notifications) */
+.session-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.session-unread-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #2563eb;
+  flex-shrink: 0;
+}
+
+.sessions-cron-entry {
+  padding: 12px 32px 0;
+}
+
+.sessions-cron-link {
+  font-size: 26px;
+  color: #2563eb;
+}
+
+.hd-unread-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ef4444;
+  margin-left: 4px;
+}
+
+/* 对话内任务卡片(agent-scheduling-tools) */
+.blk-cron-card {
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  border-left: 6px solid #2563eb;
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(37, 99, 235, 0.04);
+}
+
+.blk-cron-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.blk-cron-title {
+  font-size: 26px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.blk-cron-schedule {
+  font-size: 24px;
+  color: #4b5563;
+}
+
+.blk-cron-prompt {
+  font-size: 24px;
+  color: #374151;
+}
+
+.blk-cron-status {
+  font-size: 22px;
+  color: #6b7280;
+  margin-right: auto;
+}
+
+.blk-cron-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.blk-cron-btn {
+  font-size: 24px;
+  color: #2563eb;
+}
+
+.blk-cron-danger {
+  color: #dc2626;
 }

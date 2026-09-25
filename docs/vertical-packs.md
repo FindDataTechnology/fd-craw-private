@@ -128,6 +128,8 @@ fd-prod 平台容器 CWD 下的 `registry-groups.json`：
     -d '{"name":"...","description":"...","skill_md_url":"https://raw.githubusercontent.com/FindDataTechnology/fd-vertical-packs/main/skills/<name>/SKILL.md","tags":["法律","合同审查"],"status":"active"}'
   ```
 
+  **⚠️ 内容漂移会自动停用技能（2026-09-24 彩排实测）**：registry 为每个注册技能记内容基线；注册后若 GitHub 上的 SKILL.md 被修改（如 4.2 的 conditional→live 改写），drift 检出后该技能被自动 `is_enabled=false`——市场与 `GET /api/skills` 列表随即消失，`/content` 返回 409（"Re-register to update the baseline"）。**PUT 更新不会重置基线**；修复 = 同参数 `DELETE` + `POST` 重新注册（重新抓基线、恢复 enabled）。改内容后务必重新注册并复查 `is_enabled`。
+
 - **Agent**：云端目录文档即仓库内 `agents.json`（三条 chat entry，凭证仅 `apiKeyEnv: FD_TOKEN_API_KEY`）；fd-prod 已配 `AGENTS_CONFIG_URL`（fd-infra-deploy 147ffc6）+ `FD_TOKEN_API_KEY` secret，rollout 完成，catalog 合并验证通过。
 
 **⚠️ 模型选择（实测结论）**：agent 用 `deepseek-v4-flash-0731`。该公开网关对 `deepseek-v4-pro`/`deepseek-v4-flash` 要求 `x-opencode-session` 头（平台的 agent 调用不带此头会 400），而 `0731` 免头直通——正好也是平台自己的默认模型。**不要把 agent 模型改回 pro，除非平台侧增加该请求头。**
@@ -226,6 +228,7 @@ fd-prod 部署：`FD_TOKEN_API_KEY` 进 `platform-secrets`，`AGENTS_CONFIG_URL`
 - chatlaw / fingpt 卡片是生态展示（GitHub link），对话入口用包的 chat agent。
 - 凭据 TTL 168h：到期后已安装的 MCP 会 401，平台随即把凭据标为 stale 并在 Store 提示"重新连接"（点一次 `Continue with Logto` 即恢复，无需重装）。law-bench 的 egress PAT 有效期 30 天（至 2026-10-18，admin 账号），与用户凭据互不影响。
 - 公开 LLM 网关偶发 502（实测约 1/5 瞬时抖动，重试即恢复；平台 agent 调用无自动重试）——演示时若首答失败，重发一次即可。
+- **默认模型与工具选择（2026-09-24 更新）**：默认模型已切换为 finddata-token 的 **`deepseek/deepseek-v4.1-flash`**（maxTokens 32768）。彩排实测四包 canned demo 全部达标，chat 内真实 MCP 调用稳定（law-bench / fd-find-data-business-mcp / fd-cn-report / fd-open-data-mcp 合计 36+ 次）。此前默认的免费 `liquid/lfm-2.5-2.6b:free` 无法在 ~190 工具清单下选对工具（chat 内 mcp__ 调用为 0，还偶发畸形调用把报错带进回复）——**演示前勿切回免费小模型**。模型条目的 `maxTokens` 勿低于 32768：全流程报告 8192 会被截断（turn/end reason=max-tokens）。
 - 包 agent 现在跑在**本地运行时**（§6.1）：persona 的模型就是平台当前选中的模型（端点条目的 `model` 字段只在回退转发时生效）；切换 agent 会重启 dsh 子进程（约 5-10 秒），且 persona 对**下一个**会话生效，当前会话继续用原有 persona（UI 头部标签显示的是会话真实 preset）。
 - 每个 agent 的 persona preset 由目录条目生成，标记文件在 `$DSH_HOME/.agent-presets/<id>/`；要手写不同语气，优先在 agents.json 里加 `persona` 字段。
 - registry 的 egress 相关 API（Connected Accounts 自助存 PAT）被 safeline WAF 拦截（404），目前由 admin 直连 cheap1 代存（§3.3）。

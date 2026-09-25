@@ -23,6 +23,7 @@ import { createCellRegistry, userIdFor } from "./spawner.js";
 import { forwardedHeaders, proxyHttp, proxyUpgrade } from "./proxy.js";
 import { createMpAuth } from "./mp-auth.js";
 import { createMpBindings } from "./mp-bindings.js";
+import { createShareRegistry, createRateLimiter } from "./share.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = Number(process.env.GATEWAY_PORT || 3080);
@@ -58,6 +59,11 @@ const registry = createCellRegistry({
   secret: SECRET,
   startTimeoutMs: START_TIMEOUT_MS,
   idleReapSecs: IDLE_REAP_SECS,
+  // Demo-cell bounds (openspec: mp-demo-mode): how many demo cells may run at
+  // once, and how idle one may sit before it is stopped AND deleted —
+  // independent of the account-cell contract above.
+  demoMaxCells: Number(process.env.MP_DEMO_MAX_CELLS || 3),
+  demoIdleReapSecs: Number(process.env.MP_DEMO_IDLE_SECS || 900),
   // CELL_SERVER_ENTRY defaults to the real cell; tests point it at a stub so
   // the identity/routing contract can be exercised without booting dsh.
   serverEntry: process.env.CELL_SERVER_ENTRY || path.join(REPO, "server.js"),
@@ -85,6 +91,11 @@ const mpAuth = createMpAuth({
   ttlHours: Number(process.env.MP_TOKEN_TTL_HOURS || 12),
   codeUrl: process.env.MP_JS_CODE_URL || "https://api.weixin.qq.com/sns/jscode2session",
   bindings: mpBindings,
+  // Demo mode (openspec: mp-demo-mode): unbound openids get a bounded demo
+  // identity instead of binding_required, so a WeChat reviewer can chat with
+  // zero popups. Default off — self-hosted deployments stay strictly
+  // account-bound.
+  demoMode: ["1", "true", "yes"].includes(String(process.env.MP_DEMO_MODE || "").toLowerCase()),
 });
 
 const app = express();
@@ -190,12 +201,135 @@ app.get("/api/gateway/status", (req, res) => {
   const user = logtoAuth.userFromCookie(req.headers.cookie);
   if (!user) return rejectUnauthenticated(req, res);
   if (!(user.groups || []).includes("admin")) return res.status(403).json({ error: "Admin group required" });
+  const cellStatus = registry.status();
   res.json({
-    cells: registry.status(),
+    cells: cellStatus,
+    demoCells: cellStatus.filter((c) => c.demo).length,
     idleReapSecs: IDLE_REAP_SECS,
     dataRoot: DATA_ROOT,
     uptimeMs: Date.now() - startedAt,
   });
+});
+
+// ── Session sharing (openspec: add-session-share) ───────────────────────────
+// The gateway brokers every share: it mints tokens for authenticated owners
+// (validating the session through the owner's own cell) and serves the public
+// read by re-entering the registry with the OWNER's stored identity — so a
+// share of a demo cell re-spawns that demo cell on demand. Cells stay
+// unaware of sharing; they only ever see a normal identity-headered request
+// for their chat-history REST.
+const shareRegistry = createShareRegistry({ file: path.join(DATA_ROOT, "share-tokens.db") });
+// SHARE_RATE_MAX is a test/ops knob; the shipped default is 30 reads/min.
+const shareRateLimit = createRateLimiter({
+  windowMs: 60_000,
+  max: Number(process.env.SHARE_RATE_MAX || 30),
+});
+// Every unredeemable token gets this exact response — unknown, revoked,
+// expired, and since-deleted sessions are indistinguishable to a prober.
+const SHARE_UNAVAILABLE = { error: "Share not available" };
+
+// GET a session's mirrored turns from a user's cell, impersonating that user
+// via the gateway's verified-identity headers (the only identity path a cell
+// trusts). The cell is ensured (started) on demand — the same path serves
+// create-time validation (caller's own identity) and the public read (the
+// OWNER's stored identity). One self-heal retry: a cell process that died
+// out from under the gateway leaves a stale record; the first read then
+// fails to connect, so drop the record and re-ensure (a fresh spawn) before
+// giving up.
+async function readSessionFromCell(user, sessionId) {
+  let attempt = 0;
+  for (;;) {
+    let cell;
+    try {
+      cell = await registry.ensure(user);
+    } catch (err) {
+      if (err.code === "demo_capacity") return { status: 503, error: err.friendly };
+      console.error(`[share] cell start failed for ${userIdFor(user.email)}: ${err.message}`);
+      return { status: 0, error: err.message };
+    }
+    const r = await new Promise((resolve) => {
+      const upstream = http.request(
+        {
+          host: "127.0.0.1",
+          port: cell.port,
+          method: "GET",
+          path: `/api/chat-history/sessions/${encodeURIComponent(sessionId)}`,
+          headers: forwardedHeaders({ headers: {} }, user, SECRET),
+          timeout: 15_000,
+        },
+        (up) => {
+          let raw = "";
+          up.setEncoding("utf8");
+          up.on("data", (c) => (raw += c));
+          up.on("end", () => {
+            let body = null;
+            try {
+              body = JSON.parse(raw);
+            } catch {
+              /* non-JSON */
+            }
+            resolve({ status: up.statusCode, body });
+          });
+        },
+      );
+      upstream.on("timeout", () => upstream.destroy(new Error("cell timeout")));
+      upstream.on("error", (err) => resolve({ status: 0, error: err.message }));
+      upstream.end();
+    });
+    if (r.status !== 0 || attempt > 0) return r;
+    attempt += 1;
+    console.log(`[share] cell for ${userIdFor(user.email)} unreachable (${r.error}) — respawning`);
+    registry.drop(userIdFor(user.email));
+  }
+}
+
+// Create a share. The session must exist in the CALLER's own cell — the
+// create-time fetch is the ownership proof (D3); the fetched title is stored
+// denormalized for the revoke-list UI.
+app.post("/api/share", express.json(), async (req, res) => {
+  const user = resolveUser(req);
+  if (!user) return rejectUnauthenticated(req, res);
+  const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId.trim() : "";
+  if (!sessionId || sessionId.length > 200) return res.status(400).json({ error: "sessionId required" });
+  const fetched = await readSessionFromCell(user, sessionId);
+  if (fetched.status === 404) return res.status(404).json({ error: "Session not found" });
+  if (fetched.status !== 200) return res.status(502).json({ error: "Workspace unavailable" });
+  const token = shareRegistry.create({
+    email: user.email,
+    groups: user.groups ?? [],
+    sessionId,
+    title: String(fetched.body?.title || ""),
+  });
+  res.json({ token, url: `/share/${token}` });
+});
+
+// The owner's active shares.
+app.get("/api/share", (req, res) => {
+  const user = resolveUser(req);
+  if (!user) return rejectUnauthenticated(req, res);
+  res.json({ shares: shareRegistry.listOwn(user.email) });
+});
+
+// Revoke: ownership-checked; false covers unknown/foreign/already-revoked.
+app.delete("/api/share/:token", (req, res) => {
+  const user = resolveUser(req);
+  if (!user) return rejectUnauthenticated(req, res);
+  if (!shareRegistry.revoke(user.email, req.params.token)) {
+    return res.status(404).json({ error: "Share not found" });
+  }
+  res.json({ ok: true });
+});
+
+// The public read: the gateway's first content-bearing unauthenticated route.
+// Rate-limited per source; registry lookup then owner-impersonated cell read.
+app.get("/api/share/:token", async (req, res) => {
+  if (!shareRateLimit(req)) return res.status(429).json({ error: "Too many requests" });
+  const row = shareRegistry.live(req.params.token);
+  if (!row) return res.status(404).json(SHARE_UNAVAILABLE);
+  const groups = String(row.groups || "").split(",").filter(Boolean);
+  const session = await readSessionFromCell({ email: row.email, groups }, row.session_id);
+  if (session.status !== 200 || !session.body) return res.status(404).json(SHARE_UNAVAILABLE);
+  res.json({ title: session.body.title ?? "", messages: session.body.messages ?? [] });
 });
 
 // Everything else belongs to a cell.
@@ -206,6 +340,12 @@ app.use(async (req, res) => {
   try {
     cell = await registry.ensure(user);
   } catch (err) {
+    // Demo capacity is a normal, expected condition (openspec: mp-demo-mode):
+    // the reply stays friendly and machine-readable instead of a raw spawn
+    // failure.
+    if (err.code === "demo_capacity") {
+      return res.status(503).json({ error: err.friendly, code: "demo_capacity" });
+    }
     console.error(`[gateway] cell start failed for ${userIdFor(user.email)}: ${err.message}`);
     return res.status(503).json({ error: `Your workspace failed to start: ${err.message}` });
   }
@@ -229,6 +369,12 @@ server.on("upgrade", async (req, socket, head) => {
   try {
     cell = await registry.ensure(user);
   } catch (err) {
+    if (err.code === "demo_capacity") {
+      const body = JSON.stringify({ error: err.friendly, code: "demo_capacity" });
+      socket.write(`HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n${body}`);
+      socket.destroy();
+      return;
+    }
     console.error(`[gateway] WS cell start failed for ${userIdFor(user.email)}: ${err.message}`);
     socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
     socket.destroy();
@@ -251,6 +397,7 @@ server.listen(PORT, HOST, () => {
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, async () => {
     console.log(`[gateway] ${signal} — stopping ${registry.cells.size} cell(s)`);
+    shareRegistry.close();
     await registry.shutdown();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();

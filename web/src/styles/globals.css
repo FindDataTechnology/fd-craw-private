@@ -136,3 +136,22 @@
     text-decoration: light-dark(var(--shiki-light-text-decoration), var(--shiki-dark-text-decoration));
   }
 }
+
+/*
+ * Outline jump flash (add-chat-outline). Applied imperatively by Chat's
+ * jumpToTurn (classList, not JSX) and removed after 1.2s; the forced reflow
+ * before re-adding lets a rapid re-tap restart the animation. A primary-tint
+ * wash that fades — readable in both themes via the token pair.
+ */
+@keyframes outline-jump-flash {
+  from {
+    background-color: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+.outline-jump-flash {
+  animation: outline-jump-flash 1.2s ease-out 1;
+  border-radius: var(--radius);
+}

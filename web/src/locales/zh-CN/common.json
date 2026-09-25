@@ -15,7 +15,8 @@
     "agents": "智能体",
     "bots": "机器人",
     "trace": "调用追踪",
-    "openMenu": "打开导航菜单"
+    "openMenu": "打开导航菜单",
+    "tasks": "任务"
   },
   "trace": {
     "title": "调用追踪",
@@ -61,7 +62,8 @@
     "showMore": "显示更多 {{count}} 条",
     "showLess": "收起",
     "newWorkspace": "新建工作区",
-    "closeSearch": "关闭搜索"
+    "closeSearch": "关闭搜索",
+    "unread": "有新内容"
   },
   "modelsPage": {
     "title": "模型",
@@ -235,12 +237,21 @@
     "connectionLost": "连接已断开，正在自动重连…",
     "ariaStreaming": "回答生成中…",
     "ariaDone": "回答完成",
-    "retry": "重试"
+    "retry": "重试",
+    "outlineLabel": "会话大纲",
+    "outlineCollapse": "收起大纲",
+    "outlineJump": "跳转到这一问"
   },
   "turn": {
     "assistantName": "{{assistant}}",
     "thinkingStreaming": "思考中…",
     "thinking": "思考",
+    "activityThinking": "正在思考…",
+    "activityRunning": "正在执行第 {{step}} 步…",
+    "activityDoneTimed": "已思考 {{seconds}} 秒 · 执行了 {{count}} 步",
+    "activityThought": "已思考 {{seconds}} 秒",
+    "activityDone": "执行了 {{count}} 步",
+    "activityErrored": "执行中遇到问题 · 已执行 {{count}} 步",
     "statusRunning": "运行中…",
     "statusError": "错误",
     "statusDone": "完成",
@@ -594,5 +605,86 @@
     "openInDrawer": "预览",
     "noRenderer": "此文件类型暂不支持预览。",
     "downloadName": "下载 {{name}}"
+  },
+  "share": {
+    "banner": "共享会话 — 只读，由会话所有者分享",
+    "loading": "正在加载共享会话…",
+    "unavailable": "该共享会话已不可用。",
+    "menuItem": "分享",
+    "copied": "链接已复制到剪贴板",
+    "failed": "分享失败：{{error}}",
+    "manage": "共享链接…",
+    "dialogTitle": "共享链接",
+    "dialogHint": "任何拿到链接的人都能查看该会话；撤销后立即失效。",
+    "none": "暂无有效的共享链接。",
+    "revoke": "撤销"
+  },
+  "tasks": {
+    "title": "定时任务",
+    "empty": "还没有定时任务——创建一个,按计划自动运行。",
+    "status": {
+      "scheduled": "已排程",
+      "running": "运行中",
+      "paused": "已暂停",
+      "completed": "已完成",
+      "expired": "已过期",
+      "error": "错误"
+    },
+    "actions": {
+      "pause": "暂停",
+      "resume": "恢复",
+      "runNow": "立即运行",
+      "delete": "删除",
+      "deleteConfirm": "确定删除这个定时任务?",
+      "output": "产出"
+    },
+    "fields": {
+      "agent": "智能体",
+      "nextRun": "下次运行",
+      "lastRun": "上次运行",
+      "never": "从未运行",
+      "missedRuns": "错过 {{count}} 次",
+      "missedTotal": "累计错过 {{count}} 次",
+      "lastOk": "成功",
+      "lastFailed": "失败"
+    },
+    "schedule": {
+      "daily": "每天 {{time}}",
+      "weekdays": "工作日 {{time}}",
+      "weeklyOn": "每周 {{days}} {{time}}",
+      "everyNMinutes": "每 {{n}} 分钟",
+      "everyMinute": "每分钟",
+      "custom": "cron “{{expr}}”",
+      "once": "{{when}} 一次"
+    },
+    "form": {
+      "title": "新建任务",
+      "close": "收起",
+      "submit": "创建任务",
+      "mode": {
+        "recurring": "周期",
+        "once": "单次"
+      },
+      "freq": {
+        "daily": "每天",
+        "weekly": "每周",
+        "custom": "自定义 cron"
+      },
+      "cronPlaceholder": "cron 表达式,如 */15 * * * *",
+      "namePlaceholder": "名称(可选)——将作为会话标题",
+      "promptPlaceholder": "智能体在这个时间要做什么?",
+      "tz": "时区",
+      "errors": {
+        "prompt": "请填写提示词",
+        "weekday": "至少选择一个星期",
+        "cron": "请填写 cron 表达式",
+        "when": "请选择日期和时间"
+      }
+    },
+    "tool": {
+      "title": "定时任务",
+      "created": "在对话中创建的任务",
+      "notFound": "任务状态暂不可用——请打开任务页面查看。"
+    }
   }
 }
